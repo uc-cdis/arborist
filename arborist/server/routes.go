@@ -31,19 +31,6 @@ func handleRoot(config *ServerConfig) http.Handler {
 	})
 }
 
-// For the URL paths like `/role/{role}`, parse the role name from the URL and
-// return the corresponding role from the auth engine.
-func findRoleFromURL(engine *arborist.AuthEngine, r *http.Request) (*arborist.Role, error) {
-	// Get the role name from the URL.
-	role_name, contains := mux.Vars(r)["role"]
-	if !contains {
-		err := errors.New("path missing role component")
-		return nil, err
-	}
-
-	return engine.FindRoleNamed(role_name)
-}
-
 // Handle `POST` `/auth`.
 //
 // Issue an authorization decision.
@@ -131,38 +118,29 @@ func handleRoleCreate(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
+func getRoleFromPath(r *http.Request) (string, error) {
+	role_name, contains := mux.Vars(r)["role"]
+	if !contains {
+		err := errors.New("path missing role component")
+		return "", err
+	}
+	return role_name, nil
+}
+
 // Handle `GET` `/role/{role}`.
 //
 // Return the information for the requested role in JSON.
 func handleRoleGet(engine *arborist.AuthEngine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Find the matching role.
-		role, err := findRoleFromURL(engine, r)
+		roleID, err := getRoleFromPath(r)
 		if err != nil {
 			msg := fmt.Sprintf("could not find role; encountered error: %s", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
 		}
-
-		// Try to write the role out as JSON.
-		var role_json []byte
-		pretty, exists := r.URL.Query()["pretty"]
-
-		if exists && pretty[0] == "true" {
-			role_json, err = json.MarshalIndent(role, "", "    ")
-		} else {
-			role_json, err = json.Marshal(role)
-		}
-		if err != nil {
-			msg := fmt.Sprintf("failed to write role as JSON; encountered error: %s", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-			return
-		}
-
-		// Write out the role JSON and output 200.
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(role_json)
-		w.WriteHeader(http.StatusOK)
+		operation := engine.WriteRole(roleID)
+		operation.HandleResponseWriter(w)
 	})
 }
 
@@ -178,16 +156,15 @@ func handleRoleUpdate(engine *arborist.AuthEngine) http.Handler {
 			http.Error(w, msg, http.StatusBadRequest)
 		}
 
-		// Look up the role given in the path.
-		role, err := findRoleFromURL(engine, r)
+		roleID, err := getRoleFromPath(r)
 		if err != nil {
-			msg := fmt.Sprintf("failed to find role; encountered error: %s", err)
-			http.Error(w, msg, http.StatusBadRequest)
+			msg := fmt.Sprintf("could not find role; encountered error: %s", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
 		}
 
-		engine.UpdateRoleWithJSON(role, body)
-
-		w.WriteHeader(http.StatusNoContent)
+		operation := engine.UpdateRole(roleID, body)
+		operation.HandleResponseWriter(w)
 	})
 }
 
@@ -206,16 +183,15 @@ func handleRoleOverwrite(engine *arborist.AuthEngine) http.Handler {
 			http.Error(w, msg, http.StatusBadRequest)
 		}
 
-		// Look up the role given in the path.
-		role, err := findRoleFromURL(engine, r)
+		roleID, err := getRoleFromPath(r)
 		if err != nil {
-			msg := fmt.Sprintf("failed to find role; encountered error: %s", err)
-			http.Error(w, msg, http.StatusBadRequest)
+			msg := fmt.Sprintf("could not find role; encountered error: %s", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
 		}
 
-		engine.OverwriteRoleWithJSON(role, body)
-
-		w.WriteHeader(http.StatusNoContent)
+		operation := engine.OverwriteRoleWithJSON(roleID, body)
+		operation.HandleResponseWriter(w)
 	})
 }
 
@@ -227,11 +203,14 @@ func handleRoleOverwrite(engine *arborist.AuthEngine) http.Handler {
 // caution.
 func handleRoleDelete(engine *arborist.AuthEngine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role, err := findRoleFromURL(engine, r)
+		roleID, err := getRoleFromPath(r)
 		if err != nil {
-
+			msg := fmt.Sprintf("could not find role; encountered error: %s", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
 		}
-		engine.DropRole(role)
+
+		engine.DropRole(roleID)
 	})
 }
 

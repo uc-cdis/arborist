@@ -3,7 +3,6 @@ package arborist
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 )
 
@@ -170,13 +169,6 @@ func (engine *AuthEngine) findOrCreateResource(service *Service, resourceID stri
 }
 
 func (engine *AuthEngine) LoadRoleFromJSON(roleJSON RoleJSON) error {
-	// Make sure a role with this name doesn't exist yet.
-	id := roleJSON.ID
-	_, exists := engine.roles[id]
-	if exists {
-		return errors.New(fmt.Sprintf("role already exists with ID: %s", id))
-	}
-
 	role, err := engine.recursivelyLoadRoleFromJSON(roleJSON)
 	if err != nil {
 		return err
@@ -194,13 +186,7 @@ func (engine *AuthEngine) LoadRoleFromJSON(roleJSON RoleJSON) error {
 // input and construct a new `Role` which has pointers correctly aimed into the
 // roles, permissions, etc. that exist in the engine already.
 func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role, error) {
-
-	// DEBUG START
-	for role := range engine.root_role.Subroles {
-		print(fmt.Sprintf("%s\n", role.ID))
-	}
-	// DEBUG END
-
+	// Make sure a role with this name doesn't exist yet.
 	_, exists := engine.roles[roleJSON.ID]
 	if exists {
 		err := errors.New("role already exists")
@@ -242,33 +228,24 @@ func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role,
 	return role, nil
 }
 
+func (engine *AuthEngine) updateRoleWithJSON(roleID string, additionJSON RoleJSON) error {
+	role, err := engine.FindRoleNamed(roleID)
+	if err != nil {
+		return err
+	}
+	roleAdditions, err := engine.recursivelyLoadRoleFromJSON(additionJSON)
+	if err != nil {
+		return err
+	}
+	role.update(roleAdditions)
+	return nil
+}
+
 // If there are no longer any roles which grant the given permission, then
 // remove it from the set of permissions listed in the engine.
 func (engine *AuthEngine) dropPermissionIfOrphaned(permission *Permission) {
 	if len(permission.rolesGranting) == 0 {
 		delete(engine.permissions, permission.ID)
-	}
-}
-
-// Completely delete the given role from the engine. This will drop all subroles
-// from beneath this role, and if there were permissions granted by only that
-// role then the engine will also drop those.
-func (engine *AuthEngine) DropRole(role_to_drop *Role) {
-	all_roles_to_drop := role_to_drop.allSubroles()
-	for _, role := range all_roles_to_drop {
-		// Disassociate the role from all the permissions it granted.
-		for permission := range role.Permissions {
-			permission.noLongerGrantedBy(role)
-			engine.dropPermissionIfOrphaned(permission)
-		}
-
-		// Disassociate the role from its parent role. (The parent role should never
-		// be nil.)
-		parent_role := role.Parent
-		delete(parent_role.Subroles, role)
-
-		// Remove the role from the engine's role map.
-		delete(engine.roles, role.ID)
 	}
 }
 
@@ -332,28 +309,6 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 	return service, nil
 }
 
-// Insert a new role immediately under the root.
-//
-// Returns an error if a role exists already with the same ID.
-func (engine *AuthEngine) insertNewRole(role Role) error {
-	if _, exists := engine.roles[role.ID]; exists {
-		return errorRoleNameTaken{role.ID}
-	}
-	engine.roles[role.ID] = &role
-	engine.root_role.Subroles[&role] = struct{}{}
-	return nil
-}
-
-// Given some JSON describing a new role, insert it into the engine immediately
-// under the root.
-func (engine *AuthEngine) InsertNewRoleFromJSON(roleJSON RoleJSON) error {
-	// Traverse all the roles, and map all the pointers
-
-	// TODO
-
-	return nil
-}
-
 // Insert a role as a child underneath the given parent role.
 func (engine *AuthEngine) insertRoleAt(parent_role Role, child_role Role) error {
 	parent, err := engine.FindRoleNamed(parent_role.ID)
@@ -361,27 +316,6 @@ func (engine *AuthEngine) insertRoleAt(parent_role Role, child_role Role) error 
 		return err
 	}
 	parent.Subroles[&child_role] = struct{}{}
-	return nil
-}
-
-// Make updates to the existing role `current_role` from the fields in
-// `new_role`. (This can rename the existing role, but otherwise only appends
-// the additional data to the existing role.)
-func (engine *AuthEngine) UpdateRoleWithJSON(role *Role, input []byte) error {
-	// TODO
-
-	return nil
-}
-
-// Given some JSON input describing a role, validate the input and overwrite the
-// exiting role with the new one parsed from the JSON.
-func (engine *AuthEngine) OverwriteRoleWithJSON(role *Role, input []byte) error {
-	// To overwrite the role, just load the JSON into a new role as with
-	// inserting a new role beneath the root, and switch the role to point at
-	// the new value.
-
-	// TODO
-
 	return nil
 }
 

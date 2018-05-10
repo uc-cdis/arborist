@@ -109,7 +109,7 @@ func (role *Role) allSubroles() []*Role {
 // Append the contents of all the fields in `input_role` onto the existing
 // fields in `role`. This can include overwriting the current name with a new
 // name given in the input role.
-func (role *Role) update(input_role Role) {
+func (role *Role) update(input_role *Role) {
 	if input_role.ID != "" {
 		role.ID = input_role.ID
 	}

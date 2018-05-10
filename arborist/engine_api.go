@@ -126,3 +126,92 @@ func (engine *AuthEngine) CreateRole(roleJSONBytes []byte) ArboristOperation {
 		JSON:    []byte{},
 	}
 }
+
+func (engine *AuthEngine) WriteRole(roleID string) ArboristOperation {
+	role, err := engine.FindRoleNamed(roleID)
+	if err != nil {
+		return badRequest(fmt.Sprint(err))
+	}
+
+	roleJSON := role.toJSON()
+	jsonBytes, err := json.Marshal(roleJSON)
+	if err != nil {
+		return failedMarshal(err)
+	}
+
+	return ArboristOperation{
+		Success: true,
+		Status:  http.StatusOK,
+		JSON:    jsonBytes,
+	}
+}
+
+// Make updates to the existing role `current_role` from the fields in
+// `new_role`. (This can rename the existing role, but otherwise only appends
+// the additional data to the existing role.)
+func (engine *AuthEngine) UpdateRole(roleID string, roleJSONBytes []byte) ArboristOperation {
+	// Try to parse the JSON body.
+	var roleJSON *RoleJSON = &RoleJSON{}
+	err := json.Unmarshal(roleJSONBytes, roleJSON)
+	if err != nil {
+		return badRequest(fmt.Sprint(err))
+	}
+
+	// Try to actually update the role.
+	err = engine.updateRoleWithJSON(roleID, *roleJSON)
+	if err != nil {
+		return badRequest(fmt.Sprint(err))
+	}
+
+	return ArboristOperation{
+		Success: true,
+		Status:  http.StatusNoContent,
+		JSON:    []byte{},
+	}
+}
+
+// Given some JSON input describing a role, validate the input and overwrite the
+// exiting role with the new one parsed from the JSON.
+func (engine *AuthEngine) OverwriteRoleWithJSON(roleID string, input []byte) ArboristOperation {
+	// To overwrite the role, just load the JSON into a new role as with
+	// inserting a new role beneath the root, and switch the role to point at
+	// the new value.
+
+	// TODO
+
+	return ArboristOperation{}
+}
+
+// Completely delete the given role from the engine. This will drop all subroles
+// from beneath this role, and if there were permissions granted by only that
+// role then the engine will also drop those.
+func (engine *AuthEngine) DropRole(roleID string) ArboristOperation {
+	role, err := engine.FindRoleNamed(roleID)
+	if err != nil {
+		return badRequest(fmt.Sprint(err))
+	}
+
+	all_roles_to_drop := role.allSubroles()
+
+	for _, role := range all_roles_to_drop {
+		// Disassociate the role from all the permissions it granted.
+		for permission := range role.Permissions {
+			permission.noLongerGrantedBy(role)
+			engine.dropPermissionIfOrphaned(permission)
+		}
+
+		// Disassociate the role from its parent role. (The parent role should never
+		// be nil.)
+		parent_role := role.Parent
+		delete(parent_role.Subroles, role)
+
+		// Remove the role from the engine's role map.
+		delete(engine.roles, role.ID)
+	}
+
+	return ArboristOperation{
+		Success: true,
+		Status:  http.StatusNoContent,
+		JSON:    []byte{},
+	}
+}
