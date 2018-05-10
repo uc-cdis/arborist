@@ -2,19 +2,28 @@ package arborist
 
 import ()
 
+// The wildcard "*" in a permission or action field denotes that the field
+// should validate against any input.
 const WILDCARD string = "*"
 
-// NOTE that the resource can't be parsed directly from JSON, because we have to
-// look it up in the engine to find the existing resource which has pointers to
-// parent and child resources. Consequently, be careful not to use an action
-// parsed straight out of a JSON; initialize the resource first.
+// Representation of an action that a user attempts, which is a method operating
+// on some resource belonging to some service.
 type Action struct {
-	Service    string `json:"service"`
-	Resource   *Resource
-	ResourceID string `json:"resource"`
-	Method     string `json:"method"`
+	Service  *Service
+	Resource *Resource
+	Method   string
 }
 
+func newAction() *Action {
+	return &Action{
+		Service:  nil,
+		Resource: nil,
+		Method:   "",
+	}
+}
+
+// When we check if an action is valid, we want to know which parts of the
+// request were or weren't valid; this struct keeps track of that.
 type actionValidation struct {
 	valid         bool
 	validService  bool
@@ -53,5 +62,22 @@ func (action Action) validate(try_action Action) actionValidation {
 		validService:  valid_service,
 		validMethod:   valid_method,
 		validResource: valid_resource,
+	}
+}
+
+// Represent an `Action` in JSON format.
+//
+// *Only* used for marshalling actions to and from JSON.
+type ActionJSON struct {
+	Service  string `json:"service"`
+	Resource string `json:"resource"`
+	Method   string `json:"method"`
+}
+
+func (action *Action) toJSON() ActionJSON {
+	return ActionJSON{
+		Service:  action.Service.ID,
+		Resource: action.Resource.ID,
+		Method:   action.Method,
 	}
 }

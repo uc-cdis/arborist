@@ -1,4 +1,4 @@
-package arborist
+package server
 
 import (
 	"net/http"
@@ -9,11 +9,11 @@ import (
 
 // Add logging middleware onto the HTTP handler to output logs in the standard
 // Apache format.
-func loggingMiddleware(next http.Handler) http.Handler {
+func httpLoggingMiddleware(next http.Handler) http.Handler {
 	return handlers.CombinedLoggingHandler(os.Stdout, next)
 }
 
 // Add all necessary middleware on top of the HTTP handler.
 func ApplyMiddleware(next http.Handler) http.Handler {
-	return loggingMiddleware(next)
+	return httpLoggingMiddleware(next)
 }

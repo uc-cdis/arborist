@@ -7,10 +7,20 @@ import ()
 // finer-grained levels of authorization. Resources must be uniquely identified
 // and the auth engine must maintain the collection of resource IDs.
 type Resource struct {
-	service  string
-	ID       string `json:"id"`
-	parent   *Resource
-	children map[*Resource]struct{}
+	ID           string
+	service      *Service
+	subresources map[*Resource]struct{}
+	parent       *Resource
+}
+
+// Initialize a resource with
+func NewResource(ID string) *Resource {
+	return &Resource{
+		service:      nil,
+		ID:           ID,
+		subresources: make(map[*Resource]struct{}),
+		parent:       nil,
+	}
 }
 
 // Test if two resources are equal. This is implemented as their belonging to

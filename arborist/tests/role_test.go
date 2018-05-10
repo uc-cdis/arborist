@@ -8,9 +8,12 @@ import (
 	"github.com/uc-cdis/arborist/arborist/tests/cases"
 )
 
+func TestMarshalRole(t *testing.T) {
+}
+
 func TestUnmarshalRole(t *testing.T) {
 	var role *arborist.Role = &arborist.Role{}
-	err := json.Unmarshal([]byte(cases.EXAMPLE_ROLE), role)
+	err := json.Unmarshal([]byte(cases.RoleChefDePartieJSON), role)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}

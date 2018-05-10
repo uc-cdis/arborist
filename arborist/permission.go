@@ -7,6 +7,10 @@ type constraintsDecision struct {
 	partial bool
 }
 
+func NewEmptyConstraints() Constraints {
+	return make(map[string]string)
+}
+
 func (constraints Constraints) validate(try_constraints Constraints) constraintsDecision {
 	decision := constraintsDecision{
 		valid:   true,
@@ -31,9 +35,34 @@ func (constraints Constraints) validate(try_constraints Constraints) constraints
 }
 
 type Permission struct {
-	ID          string      `json:"id"`
-	Action      Action      `json:"action"`
-	Constraints Constraints `json:"constraints"`
+	ID          string
+	Action      Action
+	Constraints Constraints
+
+	// Keep track of the roles that grant this permission.
+	rolesGranting map[string]struct{}
+}
+
+// Create a new `Permission`.
+func newPermission(ID string) *Permission {
+	constraints := make(Constraints)
+	return &Permission{
+		ID:            ID,
+		Action:        *newAction(),
+		Constraints:   constraints,
+		rolesGranting: make(map[string]struct{}),
+	}
+}
+
+// Record that the `role` grants this `permission`.
+func (permission *Permission) grantedBy(role *Role) {
+	permission.rolesGranting[role.ID] = struct{}{}
+}
+
+// Record that the `role` has been modified, and no longer grants the
+// `permission`.
+func (permission *Permission) noLongerGrantedBy(role *Role) {
+	delete(permission.rolesGranting, role.ID)
 }
 
 type permissionDecision struct {
@@ -91,4 +120,18 @@ func (permissions Permissions) validate(try_action Action, try_constraints Const
 	}
 
 	return auth
+}
+
+func (permission *Permission) toJSON() PermissionJSON {
+	return PermissionJSON{
+		ID:          permission.ID,
+		Action:      permission.Action.toJSON(),
+		Constraints: permission.Constraints,
+	}
+}
+
+type PermissionJSON struct {
+	ID          string      `json:"id"`
+	Action      ActionJSON  `json:"action"`
+	Constraints Constraints `json:"constraints"`
 }

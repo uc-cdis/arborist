@@ -1,49 +1,22 @@
 package arborist
 
 import (
-	"encoding/json"
 	"errors"
 )
 
 // Representation of a role in the RBAC model.
 //
 // Subroles and permissions are sets of pointers to other roles and permissions.
-// We must keep the locations of the roles etc. in memory because the engine may
-// update them directly. (The `map[*Role]struct{}` is just a hack to implement a
-// "set" so we can have constant-time lookup to check membership.)
+// (The `map[*Role]struct{}` etc. is just a hack to implement a "set" so we can
+// have constant-time lookup to check membership, as opposed to searching
+// through a slice.)
 type Role struct {
-	ID          string                   `json:"id"`
-	Tags        map[string]struct{}      `json:"tags"`
-	Subroles    map[*Role]struct{}       `json:"subroles"`
-	Permissions map[*Permission]struct{} `json:"permissions"`
+	ID          string
+	Tags        map[string]struct{}
+	Subroles    map[*Role]struct{}
+	Permissions map[*Permission]struct{}
 
-	parent *Role
-}
-
-// Represent a `Role` in JSON format. In particular, the subroles, permissions,
-// and tags, which are stored as maps in the role, should should just be arrays
-// in the JSON output. This is *only* used for marshalling a `Role` to JSON.
-type RoleJSON struct {
-	ID          string       `json:"id"`
-	Tags        []string     `json:"tags"`
-	Subroles    []RoleJSON   `json:"subroles"`
-	Permissions []Permission `json:"permissions"`
-}
-
-// Define the way that roles are marshalled into JSON.
-func (role Role) MarshalJSON() ([]byte, error) {
-	return json.Marshal(role.toJSON())
-}
-
-// Define the way that roles are unmarshalled from JSON.
-func (role *Role) UnmarshalJSON(data []byte) error {
-	var roleJSON *RoleJSON = &RoleJSON{}
-	err := json.Unmarshal(data, roleJSON)
-	if err != nil {
-		return err
-	}
-	role.fromJSON(*roleJSON)
-	return nil
+	Parent *Role
 }
 
 // Create a new role with the given name and empty sets of subroles,
@@ -53,18 +26,18 @@ func (role *Role) UnmarshalJSON(data []byte) error {
 //     - The new role does not point to a parent node yet.
 //     - The role ID is not guaranteed to be unique here; the engine must check
 //       that.
-func newRole(ID string) (Role, error) {
+func NewRole(ID string) (*Role, error) {
 	var role Role
 
 	role = Role{
 		ID:          ID,
-		Subroles:    make(map[*Role]struct{}),
-		Permissions: make(map[*Permission]struct{}),
 		Tags:        make(map[string]struct{}),
-		parent:      nil,
+		Permissions: make(map[*Permission]struct{}),
+		Subroles:    make(map[*Role]struct{}),
+		Parent:      nil,
 	}
 
-	return role, nil
+	return &role, nil
 }
 
 // Check for equality from one `Role` to another. Role names are enforced as
@@ -92,6 +65,10 @@ func (role *Role) insert(subrole *Role) error {
 	return err
 }
 
+func (role *Role) permit(permission *Permission) {
+	role.Permissions[permission] = struct{}{}
+}
+
 func (role *Role) filter(predicate func(Role) bool) []*Role {
 	var result []*Role
 	for _, r := range role.allSubroles() {
@@ -116,13 +93,13 @@ func (role *Role) hasTags(tags []string) bool {
 func (role *Role) allSubroles() []*Role {
 	var result []*Role
 	var queue roleQueue
-	queue.append(role)
+	queue.pushBack(role)
 
 	for queue.nonempty() {
-		next := queue.pop()
+		next := queue.popFront()
 		result = append(result, next)
 		for role := range next.Subroles {
-			queue.append(role)
+			queue.pushBack(role)
 		}
 	}
 
@@ -150,59 +127,6 @@ func (role *Role) update(input_role Role) {
 	}
 }
 
-// Convert a `Role` to a `RoleJSON`.
-func (role *Role) toJSON() RoleJSON {
-	var i uint
-
-	Subroles := make([]RoleJSON, len(role.Subroles))
-	i = 0
-	for subrole := range role.Subroles {
-		Subroles[i] = subrole.toJSON()
-	}
-
-	Permissions := make([]Permission, len(role.Permissions))
-	i = 0
-	for permission := range role.Permissions {
-		Permissions[i] = *permission
-	}
-
-	Tags := make([]string, len(role.Tags))
-	i = 0
-	for tag := range role.Tags {
-		Tags[i] = tag
-	}
-
-	return RoleJSON{
-		ID:          role.ID,
-		Subroles:    Subroles,
-		Permissions: Permissions,
-		Tags:        Tags,
-	}
-}
-
-// Convert this `Role` to the contents of `RoleJSON`.
-func (role *Role) fromJSON(roleJSON RoleJSON) {
-	Subroles := make(map[*Role]struct{})
-	for _, subroleJSON := range roleJSON.Subroles {
-		var subrole Role = Role{}
-		subrole.fromJSON(subroleJSON)
-		Subroles[&subrole] = struct{}{}
-	}
-	role.Subroles = Subroles
-
-	Permissions := make(map[*Permission]struct{})
-	for _, permission := range roleJSON.Permissions {
-		Permissions[&permission] = struct{}{}
-	}
-	role.Permissions = Permissions
-
-	Tags := make(map[string]struct{})
-	for _, tag := range roleJSON.Tags {
-		Tags[tag] = struct{}{}
-	}
-	role.Tags = Tags
-}
-
 // Collect all the permissions this role implies, accumulating the permissions
 // for every subrole starting from this one.
 func (role *Role) allPermissions() Permissions {
@@ -225,16 +149,72 @@ func (role *Role) validate(try_action Action, try_constraints Constraints) authR
 	return auth
 }
 
+// Convert a `Role` to a `RoleJSON`.
+func (role *Role) toJSON() RoleJSON {
+	var i uint
+
+	subroles := make([]RoleJSON, len(role.Subroles))
+	i = 0
+	for subrole := range role.Subroles {
+		subroles[i] = subrole.toJSON()
+	}
+
+	permissions := make([]PermissionJSON, len(role.Permissions))
+	i = 0
+	for permission := range role.Permissions {
+		permissions[i] = permission.toJSON()
+	}
+
+	tags := make([]string, len(role.Tags))
+	i = 0
+	for tag := range role.Tags {
+		tags[i] = tag
+	}
+
+	return RoleJSON{
+		ID:          role.ID,
+		Subroles:    subroles,
+		Permissions: permissions,
+		Tags:        tags,
+	}
+}
+
+// Represent a `Role` in JSON format. In particular, the subroles, permissions,
+// and tags, which are stored as maps in the role, should should just be arrays
+// in the JSON output. This is *only* used for marshalling roles to and from
+// JSON.
+type RoleJSON struct {
+	ID          string           `json:"id"`
+	Tags        []string         `json:"tags"`
+	Subroles    []RoleJSON       `json:"subroles"`
+	Permissions []PermissionJSON `json:"permissions"`
+}
+
 type roleQueue []*Role
 
-func (queue *roleQueue) append(role *Role) *roleQueue {
+func newRoleQueue() roleQueue {
+	return make([]*Role, 0)
+}
+
+func (queue *roleQueue) pushFront(role *Role) *roleQueue {
+	*queue = append([]*Role{role}, *queue...)
+	return queue
+}
+
+func (queue *roleQueue) pushBack(role *Role) *roleQueue {
 	*queue = append(*queue, role)
 	return queue
 }
 
-func (queue *roleQueue) pop() *Role {
-	var result *Role = (*queue)[0]
-	*queue = (*queue)[1:]
+func (queue *roleQueue) popFront() *Role {
+	var result *Role
+	result, *queue = (*queue)[0], (*queue)[1:]
+	return result
+}
+
+func (queue *roleQueue) popBack() *Role {
+	var result *Role
+	result, *queue = (*queue)[len(*queue)-1], (*queue)[:len(*queue)-1]
 	return result
 }
 

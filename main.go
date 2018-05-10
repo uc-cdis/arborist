@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/uc-cdis/arborist/arborist"
+	"github.com/uc-cdis/arborist/arborist/server"
 )
 
 func main() {
@@ -22,17 +23,23 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("failed to initialize auth engine: %s", err))
 	}
-	router := arborist.MakeRouter(&engine, false)
 
-	handler := arborist.ApplyMiddleware(&router)
+	config := &server.ServerConfig{
+		BaseURL:       fmt.Sprintf("http://localhost%s", addr),
+		EndpointInfo:  server.Endpoints,
+		StrictSlashes: true,
+	}
 
-	server := &http.Server{
+	router := server.MakeRouter(engine, config)
+	handler := server.ApplyMiddleware(&router)
+
+	arborist_server := &http.Server{
 		Addr:         addr,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		ErrorLog:     logger,
 		Handler:      handler,
 	}
-	logger.Println(fmt.Sprintf("serving at %s", server.Addr))
-	server.ListenAndServe()
+	logger.Println(fmt.Sprintf("serving at %s", arborist_server.Addr))
+	arborist_server.ListenAndServe()
 }
