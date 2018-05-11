@@ -1,6 +1,8 @@
 package arborist
 
-import ()
+import (
+	"errors"
+)
 
 // The wildcard "*" in a permission or action field denotes that the field
 // should validate against any input.
@@ -65,6 +67,14 @@ func (action Action) validate(try_action Action) actionValidation {
 	}
 }
 
+func (action *Action) toJSON() ActionJSON {
+	return ActionJSON{
+		Service:  action.Service.ID,
+		Resource: action.Resource.ID,
+		Method:   action.Method,
+	}
+}
+
 // Represent an `Action` in JSON format.
 //
 // *Only* used for marshalling actions to and from JSON.
@@ -74,10 +84,19 @@ type ActionJSON struct {
 	Method   string `json:"method"`
 }
 
-func (action *Action) toJSON() ActionJSON {
-	return ActionJSON{
-		Service:  action.Service.ID,
-		Resource: action.Resource.ID,
-		Method:   action.Method,
+// Check that the fields in the action JSON are valid (non-empty).
+func (actionJSON ActionJSON) validateFields() error {
+	if actionJSON.Service == "" {
+		err := errors.New("field `service` cannot be empty")
+		return err
 	}
+	if actionJSON.Resource == "" {
+		err := errors.New("field `resource` cannot be empty")
+		return err
+	}
+	if actionJSON.Method == "" {
+		err := errors.New("field `method` cannot be empty")
+		return err
+	}
+	return nil
 }

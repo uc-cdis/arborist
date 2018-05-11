@@ -13,8 +13,8 @@ import (
 type Role struct {
 	ID          string
 	Tags        map[string]struct{}
-	Subroles    map[*Role]struct{}
 	Permissions map[*Permission]struct{}
+	Subroles    map[*Role]struct{}
 
 	Parent *Role
 }
@@ -65,20 +65,13 @@ func (role *Role) insert(subrole *Role) error {
 	return err
 }
 
+// permit records that this role allows the given permission, adding it to the
+// set of permissions this role grants.
 func (role *Role) permit(permission *Permission) {
 	role.Permissions[permission] = struct{}{}
 }
 
-func (role *Role) filter(predicate func(Role) bool) []*Role {
-	var result []*Role
-	for _, r := range role.allSubroles() {
-		if predicate(*r) {
-			result = append(result, r)
-		}
-	}
-	return result
-}
-
+// hasTags checks if this role contains all the tags in the given list.
 func (role *Role) hasTags(tags []string) bool {
 	result := true
 	for _, tag := range tags {
@@ -90,6 +83,8 @@ func (role *Role) hasTags(tags []string) bool {
 	return result
 }
 
+// allSubroles returns a slice of all the subroles accessible in the tree
+// beneath this role.
 func (role *Role) allSubroles() []*Role {
 	var result []*Role
 	var queue roleQueue
@@ -106,9 +101,9 @@ func (role *Role) allSubroles() []*Role {
 	return result
 }
 
-// Append the contents of all the fields in `input_role` onto the existing
-// fields in `role`. This can include overwriting the current name with a new
-// name given in the input role.
+// update appends the contents of all the fields in `input_role` onto the
+// existing fields in `role`. This can include overwriting the current name with
+// a new name given in the input role.
 func (role *Role) update(input_role *Role) {
 	if input_role.ID != "" {
 		role.ID = input_role.ID
@@ -127,8 +122,8 @@ func (role *Role) update(input_role *Role) {
 	}
 }
 
-// Collect all the permissions this role implies, accumulating the permissions
-// for every subrole starting from this one.
+// allPermissions collects all the permissions this role implies, accumulating
+// the permissions for every subrole starting from this one.
 func (role *Role) allPermissions() Permissions {
 	var permissions Permissions
 
@@ -141,6 +136,8 @@ func (role *Role) allPermissions() Permissions {
 	return permissions
 }
 
+// validate checks if the attempted action and constraints are allowed under
+// this role.
 func (role *Role) validate(try_action Action, try_constraints Constraints) authResponse {
 	auth := role.allPermissions().validate(try_action, try_constraints)
 	if auth.Auth {
@@ -149,7 +146,7 @@ func (role *Role) validate(try_action Action, try_constraints Constraints) authR
 	return auth
 }
 
-// Convert a `Role` to a `RoleJSON`.
+// toJSON converts a `Role` to a `RoleJSON`.
 func (role *Role) toJSON() RoleJSON {
 	var i uint
 
@@ -179,10 +176,10 @@ func (role *Role) toJSON() RoleJSON {
 	}
 }
 
-// Represent a `Role` in JSON format. In particular, the subroles, permissions,
-// and tags, which are stored as maps in the role, should should just be arrays
-// in the JSON output. This is *only* used for marshalling roles to and from
-// JSON.
+// RoleJSON represents a `Role` in JSON format. In particular, the subroles,
+// permissions, and tags, which are stored as maps in the role, should should
+// just be arrays in the JSON output. This is *only* used for marshalling roles
+// to and from JSON.
 type RoleJSON struct {
 	ID          string           `json:"id"`
 	Tags        []string         `json:"tags"`
@@ -190,6 +187,8 @@ type RoleJSON struct {
 	Permissions []PermissionJSON `json:"permissions"`
 }
 
+// RoleQueue provides utility of iterating through a queue of roles (used by the
+// engine for traversing through the roles tree).
 type roleQueue []*Role
 
 func newRoleQueue() roleQueue {

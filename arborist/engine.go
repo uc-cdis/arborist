@@ -31,7 +31,8 @@ type AuthEngine struct {
 	services map[string]*Service
 }
 
-// Create a new engine with a blank role tree (containing just the root role).
+// NewAuthEngine creates a new engine with a blank role tree (containing just
+// the root role).
 func NewAuthEngine() (*AuthEngine, error) {
 	root_role, err := NewRole("root")
 	if err != nil {
@@ -58,7 +59,7 @@ func NewAuthEngine() (*AuthEngine, error) {
 	return engine, nil
 }
 
-// Return just the names of all the roles stored in the engine.
+// ListRoleNames returns just the names of all the roles stored in the engine.
 func (engine *AuthEngine) ListRoleNames() []string {
 	var result []string = make([]string, 0)
 	for role_name := range engine.roles {
@@ -67,7 +68,8 @@ func (engine *AuthEngine) ListRoleNames() []string {
 	return result
 }
 
-// Return just the names of the services that have been stored.
+// ListServiceNames returns just the names of the services that have been
+// stored.
 func (engine *AuthEngine) ListServiceNames() []string {
 	var result []string = make([]string, 0)
 	for service_name := range engine.services {
@@ -76,9 +78,10 @@ func (engine *AuthEngine) ListServiceNames() []string {
 	return result
 }
 
-// Return slice of all the names of the resources stored in the engine.
+// ListResourceNames returns a slice of all the names of the resources stored in
+// the engine.
 func (engine *AuthEngine) ListResourceNames() []string {
-	var result []string = make([]string, 0)
+	var result []string
 	for resource_name := range engine.resources {
 		result = append(result, resource_name)
 	}
@@ -118,7 +121,8 @@ func (engine *AuthEngine) allRoles() []*Role {
 	return engine.root_role.allSubroles()
 }
 
-// Look up the first role in the tree satisfying the predicate function.
+// findRole looks up the first role in the tree satisfying the predicate
+// function.
 func (engine *AuthEngine) findRole(predicate func(Role) bool) (*Role, error) {
 	var result_role *Role
 	var err error
@@ -133,16 +137,19 @@ func (engine *AuthEngine) findRole(predicate func(Role) bool) (*Role, error) {
 	return result_role, err
 }
 
-// Look up a role with the given name. (Basically a special case of `findRole`.)
-func (engine *AuthEngine) FindRoleNamed(ID string) (*Role, error) {
-	return engine.findRole(func(role Role) bool { return role.ID == ID })
+// FindRoleNamed looks up a role with the given name. (Basically a special case
+// of `findRole`.)
+func (engine *AuthEngine) FindRoleNamed(ID string) *Role {
+	return engine.roles[ID]
 }
 
+// FindServiceNamed looks up a service with the given ID from the engine.
 func (engine *AuthEngine) FindServiceNamed(id string) *Service {
 	return engine.services[id]
 }
 
-// Look up a service by ID, or create it if it doesn't exist.
+// findOrCreateService looks up a service by ID, or create it if it doesn't
+// exist.
 func (engine *AuthEngine) findOrCreateService(id string) (*Service, error) {
 	service, exists := engine.services[id]
 	if !exists {
@@ -150,13 +157,13 @@ func (engine *AuthEngine) findOrCreateService(id string) (*Service, error) {
 		service = NewService(id)
 		engine.services[id] = service
 	}
-
 	return service, nil
 }
 
-// Look up the resource with ID `resourceID` under the service with ID
-// `serviceID`, or create it if it doesn't exist. (This will *not* do anything
-// for the service if it doesn't exist, so handle that part first.)
+// findOrCreateResource looks up the resource with ID `resourceID` under the
+// service with ID `serviceID`, or create it if it doesn't exist. (This will
+// *not* do anything for the service if it doesn't exist, so handle that part
+// first.)
 func (engine *AuthEngine) findOrCreateResource(service *Service, resourceID string) *Resource {
 	resource, contains := engine.resources[service.ID][resourceID]
 	if contains {
@@ -168,25 +175,28 @@ func (engine *AuthEngine) findOrCreateResource(service *Service, resourceID stri
 	}
 }
 
+// LoadRoleFromJSON takes a roleJSON and handles inserting it into the engine,
+// as a new subtree immediately under the root role.
 func (engine *AuthEngine) LoadRoleFromJSON(roleJSON RoleJSON) error {
 	role, err := engine.recursivelyLoadRoleFromJSON(roleJSON)
 	if err != nil {
 		return err
 	}
 
-	// Link the created role under the root role and record its ID in the
-	// engine.
+	// Link the created role under the root role.
 	engine.root_role.Subroles[role] = struct{}{}
-	engine.roles[role.ID] = role
 
 	return nil
 }
 
-// Given some JSON input which should describe a new role, validate the JSON
-// input and construct a new `Role` which has pointers correctly aimed into the
-// roles, permissions, etc. that exist in the engine already.
+// recursivelyLoadRoleFromJSON, given some JSON input which should describe a
+// new role, validates the JSON input and constructs a new `Role` which has
+// pointers correctly aimed into the roles, permissions, etc. that exist in the
+// engine already. However it does nothing to actually add *this* role to the
+// engine.
 func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role, error) {
-	// Make sure a role with this name doesn't exist yet.
+	// Make sure a role with this name doesn't exist yet (return an error if
+	// there is one).
 	_, exists := engine.roles[roleJSON.ID]
 	if exists {
 		err := errors.New("role already exists")
@@ -225,14 +235,16 @@ func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role,
 		subrole.Parent = role
 	}
 
+	// Record the role in the engine.
+	engine.roles[role.ID] = role
+
 	return role, nil
 }
 
+// updateRoleWithJSON looks up an existing role by ID and "appends" some
+// additional content to it from `additionJSON`.
 func (engine *AuthEngine) updateRoleWithJSON(roleID string, additionJSON RoleJSON) error {
-	role, err := engine.FindRoleNamed(roleID)
-	if err != nil {
-		return err
-	}
+	role := engine.FindRoleNamed(roleID)
 	roleAdditions, err := engine.recursivelyLoadRoleFromJSON(additionJSON)
 	if err != nil {
 		return err
@@ -241,16 +253,17 @@ func (engine *AuthEngine) updateRoleWithJSON(roleID string, additionJSON RoleJSO
 	return nil
 }
 
-// If there are no longer any roles which grant the given permission, then
-// remove it from the set of permissions listed in the engine.
+// dropPermissionIfOrphaned, if there are no longer any roles which grant the
+// given `permission`, removes it from the set of permissions listed in the
+// engine.
 func (engine *AuthEngine) dropPermissionIfOrphaned(permission *Permission) {
 	if len(permission.rolesGranting) == 0 {
 		delete(engine.permissions, permission.ID)
 	}
 }
 
-// Load a permission from some JSON and create new sub-fields in the engine as
-// necessary.
+// LoadPermissionFromJSON loads a permission from some JSON and creates new
+// sub-fields in the engine as necessary.
 func (engine *AuthEngine) LoadPermissionFromJSON(permissionJSON PermissionJSON) (*Permission, error) {
 	var permission *Permission = newPermission(permissionJSON.ID)
 	action, err := engine.actionFromJSON(permissionJSON.Action)
@@ -259,15 +272,23 @@ func (engine *AuthEngine) LoadPermissionFromJSON(permissionJSON PermissionJSON) 
 	}
 	permission.Action = *action
 	permission.Constraints = permissionJSON.Constraints
+
 	return permission, nil
 }
 
-// Load an `Action` from some JSON describing the action.
+// actionFromJSON loads an `Action` from some JSON describing the action.
 //
 // The engine attempts to look up the service and resource by their ID; if they
 // don't exist yet they are created and added to the engine, and the resource
 // will be "floating" (not connected to any other resources in the hierarchy).
+// Also note that if the function fails in the middle because the resource is
 func (engine *AuthEngine) actionFromJSON(actionJSON ActionJSON) (*Action, error) {
+	// Validate the fields on the action.
+	err := actionJSON.validateFields()
+	if err != nil {
+		return nil, err
+	}
+
 	var action *Action = newAction()
 
 	// Look up or create service and resource.
@@ -275,15 +296,12 @@ func (engine *AuthEngine) actionFromJSON(actionJSON ActionJSON) (*Action, error)
 	if err != nil {
 		return nil, err
 	}
-
 	resource := engine.findOrCreateResource(service, actionJSON.Resource)
-	if err != nil {
-		return nil, err
-	}
 
 	// Assign to the result `Action`.
 	action.Service = service
 	action.Resource = resource
+	action.Method = actionJSON.Method
 
 	return action, nil
 }
@@ -311,12 +329,16 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 
 // Insert a role as a child underneath the given parent role.
 func (engine *AuthEngine) insertRoleAt(parent_role Role, child_role Role) error {
-	parent, err := engine.FindRoleNamed(parent_role.ID)
-	if err != nil {
-		return err
-	}
+	parent := engine.FindRoleNamed(parent_role.ID)
 	parent.Subroles[&child_role] = struct{}{}
 	return nil
+}
+
+func (engine *AuthEngine) detachRole(role *Role) {
+	// Remove the role from its parent's set of subroles.
+	delete(role.Parent.Subroles, role)
+	// Remove the role from the engine.
+	delete(engine.roles, role.ID)
 }
 
 // Parameters that constitute an authorization request:

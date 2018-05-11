@@ -118,13 +118,14 @@ func handleRoleCreate(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
+// getRoleFromPath extracts the role ID from a path like `/role/{role}`.
 func getRoleFromPath(r *http.Request) (string, error) {
-	role_name, contains := mux.Vars(r)["role"]
+	roleID, contains := mux.Vars(r)["role"]
 	if !contains {
 		err := errors.New("path missing role component")
 		return "", err
 	}
-	return role_name, nil
+	return roleID, nil
 }
 
 // Handle `GET` `/role/{role}`.

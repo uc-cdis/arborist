@@ -45,11 +45,10 @@ type Permission struct {
 
 // Create a new `Permission`.
 func newPermission(ID string) *Permission {
-	constraints := make(Constraints)
 	return &Permission{
 		ID:            ID,
 		Action:        *newAction(),
-		Constraints:   constraints,
+		Constraints:   make(map[string]string),
 		rolesGranting: make(map[string]struct{}),
 	}
 }

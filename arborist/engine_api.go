@@ -12,12 +12,12 @@ import (
 	"net/http"
 )
 
-const JSONPREFIX = ""
-const JSONINDENT = "    "
+const jsonPrefix = ""
+const jsonIndent = "  "
 
 // Local rebinding to use specific JSON indendation.
 func marshal(v interface{}) ([]byte, error) {
-	return json.MarshalIndent(v, JSONPREFIX, JSONINDENT)
+	return json.MarshalIndent(v, jsonPrefix, jsonIndent)
 }
 
 // General struct for containing information desccribing a response from the
@@ -41,7 +41,8 @@ type ResourcesList struct {
 	Resources []string `json:"resources"`
 }
 
-// Wrapper struct to store an error to convert to JSON.
+// Wrapper struct to store an error to convert to JSON. (This is just so the
+// JSON can look like `{"error": {...}}`.)
 type ErrorJSON struct {
 	Error errorInformation `json:"error"`
 }
@@ -62,30 +63,48 @@ type errorInformation struct {
 
 // Return an operation indicating that arborist failed to marshal some JSON.
 func failedMarshal(err error) ArboristOperation {
+	code := http.StatusInternalServerError
 	errorInfo := errorInformation{
 		Message: fmt.Sprintf("failed to marshal JSON: %s", err),
-		Code:    http.StatusInternalServerError,
+		Code:    code,
 	}
 	errorJSON := ErrorJSON{errorInfo}
 	return ArboristOperation{
 		Success: false,
-		Status:  http.StatusInternalServerError,
+		Status:  code,
 		JSON:    errorJSON.marshal(),
 	}
 }
 
 func badRequest(msg string) ArboristOperation {
+	code := http.StatusBadRequest
 	errorJSON := ErrorJSON{errorInformation{
 		Message: msg,
-		Code:    http.StatusBadRequest,
+		Code:    code,
 	}}
 	return ArboristOperation{
 		Success: false,
-		Status:  http.StatusBadRequest,
+		Status:  code,
 		JSON:    errorJSON.marshal(),
 	}
 }
 
+func roleNotExists(roleID string) ArboristOperation {
+	msg := fmt.Sprintf("no role exists with ID: %s", roleID)
+	code := http.StatusNotFound
+	errorJSON := ErrorJSON{errorInformation{
+		Message: msg,
+		Code:    code,
+	}}
+	return ArboristOperation{
+		Success: false,
+		Status:  code,
+		JSON:    errorJSON.marshal(),
+	}
+}
+
+// ListResources returns the list of just the names of all the roles that exist
+// in the engine.
 func (engine *AuthEngine) ListResources() ArboristOperation {
 	resources := ResourcesList{
 		Resources: engine.ListResourceNames(),
@@ -128,13 +147,13 @@ func (engine *AuthEngine) CreateRole(roleJSONBytes []byte) ArboristOperation {
 }
 
 func (engine *AuthEngine) WriteRole(roleID string) ArboristOperation {
-	role, err := engine.FindRoleNamed(roleID)
-	if err != nil {
-		return badRequest(fmt.Sprint(err))
+	role := engine.FindRoleNamed(roleID)
+	if role == nil {
+		return roleNotExists(roleID)
 	}
 
 	roleJSON := role.toJSON()
-	jsonBytes, err := json.Marshal(roleJSON)
+	jsonBytes, err := marshal(roleJSON)
 	if err != nil {
 		return failedMarshal(err)
 	}
@@ -173,11 +192,16 @@ func (engine *AuthEngine) UpdateRole(roleID string, roleJSONBytes []byte) Arbori
 // Given some JSON input describing a role, validate the input and overwrite the
 // exiting role with the new one parsed from the JSON.
 func (engine *AuthEngine) OverwriteRoleWithJSON(roleID string, input []byte) ArboristOperation {
+	var roleJSON *RoleJSON
+	err := json.Unmarshal(input, roleJSON)
+	if err != nil {
+		return badRequest(fmt.Sprint(err))
+	}
+
 	// To overwrite the role, just load the JSON into a new role as with
 	// inserting a new role beneath the root, and switch the role to point at
 	// the new value.
-
-	// TODO
+	role := engine.recursivelyLoadRoleFromJSON(*roleJSON)
 
 	return ArboristOperation{}
 }
@@ -186,9 +210,9 @@ func (engine *AuthEngine) OverwriteRoleWithJSON(roleID string, input []byte) Arb
 // from beneath this role, and if there were permissions granted by only that
 // role then the engine will also drop those.
 func (engine *AuthEngine) DropRole(roleID string) ArboristOperation {
-	role, err := engine.FindRoleNamed(roleID)
-	if err != nil {
-		return badRequest(fmt.Sprint(err))
+	role := engine.FindRoleNamed(roleID)
+	if role == nil {
+		return roleNotExists(roleID)
 	}
 
 	all_roles_to_drop := role.allSubroles()
@@ -199,14 +223,7 @@ func (engine *AuthEngine) DropRole(roleID string) ArboristOperation {
 			permission.noLongerGrantedBy(role)
 			engine.dropPermissionIfOrphaned(permission)
 		}
-
-		// Disassociate the role from its parent role. (The parent role should never
-		// be nil.)
-		parent_role := role.Parent
-		delete(parent_role.Subroles, role)
-
-		// Remove the role from the engine's role map.
-		delete(engine.roles, role.ID)
+		engine.detachRole(role)
 	}
 
 	return ArboristOperation{
