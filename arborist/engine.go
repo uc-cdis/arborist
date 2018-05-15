@@ -194,8 +194,8 @@ func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role,
 		return nil, err
 	}
 
-	for _, tag := range roleJSON.Tags {
-		role.Tags[tag] = struct{}{}
+	for tag, value := range roleJSON.Tags {
+		role.Tags[tag] = value
 	}
 
 	// Load permissions for this role from the JSON.
@@ -282,7 +282,7 @@ func (engine *AuthEngine) actionFromJSON(actionJSON ActionJSON) (*Action, error)
 	if err != nil {
 		return nil, err
 	}
-	resource := engine.findOrCreateResource(service, actionJSON.Resource)
+	resource := engine.findOrCreateResource(actionJSON.Resource)
 
 	// Assign to the result `Action`.
 	action.Service = service
@@ -300,7 +300,7 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 
 	// Load in the resources from the mapping given, creating them as necessary.
 	for uri, resource_name := range serviceJSON.URIsToResources {
-		resource := engine.findOrCreateResource(service, resource_name)
+		resource := engine.findOrCreateResource(resource_name)
 		service.uri_to_resource[uri] = resource
 	}
 
@@ -341,10 +341,10 @@ func (engine *AuthEngine) detachRoleRecursively(role *Role) {
 // unmarshalling from JSON, because this requires the engine to look up the
 // resource. Parse an `authRequest` using the `AuthEngine.ParseRequest` function.
 type authRequest struct {
-	Roles       []*Role     `json:"roles"`
-	Tags        []string    `json:"tags"`
-	Action      Action      `json:"actions"`
-	Constraints Constraints `json:"constraints"`
+	Roles       []*Role           `json:"roles"`
+	Tags        map[string]string `json:"tags"`
+	Action      Action            `json:"actions"`
+	Constraints Constraints       `json:"constraints"`
 }
 
 func (engine *AuthEngine) ParseRequest(body []byte) (*authRequest, error) {

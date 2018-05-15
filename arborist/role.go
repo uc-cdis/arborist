@@ -12,7 +12,7 @@ import (
 // through a slice.)
 type Role struct {
 	ID          string
-	Tags        map[string]struct{}
+	Tags        map[string]string
 	Permissions map[*Permission]struct{}
 	Subroles    map[*Role]struct{}
 
@@ -31,7 +31,7 @@ func NewRole(ID string) (*Role, error) {
 
 	role = Role{
 		ID:          ID,
-		Tags:        make(map[string]struct{}),
+		Tags:        make(map[string]string),
 		Permissions: make(map[*Permission]struct{}),
 		Subroles:    make(map[*Role]struct{}),
 		Parent:      nil,
@@ -72,10 +72,11 @@ func (role *Role) permit(permission *Permission) {
 }
 
 // hasTags checks if this role contains all the tags in the given list.
-func (role *Role) hasTags(tags []string) bool {
+func (role *Role) hasTags(tags map[string]string) bool {
 	result := true
-	for _, tag := range tags {
-		if _, contains := role.Tags[tag]; !contains {
+	for inputTag, inputValue := range tags {
+		roleValue, contains := role.Tags[inputTag]
+		if !contains || roleValue != inputValue {
 			result = false
 			break
 		}
@@ -117,8 +118,8 @@ func (role *Role) update(input_role *Role) {
 		role.Permissions[permission] = struct{}{}
 	}
 
-	for tag := range input_role.Tags {
-		role.Tags[tag] = struct{}{}
+	for tag, value := range input_role.Tags {
+		role.Tags[tag] = value
 	}
 }
 
@@ -162,17 +163,11 @@ func (role *Role) toJSON() RoleJSON {
 		permissions[i] = permission.toJSON()
 	}
 
-	tags := make([]string, len(role.Tags))
-	i = 0
-	for tag := range role.Tags {
-		tags[i] = tag
-	}
-
 	return RoleJSON{
 		ID:          role.ID,
 		Subroles:    subroles,
 		Permissions: permissions,
-		Tags:        tags,
+		Tags:        role.Tags,
 	}
 }
 
@@ -181,10 +176,10 @@ func (role *Role) toJSON() RoleJSON {
 // just be arrays in the JSON output. This is *only* used for marshalling roles
 // to and from JSON.
 type RoleJSON struct {
-	ID          string           `json:"id"`
-	Tags        []string         `json:"tags"`
-	Subroles    []RoleJSON       `json:"subroles"`
-	Permissions []PermissionJSON `json:"permissions"`
+	ID          string            `json:"id"`
+	Tags        map[string]string `json:"tags"`
+	Subroles    []RoleJSON        `json:"subroles"`
+	Permissions []PermissionJSON  `json:"permissions"`
 }
 
 // RoleQueue provides utility of iterating through a queue of roles (used by the

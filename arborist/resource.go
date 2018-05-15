@@ -2,17 +2,19 @@ package arborist
 
 import ()
 
-// Representation of a resource (thing to which access is allowed). Resources
-// also have a hierarchical organization, where the children are meant to be
-// finer-grained levels of authorization. Resources must be uniquely identified
-// and the auth engine must maintain the collection of resource IDs.
+// Resource is a representation of a thing to which access is controlled.
+// Resources also have a hierarchical organization, where the children are
+// meant to be finer-grained levels of authorization. Resources must be
+// uniquely identified and the auth engine must maintain the collection of
+// resource IDs, validating their uniqueness as they are added.
 type Resource struct {
 	ID           string
 	subresources map[*Resource]struct{}
 	parent       *Resource
 }
 
-// Initialize a resource with
+// NewResource initializes a resource with the given ID and otherwise empty
+// fields.
 func NewResource(ID string) *Resource {
 	return &Resource{
 		ID:           ID,
@@ -21,13 +23,14 @@ func NewResource(ID string) *Resource {
 	}
 }
 
-// Test if two resources are equal. This is implemented as their belonging to
-// the same service and their IDs matching.
+// equals tests if two resources are equal. This is implemented just as their
+// IDs matching.
 func (resource *Resource) equals(other Resource) bool {
 	return resource.ID == other.ID
 }
 
-// Check if this resource has a matching ancestor further up the tree.
+// hasAncestor checks if this resource has a matching ancestor further up the
+// tree.
 func (resource *Resource) hasAncestor(other Resource) bool {
 	// Start from this resource, and walk up the chain from parent to parent.
 	var r *Resource = resource
@@ -43,6 +46,8 @@ func (resource *Resource) hasAncestor(other Resource) bool {
 	return false
 }
 
+// toJSON converts a `Resource` into a `ResourceJSON` which in turn can be
+// used for serialization of the original resource into a JSON byte string.
 func (resource *Resource) toJSON() ResourceJSON {
 	var subresources []string
 	for subresource := range resource.subresources {
@@ -56,6 +61,7 @@ func (resource *Resource) toJSON() ResourceJSON {
 	}
 }
 
+// ResourceJSON defines a JSON-de/serializable representation of a `Resource`.
 type ResourceJSON struct {
 	ID           string   `json:"id"`
 	Subresources []string `json:"subresources"`
