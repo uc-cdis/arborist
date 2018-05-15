@@ -156,8 +156,8 @@ func (engine *AuthEngine) CreateRole(roleJSONBytes []byte) ArboristOperation {
 	}
 }
 
-// WriteRole, given a role ID, writes out the information about the role.
-func (engine *AuthEngine) WriteRole(roleID string) ArboristOperation {
+// ReadRole, given a role ID, writes out the information about the role.
+func (engine *AuthEngine) ReadRole(roleID string) ArboristOperation {
 	role := engine.FindRoleNamed(roleID)
 	if role == nil {
 		return roleNotExists(roleID)

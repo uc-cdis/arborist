@@ -140,7 +140,7 @@ func handleRoleGet(engine *arborist.AuthEngine) http.Handler {
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
 		}
-		operation := engine.WriteRole(roleID)
+		operation := engine.ReadRole(roleID)
 		operation.HandleResponseWriter(w)
 	})
 }
