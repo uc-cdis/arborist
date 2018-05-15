@@ -80,6 +80,15 @@ func roleNotExists(roleID string) ArboristOperation {
 	}
 }
 
+// successNoContent returns an operation for 204.
+func successNoContent() ArboristOperation {
+	return ArboristOperation{
+		Success: true,
+		Status:  http.StatusNoContent,
+		JSON:    []byte{},
+	}
+}
+
 // HandleResponseWriter takes a `ResponseWriter` and write the correct headers,
 // status, and response from the results of the operation.
 func (operation ArboristOperation) HandleResponseWriter(w http.ResponseWriter) {
@@ -263,7 +272,24 @@ func (engine *AuthEngine) DropRole(roleID string) ArboristOperation {
 	return success
 }
 
-func (engine *AuthEngine) AddService(serviceID string) {
+func (engine *AuthEngine) AddService(serviceID string) ArboristOperation {
 	service := NewService(serviceID)
 	engine.services[serviceID] = service
+	return successNoContent()
+}
+
+// Serialize dumps the state of the `engine` into a JSON blob, suitable for
+// storing on disk and eventually recreating the current state of the engine
+// from this JSON.
+func (engine *AuthEngine) Serialize() ArboristOperation {
+	engineJSON := engine.toJSON()
+	jsonBytes, err := marshal(engineJSON)
+	if err != nil {
+		return failedMarshal(err)
+	}
+	return ArboristOperation{
+		Success: true,
+		Status:  http.StatusOK,
+		JSON:    jsonBytes,
+	}
 }

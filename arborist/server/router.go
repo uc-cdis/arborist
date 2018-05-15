@@ -12,6 +12,7 @@ type EndpointInformation struct {
 	HealthCheckURL string `json:"health_check_url"`
 	AuthURL        string `json:"auth_url"`
 	RoleBaseURL    string `json:"role_base_url"`
+	EngineURL      string `json:"engine_url"`
 }
 
 func (endpointInfo EndpointInformation) fullURLs(baseURL string) EndpointInformation {
@@ -19,6 +20,7 @@ func (endpointInfo EndpointInformation) fullURLs(baseURL string) EndpointInforma
 		HealthCheckURL: fmt.Sprintf("%s%s", baseURL, endpointInfo.HealthCheckURL),
 		AuthURL:        fmt.Sprintf("%s%s", baseURL, endpointInfo.AuthURL),
 		RoleBaseURL:    fmt.Sprintf("%s%s", baseURL, endpointInfo.RoleBaseURL),
+		EngineURL:      fmt.Sprintf("%s%s", baseURL, endpointInfo.EngineURL),
 	}
 }
 
@@ -28,6 +30,7 @@ var Endpoints EndpointInformation = EndpointInformation{
 	HealthCheckURL: "/health",
 	AuthURL:        "/auth",
 	RoleBaseURL:    "/role/",
+	EngineURL:      "/engine",
 }
 
 // Create a router to serve endpoints for role CRUD and auth decisions.
@@ -41,6 +44,9 @@ func MakeRouter(engine *arborist.AuthEngine, config *ServerConfig) mux.Router {
 
 	// Healtcheck endpoint.
 	router.HandleFunc("/health", handleHealthCheck)
+
+	// Engine serialization endpoint.
+	router.Handle("/engine", handleSerializeEngine(engine)).Methods("GET")
 
 	// Endpoints for roles.
 	roles := router.PathPrefix("/role").Subrouter()

@@ -305,7 +305,7 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 	// Load in the resources from the mapping given, creating them as necessary.
 	for uri, resource_name := range serviceJSON.URIsToResources {
 		resource := engine.findOrCreateResource(resource_name)
-		service.uri_to_resource[uri] = resource
+		service.uriToResource[uri] = resource
 	}
 
 	// Put the service itself into the engine's mapping.
@@ -318,15 +318,15 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 // removes it from the mapping that the engine is tracking.
 func (engine *AuthEngine) detachRole(role *Role) {
 	// Remove the role from its parent's set of subroles. This *assumes* that
-	// the role is not the root role (and therefore must have a parnet), because
+	// the role is not the root role (and therefore must have a parent), because
 	// the root should never be detached.
 	delete(role.Parent.Subroles, role)
 	// Remove the role from the engine.
 	delete(engine.roles, role.ID)
 }
 
-// detachRole detaches the role from its parent in the hierarchy and also
-// removes it from the mapping that the engine is tracking.
+// detachRoleRecursively not only detaches the given role but traverses its
+// subroles and removes those from the engine's map as well.
 func (engine *AuthEngine) detachRoleRecursively(role *Role) {
 	engine.detachRole(role)
 	for _, subrole := range role.allSubroles() {

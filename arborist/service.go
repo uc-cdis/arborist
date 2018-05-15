@@ -9,21 +9,33 @@ type Service struct {
 	// Services can update arborist with entries mapping from URIs to resources,
 	// so then arborist can be given just a URI in place of a resource ID and
 	// translate that into the appropriate resource.
-	uri_to_resource map[string]*Resource
+	uriToResource map[string]*Resource
 }
 
 // Create a new `Service`.
 func NewService(id string) *Service {
 	return &Service{
-		ID:              id,
-		uri_to_resource: make(map[string]*Resource),
+		ID:            id,
+		uriToResource: make(map[string]*Resource),
 	}
 }
 
 // Record (overwriting, if necessary) the mapping from a URI to a particular
 // resource.
 func (service *Service) addURI(uri string, resource *Resource) {
-	service.uri_to_resource[uri] = resource
+	service.uriToResource[uri] = resource
+}
+
+func (service *Service) toJSON() ServiceJSON {
+	urisMap := make(map[string]string)
+	for uri, resource := range service.uriToResource {
+		urisMap[uri] = resource.ID
+	}
+
+	return ServiceJSON{
+		ID:              service.ID,
+		URIsToResources: urisMap,
+	}
 }
 
 // Struct to handle parsing service from JSON.

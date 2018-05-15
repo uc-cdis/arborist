@@ -12,13 +12,13 @@ import (
 	"github.com/uc-cdis/arborist/arborist"
 )
 
-// Return information about the available endpoints.
+// handleRoot returns information about the available endpoints.
 //
-// For the root endpoint.
+// For the root endpoint `/`.
 func handleRoot(config *ServerConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		endpoints := config.EndpointInfo.fullURLs(config.BaseURL)
-		response_json, err := json.MarshalIndent(endpoints, "", "    ")
+		responseJSON, err := json.MarshalIndent(endpoints, "", "    ")
 		if err != nil {
 			msg := "failed to marshal endpoint information"
 			http.Error(w, msg, http.StatusInternalServerError)
@@ -26,8 +26,20 @@ func handleRoot(config *ServerConfig) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(response_json)
+		w.Write(responseJSON)
 		w.WriteHeader(http.StatusOK)
+	})
+}
+
+// handleSerializeEngine handles `GET` `/engine`.
+//
+// Serialize the engine into a blob of JSON suitable for storing in a file, such
+// that the exact same configuration of the engine could be stood up again using
+// just the JSON file to load the engine from.
+func handleSerializeEngine(engine *arborist.AuthEngine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		operation := engine.Serialize()
+		operation.HandleResponseWriter(w)
 	})
 }
 
@@ -55,7 +67,7 @@ func handleAuth(engine *arborist.AuthEngine) http.Handler {
 		// Have the auth engine check for authorization and issue a response;
 		// put the response into JSON.
 		response := engine.CheckAuth(*request)
-		response_json, err := json.Marshal(response)
+		responseJSON, err := json.Marshal(response)
 		if err != nil {
 			msg := fmt.Sprintf("failed to format response as JSON; encountered error: %s", err)
 			http.Error(w, msg, http.StatusInternalServerError)
@@ -63,7 +75,7 @@ func handleAuth(engine *arborist.AuthEngine) http.Handler {
 
 		// Write out the response JSON and output 200.
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(response_json)
+		w.Write(responseJSON)
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -253,7 +265,7 @@ func handleServiceCreate(engine *arborist.AuthEngine) http.Handler {
 
 		// Make sure service doesn't exist already.
 		if engine.FindServiceNamed(service_name) != nil {
-			response_json, err := json.Marshal(struct {
+			responseJSON, err := json.Marshal(struct {
 				Error string `json:"error"`
 			}{
 				Error: fmt.Sprintf("service already exists with name: %s", service_name),
@@ -263,7 +275,7 @@ func handleServiceCreate(engine *arborist.AuthEngine) http.Handler {
 				http.Error(w, msg, http.StatusInternalServerError)
 				return
 			}
-			w.Write(response_json)
+			w.Write(responseJSON)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 		}
