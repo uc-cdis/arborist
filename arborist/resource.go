@@ -8,7 +8,6 @@ import ()
 // and the auth engine must maintain the collection of resource IDs.
 type Resource struct {
 	ID           string
-	service      *Service
 	subresources map[*Resource]struct{}
 	parent       *Resource
 }
@@ -16,7 +15,6 @@ type Resource struct {
 // Initialize a resource with
 func NewResource(ID string) *Resource {
 	return &Resource{
-		service:      nil,
 		ID:           ID,
 		subresources: make(map[*Resource]struct{}),
 		parent:       nil,
@@ -26,7 +24,7 @@ func NewResource(ID string) *Resource {
 // Test if two resources are equal. This is implemented as their belonging to
 // the same service and their IDs matching.
 func (resource *Resource) equals(other Resource) bool {
-	return resource.service == other.service && resource.ID == other.ID
+	return resource.ID == other.ID
 }
 
 // Check if this resource has a matching ancestor further up the tree.
@@ -43,4 +41,23 @@ func (resource *Resource) hasAncestor(other Resource) bool {
 	}
 	// Made it all the way up and never found a matching parent; return false.
 	return false
+}
+
+func (resource *Resource) toJSON() ResourceJSON {
+	var subresources []string
+	for subresource := range resource.subresources {
+		subresources = append(subresources, subresource.ID)
+	}
+
+	return ResourceJSON{
+		ID:           resource.ID,
+		Subresources: subresources,
+		Parent:       resource.parent.ID,
+	}
+}
+
+type ResourceJSON struct {
+	ID           string   `json:"id"`
+	Subresources []string `json:"subresources"`
+	Parent       string   `json:"parent"`
 }

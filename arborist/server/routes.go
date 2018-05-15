@@ -31,7 +31,7 @@ func handleRoot(config *ServerConfig) http.Handler {
 	})
 }
 
-// Handle `POST` `/auth`.
+// handleAuth handles `POST` `/auth`.
 //
 // Issue an authorization decision.
 func handleAuth(engine *arborist.AuthEngine) http.Handler {
@@ -68,14 +68,14 @@ func handleAuth(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle the health check route to indicate that the server is functioning.
-// Just return a 200 code and no response.
+// handleHealthCheck handles the health check route to indicate that the
+// server is functioning.  Just return a 200 code and no response.
 func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	// Just return 200.
 	w.WriteHeader(http.StatusOK)
 }
 
-// Handle `GET` `/role/`.
+// handleListRoles handles `GET` `/role/`.
 //
 // Return just a list of role names (and not any other information from the
 // roles). This way, the return value from this endpoint describes what are
@@ -100,7 +100,7 @@ func handleListRoles(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `POST` `/role/`.
+// handleRoleCreate handles `POST` `/role/`.
 //
 // Create a new role in the engine.
 func handleRoleCreate(engine *arborist.AuthEngine) http.Handler {
@@ -128,7 +128,7 @@ func getRoleFromPath(r *http.Request) (string, error) {
 	return roleID, nil
 }
 
-// Handle `GET` `/role/{role}`.
+// handleRoleGet handles `GET` `/role/{role}`.
 //
 // Return the information for the requested role in JSON.
 func handleRoleGet(engine *arborist.AuthEngine) http.Handler {
@@ -145,7 +145,7 @@ func handleRoleGet(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `PATCH` `/role/{role}`.
+// handleRoleUpdate handles `PATCH` `/role/{role}`.
 //
 // Update role in the engine and append some new content to it.
 func handleRoleUpdate(engine *arborist.AuthEngine) http.Handler {
@@ -169,7 +169,7 @@ func handleRoleUpdate(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `PUT` `/role/{role}`.
+// handleRoleOverwrite handles `PUT` `/role/{role}`.
 //
 // Overwrite a role in the engine with the new role specified in JSON body.
 //
@@ -215,7 +215,7 @@ func handleRoleDelete(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `GET` `/service/`.
+// handleListServices handles `GET` `/service/`.
 //
 // List the services that have been registered in the engine.
 func handleListServices(engine *arborist.AuthEngine) http.Handler {
@@ -238,7 +238,7 @@ func handleListServices(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `POST` `/service/`.
+// handleServiceCreate handles `POST` `/service/`.
 //
 // Register a new service.
 func handleServiceCreate(engine *arborist.AuthEngine) http.Handler {
@@ -272,7 +272,7 @@ func handleServiceCreate(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `GET` `/resource/`.
+// handleListResources handles `GET` `/resource/`.
 //
 // List the resources that exist in the engine.
 func handleListResources(engine *arborist.AuthEngine) http.Handler {
@@ -284,7 +284,7 @@ func handleListResources(engine *arborist.AuthEngine) http.Handler {
 	})
 }
 
-// Handle `POST` `/resource/`.
+// handleCreateResource handles `POST` `/resource/`.
 //
 // Create a new resource.
 func handleCreateResource(engine *arborist.AuthEngine) http.Handler {

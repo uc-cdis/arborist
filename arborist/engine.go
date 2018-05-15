@@ -18,11 +18,8 @@ type AuthEngine struct {
 	// new roles have unique names. Make sure to add new roles to the map.
 	roles map[string]*Role
 
-	// Keep track of the resources used. The resources are "scoped" by the
-	// service to which they belong, which is the string argument in the outer
-	// map. So, this `resources` field maps from strings for service name to
-	// maps of resource name to resource.
-	resources map[string]map[string]*Resource
+	// Keep track of the resources used, by ID.
+	resources map[string]*Resource
 
 	// Keep track of existing permissions by ID.
 	permissions map[string]*Permission
@@ -42,7 +39,7 @@ func NewAuthEngine() (*AuthEngine, error) {
 	roles := make(map[string]*Role, 1)
 	roles["root"] = root_role
 
-	resources := make(map[string]map[string]*Resource)
+	resources := make(map[string]*Resource)
 
 	permissions := make(map[string]*Permission)
 
@@ -91,28 +88,15 @@ func (engine *AuthEngine) ListResourceNames() []string {
 // Return a list of references to all the resources created in this engine.
 func (engine *AuthEngine) allResources() []*Resource {
 	var result []*Resource
-	for _, resources_map := range engine.resources {
-		for _, resource := range resources_map {
-			result = append(result, resource)
-		}
+	for _, resource := range engine.resources {
+		result = append(result, resource)
 	}
 	return result
 }
 
 // Look up a particular resource in a particular service.
-func (engine *AuthEngine) findResourceForSerivce(service string, resourceID string) *Resource {
-	serviceResources, exists := engine.resources[service]
-	if !exists {
-		return nil
-	}
-
-	for _, resource := range serviceResources {
-		if resource.ID == resourceID {
-			return resource
-		}
-	}
-
-	return nil
+func (engine *AuthEngine) findResource(resourceID string) *Resource {
+	return engine.resources[resourceID]
 }
 
 // Return a list of references to ALL the roles in the engine (basically
@@ -164,15 +148,18 @@ func (engine *AuthEngine) findOrCreateService(id string) (*Service, error) {
 // service with ID `serviceID`, or create it if it doesn't exist. (This will
 // *not* do anything for the service if it doesn't exist, so handle that part
 // first.)
-func (engine *AuthEngine) findOrCreateResource(service *Service, resourceID string) *Resource {
-	resource, contains := engine.resources[service.ID][resourceID]
+func (engine *AuthEngine) findOrCreateResource(resourceID string) *Resource {
+	resource, contains := engine.resources[resourceID]
 	if contains {
 		return resource
 	} else {
 		resource = NewResource(resourceID)
-		resource.service = service
 		return resource
 	}
+}
+
+func (engine *AuthEngine) addNewRootNode(role *Role) {
+	engine.root_role.Subroles[role] = struct{}{}
 }
 
 // LoadRoleFromJSON takes a roleJSON and handles inserting it into the engine,
@@ -183,8 +170,7 @@ func (engine *AuthEngine) LoadRoleFromJSON(roleJSON RoleJSON) error {
 		return err
 	}
 
-	// Link the created role under the root role.
-	engine.root_role.Subroles[role] = struct{}{}
+	engine.addNewRootNode(role)
 
 	return nil
 }
@@ -312,9 +298,6 @@ func (engine *AuthEngine) actionFromJSON(actionJSON ActionJSON) (*Action, error)
 func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service, error) {
 	var service *Service = NewService(serviceJSON.ID)
 
-	// Create the resource map for this service in the engine.
-	engine.resources[service.ID] = make(map[string]*Resource)
-
 	// Load in the resources from the mapping given, creating them as necessary.
 	for uri, resource_name := range serviceJSON.URIsToResources {
 		resource := engine.findOrCreateResource(service, resource_name)
@@ -327,22 +310,28 @@ func (engine *AuthEngine) LoadServiceFromJSON(serviceJSON ServiceJSON) (*Service
 	return service, nil
 }
 
-// Insert a role as a child underneath the given parent role.
-func (engine *AuthEngine) insertRoleAt(parent_role Role, child_role Role) error {
-	parent := engine.FindRoleNamed(parent_role.ID)
-	parent.Subroles[&child_role] = struct{}{}
-	return nil
-}
-
+// detachRole detaches the role from its parent in the hierarchy and also
+// removes it from the mapping that the engine is tracking.
 func (engine *AuthEngine) detachRole(role *Role) {
-	// Remove the role from its parent's set of subroles.
+	// Remove the role from its parent's set of subroles. This *assumes* that
+	// the role is not the root role (and therefore must have a parnet), because
+	// the root should never be detached.
 	delete(role.Parent.Subroles, role)
 	// Remove the role from the engine.
 	delete(engine.roles, role.ID)
 }
 
-// Parameters that constitute an authorization request:
+// detachRole detaches the role from its parent in the hierarchy and also
+// removes it from the mapping that the engine is tracking.
+func (engine *AuthEngine) detachRoleRecursively(role *Role) {
+	engine.detachRole(role)
+	for _, subrole := range role.allSubroles() {
+		delete(engine.roles, subrole.ID)
+	}
+}
 
+// Parameters that constitute an authorization request:
+//
 //     - A list of roles the user possesses
 //     - A list of attempted actions for which the engine must authorize the
 //       user
@@ -363,10 +352,9 @@ func (engine *AuthEngine) ParseRequest(body []byte) (*authRequest, error) {
 	err := json.Unmarshal(body, request)
 
 	// Find the resource for this request.
-	service := request.Action.Service
 	resourceID := request.Action.Resource.ID
 
-	(*request).Action.Resource = engine.findResourceForSerivce(service.ID, resourceID)
+	(*request).Action.Resource = engine.findResource(resourceID)
 
 	return request, err
 }
