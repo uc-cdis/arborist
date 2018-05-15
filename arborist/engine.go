@@ -102,7 +102,11 @@ func (engine *AuthEngine) findResource(resourceID string) *Resource {
 // Return a list of references to ALL the roles in the engine (basically
 // flattening the tree).
 func (engine *AuthEngine) allRoles() []*Role {
-	return engine.root_role.allSubroles()
+	var result []*Role
+	for _, role := range engine.roles {
+		result = append(result, role)
+	}
+	return result
 }
 
 // findRole looks up the first role in the tree satisfying the predicate
