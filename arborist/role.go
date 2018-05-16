@@ -12,6 +12,7 @@ import (
 // through a slice.)
 type Role struct {
 	ID          string
+	Type        string
 	Tags        map[string]string
 	Permissions map[*Permission]struct{}
 	Subroles    map[*Role]struct{}
@@ -26,11 +27,12 @@ type Role struct {
 //     - The new role does not point to a parent node yet.
 //     - The role ID is not guaranteed to be unique here; the engine must check
 //       that.
-func NewRole(ID string) (*Role, error) {
+func NewRole(ID string, roleType string) (*Role, error) {
 	var role Role
 
 	role = Role{
 		ID:          ID,
+		Type:        roleType,
 		Tags:        make(map[string]string),
 		Permissions: make(map[*Permission]struct{}),
 		Subroles:    make(map[*Role]struct{}),
@@ -165,6 +167,7 @@ func (role *Role) toJSON() RoleJSON {
 
 	return RoleJSON{
 		ID:          role.ID,
+		Type:        role.Type,
 		Subroles:    subroles,
 		Permissions: permissions,
 		Tags:        role.Tags,
@@ -177,6 +180,7 @@ func (role *Role) toJSON() RoleJSON {
 // to and from JSON.
 type RoleJSON struct {
 	ID          string            `json:"id"`
+	Type        string            `json:"type"`
 	Tags        map[string]string `json:"tags"`
 	Subroles    []RoleJSON        `json:"subroles"`
 	Permissions []PermissionJSON  `json:"permissions"`

@@ -293,3 +293,8 @@ func (engine *AuthEngine) Serialize() ArboristOperation {
 		JSON:    jsonBytes,
 	}
 }
+
+// Deserialize loads the state of the engine from an `AuthEngineJSON`.
+func (engine *AuthEngine) Deserialize(engineJSON AuthEngineJSON) {
+
+}

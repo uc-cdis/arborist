@@ -6,8 +6,9 @@ import (
 	"sync"
 )
 
-// Represent the auth engine which contains the role forest (tree, really) and
-// can issue authorization decisions based on some input roles and the tree.
+// AuthEngine represents the auth engine which contains the role forest (tree,
+// really) and can issue authorization decisions based on some input roles and
+// the tree.
 type AuthEngine struct {
 	// The base role of the tree. The root role is kept empty aside from its
 	// subroles, which form the roots of trees in the forest.
@@ -31,7 +32,7 @@ type AuthEngine struct {
 // NewAuthEngine creates a new engine with a blank role tree (containing just
 // the root role).
 func NewAuthEngine() (*AuthEngine, error) {
-	root_role, err := NewRole("root")
+	root_role, err := NewRole("root", "root")
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +194,7 @@ func (engine *AuthEngine) recursivelyLoadRoleFromJSON(roleJSON RoleJSON) (*Role,
 		return nil, err
 	}
 
-	role, err := NewRole(roleJSON.ID)
+	role, err := NewRole(roleJSON.ID, roleJSON.Type)
 	if err != nil {
 		return nil, err
 	}
