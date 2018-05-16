@@ -345,10 +345,9 @@ func (engine *AuthEngine) detachRoleRecursively(role *Role) {
 // unmarshalling from JSON, because this requires the engine to look up the
 // resource. Parse an `authRequest` using the `AuthEngine.ParseRequest` function.
 type authRequest struct {
-	Roles       []*Role           `json:"roles"`
-	Tags        map[string]string `json:"tags"`
-	Action      Action            `json:"actions"`
-	Constraints Constraints       `json:"constraints"`
+	Roles       []*Role     `json:"roles"`
+	Action      Action      `json:"actions"`
+	Constraints Constraints `json:"constraints"`
 }
 
 func (engine *AuthEngine) ParseRequest(body []byte) (*authRequest, error) {
@@ -386,14 +385,6 @@ type authResponse struct {
 // Process an `authRequest` (which represents a request for authorization on an
 // action, given some roles held by the requester) and return an `authResponse`.
 func (engine *AuthEngine) CheckAuth(request authRequest) authResponse {
-	// Take only the roles with matching tags.
-	var roles []*Role
-	for _, role := range request.Roles {
-		if role.hasTags(request.Tags) {
-			roles = append(roles, role)
-		}
-	}
-
 	// This will be the default response that gets built up from the cases where
 	// the roles did not authorize the action, and returned if no authorization
 	// is found.
@@ -402,6 +393,11 @@ func (engine *AuthEngine) CheckAuth(request authRequest) authResponse {
 		Role_ID:                nil,
 		PermissionGranting:     nil,
 		PermissionsMismatching: make([]*Permission, 0),
+	}
+
+	roles := make([]*Role, len(engine.root_role.Subroles))
+	for role := range engine.root_role.Subroles {
+		roles = append(roles, role)
 	}
 
 	// We will concurrently have each role check for authorization for the
