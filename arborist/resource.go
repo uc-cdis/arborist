@@ -5,6 +5,13 @@ import (
 	"unicode/utf8"
 )
 
+// pathString defines the conversion from a list of individual resource names,
+// for instance `["root", "program", "project"]`, to the full path
+// `"/root/program/project"`.
+func pathString(segments []string) string {
+	return strings.Join([]string{"/", strings.Join(segments, "/")}, "")
+}
+
 // Resource defines a resource in the RBAC model, which is some entity to which
 // access should be controlled (such as a "project"). Policies bind Roles, which
 // allow for some permissions, to a set of Resources.
@@ -35,7 +42,9 @@ type Resource struct {
 	// The path for the resource, which is a list of strings used like a
 	// filepath, and formatted similarly with slashes delimiting each node in
 	// the path. Globally unique.
-	path []string
+	path string
+	// The individual resource names in the path.
+	pathSegments []string
 	// Some text describing the purpose of this resource.
 	description string
 	// Pointer to the parent node in the resource hierarchy. For example, if
@@ -69,18 +78,20 @@ func NewResource(
 		return nil, err
 	}
 
-	var path []string
+	var pathSegments []string
 	if parent != nil {
 		// For this case we have to copy the values out of the parent path
 		// into this one.
-		path = make([]string, len(parent.path)+1)
-		for i, p := range parent.path {
-			path[i] = p
+		pathSegments = make([]string, len(parent.pathSegments)+1)
+		for i, p := range parent.pathSegments {
+			pathSegments[i] = p
 		}
-		path[len(parent.path)] = name
+		pathSegments[len(parent.pathSegments)] = name
 	} else {
-		path = []string{name}
+		pathSegments = []string{name}
 	}
+
+	path := pathString(pathSegments)
 
 	if subresources == nil {
 		subresources = make(map[*Resource]struct{})
@@ -89,6 +100,7 @@ func NewResource(
 	resource := Resource{
 		name:         name,
 		path:         path,
+		pathSegments: pathSegments,
 		description:  description,
 		parent:       parent,
 		subresources: subresources,
@@ -123,10 +135,6 @@ func (resource *Resource) equals(other *Resource) bool {
 		}
 	}
 	return true
-}
-
-func (resource *Resource) pathString() string {
-	return strings.Join([]string{"/", strings.Join(resource.path, "/")}, "")
 }
 
 // Traverse does a basic BFS starting at the given resource and traversing

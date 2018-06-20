@@ -19,7 +19,7 @@ func (resource *Resource) toJSON() ResourceJSON {
 	}
 	resourceJSON := ResourceJSON{
 		Name:         resource.name,
-		Path:         resource.pathString(),
+		Path:         resource.path,
 		Description:  resource.description,
 		Subresources: subresources,
 	}

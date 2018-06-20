@@ -61,6 +61,25 @@ func TestTraverse(t *testing.T) {
 }
 
 func TestPathString(t *testing.T) {
+	check := func(expected string, result string) {
+		if result != expected {
+			t.Log("incorrect path")
+			t.Logf("expected: %s", expected)
+			t.Logf("result: %s", result)
+			t.Fail()
+		}
+	}
+
+	expected := "/root"
+	result := pathString([]string{"root"})
+	check(expected, result)
+
+	expected = "/root/a/b/c"
+	result = pathString([]string{"root", "a", "b", "c"})
+	check(expected, result)
+}
+
+func TestResourcePath(t *testing.T) {
 	root := resource("root", "", nil, nil)
 	node_a := resource("a", "", root, nil)
 	node_x := resource("x", "", root, nil)
@@ -77,13 +96,13 @@ func TestPathString(t *testing.T) {
 		}
 	}
 
-	check(root.pathString(), "/root")
-	check(node_a.pathString(), "/root/a")
-	check(node_x.pathString(), "/root/x")
-	check(node_a_b.pathString(), "/root/a/b")
-	check(node_a_b_c.pathString(), "/root/a/b/c")
-	check(node_a_b_d.pathString(), "/root/a/b/d")
-	check(node_a_b_e.pathString(), "/root/a/b/e")
+	check(root.path, "/root")
+	check(node_a.path, "/root/a")
+	check(node_x.path, "/root/x")
+	check(node_a_b.path, "/root/a/b")
+	check(node_a_b_c.path, "/root/a/b/c")
+	check(node_a_b_d.path, "/root/a/b/d")
+	check(node_a_b_e.path, "/root/a/b/e")
 }
 
 func TestEquals(t *testing.T) {
