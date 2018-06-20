@@ -71,14 +71,15 @@ func NewResource(
 
 	var path []string
 	if parent != nil {
-		path = parent.path
-	}
-	path = append(path, name)
-
-	// w h y
-	newPath := make([]string, len(path))
-	for i, p := range path {
-		newPath[i] = p
+		// For this case we have to copy the values out of the parent path
+		// into this one.
+		path = make([]string, len(parent.path)+1)
+		for i, p := range parent.path {
+			path[i] = p
+		}
+		path[len(parent.path)] = name
+	} else {
+		path = []string{name}
 	}
 
 	if subresources == nil {
@@ -87,7 +88,7 @@ func NewResource(
 
 	resource := Resource{
 		name:         name,
-		path:         newPath,
+		path:         path,
 		description:  description,
 		parent:       parent,
 		subresources: subresources,
@@ -98,6 +99,16 @@ func NewResource(
 	}
 
 	return &resource, nil
+}
+
+func (resource *Resource) addSubresource(sub *Resource) {
+	resource.subresources[sub] = struct{}{}
+	sub.parent = resource
+}
+
+func (resource *Resource) rmSubresource(sub *Resource) {
+	delete(resource.subresources, sub)
+	sub.parent = nil
 }
 
 func (resource *Resource) equals(other *Resource) bool {
