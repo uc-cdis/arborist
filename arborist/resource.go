@@ -1,69 +1,146 @@
 package arborist
 
-import ()
+import (
+	"strings"
+	"unicode/utf8"
+)
 
-// Resource is a representation of a thing to which access is controlled.
-// Resources also have a hierarchical organization, where the children are
-// meant to be finer-grained levels of authorization. Resources must be
-// uniquely identified and the auth engine must maintain the collection of
-// resource IDs, validating their uniqueness as they are added.
+// Resource defines a resource in the RBAC model, which is some entity to which
+// access should be controlled (such as a "project"). Policies bind Roles, which
+// allow for some permissions, to a set of Resources.
+//
+// Resources are uniquely identified by their full path (the sequence of names
+// starting from the root resource, continuing down to this one, joined by
+// '/'), rather than their "name", which may be the same across different
+// resources.
+//
+// Example serialization to JSON:
+//
+// {
+//     "description": "some_resource",
+//     "name": "foo",
+//     "path": "/service-x/resource-foo",
+//     "subresources": [
+//         "description": "some_subresource",
+//         "name": "bar",
+//         "path": "/service-x/resource-foo/bar",
+//         "subresources": [
+//             ...
+//         ]
+//     ]
+// }
 type Resource struct {
-	ID           string
+	// The final name of the resource. Not globally unique.
+	name string
+	// The path for the resource, which is a list of strings used like a
+	// filepath, and formatted similarly with slashes delimiting each node in
+	// the path. Globally unique.
+	path []string
+	// Some text describing the purpose of this resource.
+	description string
+	// Pointer to the parent node in the resource hierarchy. For example, if
+	// the resource is `/projects/foo/bar`, the parent is `/projects/foo`.
+	parent *Resource
+	// Set of pointers to child nodes. Basically, thinking of this resource as
+	// a directory, the subresources are the immediate contents of this
+	// directory.
 	subresources map[*Resource]struct{}
-	parent       *Resource
 }
 
-// NewResource initializes a resource with the given ID and otherwise empty
-// fields.
-func NewResource(ID string) *Resource {
-	return &Resource{
-		ID:           ID,
-		subresources: make(map[*Resource]struct{}),
-		parent:       nil,
+func validateResourceName(name string) error {
+	if !utf8.Valid([]byte(name)) {
+		return nameError(name, "resource", "only UTF8 allowed")
 	}
+
+	if strings.Contains(name, "/") {
+		return nameError(name, "resource", "can't use reserved character '/'")
+	}
+
+	return nil
 }
 
-// equals tests if two resources are equal. This is implemented just as their
-// IDs matching.
-func (resource *Resource) equals(other Resource) bool {
-	return resource.ID == other.ID
+func NewResource(
+	name string,
+	description string,
+	parent *Resource,
+	subresources map[*Resource]struct{},
+) (*Resource, error) {
+	if err := validateResourceName(name); err != nil {
+		return nil, err
+	}
+
+	var path []string
+	if parent != nil {
+		path = parent.path
+	}
+	path = append(path, name)
+
+	// w h y
+	newPath := make([]string, len(path))
+	for i, p := range path {
+		newPath[i] = p
+	}
+
+	if subresources == nil {
+		subresources = make(map[*Resource]struct{})
+	}
+
+	resource := Resource{
+		name:         name,
+		path:         newPath,
+		description:  description,
+		parent:       parent,
+		subresources: subresources,
+	}
+
+	if parent != nil {
+		parent.subresources[&resource] = struct{}{}
+	}
+
+	return &resource, nil
 }
 
-// hasAncestor checks if this resource has a matching ancestor further up the
-// tree.
-func (resource *Resource) hasAncestor(other Resource) bool {
-	// Start from this resource, and walk up the chain from parent to parent.
-	var r *Resource = resource
-	for r != nil {
-		// Move the pointer up to the parent of the previous resource.
-		r = r.parent
-		// If we find the resource return true.
-		if r.equals(other) {
-			return true
+func (resource *Resource) equals(other *Resource) bool {
+	pathLen := len(resource.path)
+	otherPathLen := len(other.path)
+	if pathLen != otherPathLen {
+		return false
+	}
+	for i := 0; i < pathLen; i++ {
+		if resource.path[i] != other.path[i] {
+			return false
 		}
 	}
-	// Made it all the way up and never found a matching parent; return false.
-	return false
+	return true
 }
 
-// toJSON converts a `Resource` into a `ResourceJSON` which in turn can be
-// used for serialization of the original resource into a JSON byte string.
-func (resource *Resource) toJSON() ResourceJSON {
-	var subresources []string
-	for subresource := range resource.subresources {
-		subresources = append(subresources, subresource.ID)
-	}
-
-	return ResourceJSON{
-		ID:           resource.ID,
-		Subresources: subresources,
-		Parent:       resource.parent.ID,
-	}
+func (resource *Resource) pathString() string {
+	return strings.Join([]string{"/", strings.Join(resource.path, "/")}, "")
 }
 
-// ResourceJSON defines a JSON-de/serializable representation of a `Resource`.
-type ResourceJSON struct {
-	ID           string   `json:"id"`
-	Subresources []string `json:"subresources"`
-	Parent       string   `json:"parent"`
+// Traverse does a basic BFS starting at the given resource and traversing
+// through all the subresources starting from that resource, writing the output
+// to a channel. It receives a channel (`done`) which can indicate to cut off
+// the output and return early.
+func (resource *Resource) traverse(done chan struct{}) <-chan *Resource {
+	result := make(chan *Resource, 1)
+
+	go func() {
+		var head *Resource
+		defer close(result)
+		queue := []*Resource{resource}
+		for len(queue) > 0 {
+			head, queue = queue[0], queue[1:]
+			select {
+			case result <- head:
+			case <-done:
+				return
+			}
+			for subnode := range head.subresources {
+				queue = append(queue, subnode)
+			}
+		}
+	}()
+
+	return result
 }

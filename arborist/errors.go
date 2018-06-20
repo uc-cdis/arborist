@@ -1,15 +1,11 @@
 package arborist
 
 import (
+	"errors"
 	"fmt"
 )
 
-// Error indicating that a role cannot be added because the name already exists
-// and belongs to a different role registered in the engine.
-type errorRoleNameTaken struct {
-	role_name string
-}
-
-func (e errorRoleNameTaken) Error() string {
-	return fmt.Sprintf("role already exists: `%s`", e.role_name)
+func nameError(name string, purpose string, reason string) error {
+	msg := fmt.Sprintf("invalid name %s for %s: %s", name, purpose, reason)
+	return errors.New(msg)
 }
