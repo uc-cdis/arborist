@@ -122,3 +122,46 @@ func (engine *Engine) giveAuthResponse(authRequest *AuthRequest) AuthResponse {
 	}
 	return AuthResponse{auth: false}
 }
+
+// The returned error is non-nil iff there is a role or a resource which was
+// used in the policy that does not exist in the engine.
+func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error) {
+	roles := make(map[*Role]struct{}, len(policyJSON.Roles))
+	for _, roleJSON := range policyJSON.Roles {
+		role, exists := engine.roles[roleJSON.ID]
+		if !exists {
+			err := notExist("role", "id", roleJSON.ID)
+			return nil, err
+		}
+		roles[role] = struct{}{}
+	}
+
+	resources := make(map[*Resource]struct{}, len(policyJSON.Resources))
+	for _, resourceJSON := range policyJSON.Resources {
+		resource, exists := engine.resources[resourceJSON.Path]
+		if !exists {
+			err := notExist("resource", "path", resourceJSON.Path)
+			return nil, err
+		}
+		resources[resource] = struct{}{}
+	}
+
+	policy := &Policy{
+		id:          policyJSON.ID,
+		description: policyJSON.Description,
+		roles:       roles,
+		resources:   resources,
+	}
+
+	return policy, nil
+}
+
+func (engine *Engine) createRoleFromJSON(roleJSON *RoleJSON) (*Role, error) {
+	// TODO
+	return nil, nil
+}
+
+func (engine *Engine) createResourceFromJSON(resourceJSON *ResourceJSON) (*Resource, error) {
+	// TODO
+	return nil, nil
+}

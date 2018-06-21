@@ -18,6 +18,13 @@ func writeJSON(w http.ResponseWriter, bytes []byte) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleHealthCheck handles the health check route to indicate that the
+// server is functioning. Just return a 200 code and no response.
+func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	// Just return 200.
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleRoot returns information about the available endpoints.
 //
 // For the root endpoint `/`.

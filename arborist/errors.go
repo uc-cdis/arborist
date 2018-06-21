@@ -14,3 +14,8 @@ func notExist(entity string, idType string, id string) error {
 	msg := fmt.Sprintf("%s with %s %s does not exist", entity, idType, id)
 	return errors.New(msg)
 }
+
+func alreadyExists(entity string, idType string, id string) error {
+	msg := fmt.Sprintf("%s with %s %s already exists", entity, idType, id)
+	return errors.New(msg)
+}
