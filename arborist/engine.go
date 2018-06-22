@@ -165,3 +165,17 @@ func (engine *Engine) createResourceFromJSON(resourceJSON *ResourceJSON) (*Resou
 	// TODO
 	return nil, nil
 }
+
+func (engine *Engine) updatePolicyWithJSON(policyID string, policyJSON *PolicyJSON) (*Policy, error) {
+	// TODO
+	return nil, nil
+}
+
+func (engine *Engine) removePolicy(policyID string) error {
+	_, exists := engine.policies[policyID]
+	if !exists {
+		return notExist("policy", "id", policyID)
+	}
+	delete(engine.policies, policyID)
+	return nil
+}

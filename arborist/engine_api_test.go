@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestJSONResponse(t *testing.T) {
+func TestResponse(t *testing.T) {
 	t.Run("addErrorJSON", func(t *testing.T) {
 		err := errors.New("example")
-		response := JSONResponse{InternalError: err}
+		response := Response{InternalError: err}
 		response.Code = 500
 		response.addErrorJSON()
 		result := string(response.Bytes)
@@ -20,7 +20,7 @@ func TestJSONResponse(t *testing.T) {
 		}
 
 		err = errors.New("user error")
-		response = JSONResponse{ExternalError: err}
+		response = Response{ExternalError: err}
 		response.Code = 400
 		response.addErrorJSON()
 		result = string(response.Bytes)

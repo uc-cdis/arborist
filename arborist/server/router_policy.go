@@ -1,7 +1,12 @@
+// This file defines addPolicyRouter for adding a router for the set of
+// endpoints under `/policy` to a main router. This router handles list,
+// create, read, update, and delete operations on the policies in the arborist
+// engine.
+
 package server
 
 import (
-	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -11,23 +16,50 @@ import (
 
 func handleListPolicies(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bytes, err := engine.HandleListPolicyIDsBytes()
-		if err != nil {
-			msg := fmt.Sprintf("%s", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, bytes)
+		engine.HandleListPolicyIDsBytes().Write(w)
 	})
 }
 
 func handlePolicyCreate(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO
+		body, err := ioutil.ReadAll(r.Body)
+		engine.HandleCreatePolicyBytes(body).Write(w)
 	})
 }
 
+func handlePolicyGet(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			writeJSONReadError(w, err)
+		}
+		policyID := mux.Vars(r)["policyID"]
+		engine.HandlePolicyRead(policyID).Write(w)
+	})
+}
+
+func handlePolicyUpdate(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioutil.ReadAll(r.Body)
+		policyID := mux.Vars(r)["policyID"]
+		engine.HandlePolicyUpdate(policyID, body).Write(w)
+	})
+}
+
+func handlePolicyRemove(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		policyID := mux.Vars(r)["policyID"]
+		engine.HandlePolicyRemove(policyID).Write(w)
+	})
+}
+
+// addPolicyRouter attaches the handlers defined in this file to a main router,
+// using the prefix `/policy`.
 func addPolicyRouter(mainRouter mux.Router, engine *arborist.Engine) {
 	policyRouter := mainRouter.PathPrefix("/policy").Subrouter()
 	policyRouter.Handle("/", handleListPolicies(engine)).Methods("GET")
+	policyRouter.Handle("/", handlePolicyCreate(engine)).Methods("POST")
+	policyRouter.Handle("/{policyID}", handlePolicyGet(engine)).Methods("GET")
+	policyRouter.Handle("/{policyID}", handlePolicyUpdate(engine)).Methods("PUT")
+	policyRouter.Handle("/{policyID}", handlePolicyRemove(engine)).Methods("DELETE")
 }

@@ -24,9 +24,9 @@ func pathString(segments []string) string {
 // Example serialization to JSON:
 //
 // {
-//     "description": "some_resource",
 //     "name": "foo",
 //     "path": "/service-x/resource-foo",
+//     "description": "some_resource",
 //     "subresources": [
 //         "description": "some_subresource",
 //         "name": "bar",

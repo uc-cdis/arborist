@@ -1,8 +1,5 @@
 // engine_api.go defines public methods for the Engine for use in the
 // application endpoints.
-//
-// These functions are mostly at the "highest level", using []byte types,
-// handling the deserialization of inputs and serialization of responses.
 
 package arborist
 
@@ -50,41 +47,51 @@ func (response *Response) writeBytes() []byte {
 	return response.Bytes
 }
 
+func (response *Response) Write(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(response.writeBytes())
+	if response.Code > 0 {
+		w.WriteHeader(response.Code)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func (engine *Engine) HandleAuthRequest(request *AuthRequest) AuthResponse {
 	return engine.giveAuthResponse(request)
 }
 
 // HandleAuthRequestBytes is a wrapper around HandleAuthRequest that includes
 // JSON encoding and decoding for the request and response bytes.
-func (engine *Engine) HandleAuthRequestBytes(bytes []byte) []byte {
+func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {
 	var authRequestJSON *AuthRequestJSON
 	err := json.Unmarshal(bytes, authRequestJSON)
 	if err != nil {
-		response := Response{
+		response := &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
 		}
-		return response.writeBytes()
+		return response
 	}
 	authRequest, err := engine.readAuthRequestFromJSON(*authRequestJSON)
 	if err != nil {
-		response := Response{
+		response := &Response{
 			InternalError: err,
 			Code:          http.StatusInternalServerError,
 		}
-		return response.writeBytes()
+		return response
 	}
 	authResponse := engine.HandleAuthRequest(authRequest)
 	responseBytes, err := json.Marshal(authResponse)
 	if err != nil {
-		response := Response{
+		response := &Response{
 			InternalError: err,
 			Code:          http.StatusInternalServerError,
 		}
-		return response.writeBytes()
+		return response
 	}
-	response := Response{Bytes: responseBytes, Code: http.StatusOK}
-	return response.writeBytes()
+	response := &Response{Bytes: responseBytes, Code: http.StatusOK}
+	return response
 }
 
 func (engine *Engine) HandleListPolicyIDsBytes() *Response {
@@ -175,4 +182,74 @@ func (engine *Engine) HandleCreateResource(resource *Resource) *Response {
 		Bytes: bytes,
 		Code:  http.StatusCreated,
 	}
+}
+
+func (engine *Engine) HandlePolicyRead(policyID string) *Response {
+	policy, exists := engine.policies[policyID]
+	if !exists {
+		err := notExist("policy", "id", policyID)
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusNotFound,
+		}
+	}
+	bytes, err := json.Marshal(policy.toJSON())
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	return &Response{
+		Bytes: bytes,
+		Code:  http.StatusOK,
+	}
+}
+
+func (engine *Engine) HandlePolicyUpdate(policyID string, bytes []byte) *Response {
+	var policyJSON *PolicyJSON
+	err := json.Unmarshal(bytes, policyJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	updatedPolicy, err := engine.updatePolicyWithJSON(policyID, policyJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	content := struct {
+		Updated PolicyJSON `json:"updated"`
+	}{
+		Updated: updatedPolicy.toJSON(),
+	}
+	responseBytes, err := json.Marshal(content)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+
+	return &Response{
+		Bytes: responseBytes,
+		Code:  http.StatusOK,
+	}
+}
+
+func (engine *Engine) HandlePolicyRemove(policyID string) *Response {
+	err := engine.removePolicy(policyID)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusNotFound,
+		}
+	}
+	return &Response{Code: http.StatusNoContent}
 }
