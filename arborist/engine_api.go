@@ -57,6 +57,8 @@ func (response *Response) Write(w http.ResponseWriter) {
 	}
 }
 
+// Handlers for auth requests
+
 func (engine *Engine) HandleAuthRequest(request *AuthRequest) AuthResponse {
 	return engine.giveAuthResponse(request)
 }
@@ -94,7 +96,9 @@ func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {
 	return response
 }
 
-func (engine *Engine) HandleListPolicyIDsBytes() *Response {
+// Handlers for Policy endpoints
+
+func (engine *Engine) HandleListPolicyIDs() *Response {
 	policyIDs := make([]string, len(engine.policies))
 	for policyID := range engine.policies {
 		policyIDs = append(policyIDs, policyID)
@@ -156,32 +160,6 @@ func (engine *Engine) HandleCreatePolicyBytes(bytes []byte) *Response {
 		}
 	}
 	return engine.HandleCreatePolicy(policy)
-}
-
-func (engine *Engine) HandleCreateResource(resource *Resource) *Response {
-	if _, exists := engine.resources[resource.path]; exists {
-		err := alreadyExists("resource", "path", resource.path)
-		return &Response{
-			ExternalError: err,
-			Code:          http.StatusConflict,
-		}
-	}
-	engine.resources[resource.path] = resource
-
-	content := struct {
-		Created ResourceJSON `json:"created"`
-	}{
-		Created: resource.toJSON(),
-	}
-	bytes, err := json.Marshal(content)
-	if err != nil {
-		panic(err)
-	}
-
-	return &Response{
-		Bytes: bytes,
-		Code:  http.StatusCreated,
-	}
 }
 
 func (engine *Engine) HandlePolicyRead(policyID string) *Response {
@@ -251,5 +229,125 @@ func (engine *Engine) HandlePolicyRemove(policyID string) *Response {
 			Code:          http.StatusNotFound,
 		}
 	}
+	return &Response{Code: http.StatusNoContent}
+}
+
+// Handlers for Resource endpoints
+
+func (engine *Engine) HandleCreateResource(resource *Resource) *Response {
+	if _, exists := engine.resources[resource.path]; exists {
+		err := alreadyExists("resource", "path", resource.path)
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusConflict,
+		}
+	}
+	engine.resources[resource.path] = resource
+
+	content := struct {
+		Created ResourceJSON `json:"created"`
+	}{
+		Created: resource.toJSON(),
+	}
+	bytes, err := json.Marshal(content)
+	if err != nil {
+		panic(err)
+	}
+
+	return &Response{
+		Bytes: bytes,
+		Code:  http.StatusCreated,
+	}
+}
+
+func (engine *Engine) HandleListResourcePaths() *Response {
+	content := struct {
+		Paths []string `json:""`
+	}{
+		Paths: engine.listResourcePaths(),
+	}
+	bytes, err := json.Marshal(content)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	return &Response{
+		Bytes: bytes,
+		Code:  http.StatusOK,
+	}
+}
+
+func (engine *Engine) HandleResourceRead(resourcePath string) *Response {
+	resourceJSON, err := engine.getResourceJSON(resourcePath)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusNotFound,
+		}
+	}
+	bytes, err := json.Marshal(resourceJSON)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	return &Response{
+		Bytes: bytes,
+		Code:  http.StatusOK,
+	}
+}
+
+func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
+	var resourceJSON *ResourceJSON
+	err := json.Unmarshal(bytes, resourceJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	resource, err := engine.addResourceFromJSON(resourceJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	content := struct {
+		Created ResourceJSON `json:"created"`
+	}{
+		Created: resource.toJSON(),
+	}
+	responseBytes, err := json.Marshal(content)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	return &Response{
+		Bytes: responseBytes,
+		Code:  http.StatusCreated,
+	}
+}
+
+func (engine *Engine) HandleResourceUpdate(resourcePath string, bytes []byte) *Response {
+	// TODO
+	return nil
+}
+
+func (engine *Engine) HandleResourceRemove(resourcePath string) *Response {
+	resource, exists := engine.resources[resourcePath]
+	if !exists {
+		err := notExist("resource", "path", resourcePath)
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusNotFound,
+		}
+	}
+	engine.removeResourceRecursively(resource)
 	return &Response{Code: http.StatusNoContent}
 }

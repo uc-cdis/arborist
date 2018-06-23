@@ -68,6 +68,15 @@ func validateResourceName(name string) error {
 	return nil
 }
 
+// NewResource sets up a new resource. If the parent is given then this
+// resource is attached as a subresource, and its path will be computed
+// accordingly (appending the name for this resource as the new last segment
+// after the path of the parent node). Returns an error if the name is invalid
+// as according to `validateResourceName`.
+//
+// NOTE: a resource may point to a parent resource, but until the engine runes
+// `addResource` (or the parent is otherwise modified), the parent resource
+// will not have a pointer to this resource as a subresource.
 func NewResource(
 	name string,
 	description string,
@@ -97,7 +106,7 @@ func NewResource(
 		subresources = make(map[*Resource]struct{})
 	}
 
-	resource := Resource{
+	resource := &Resource{
 		name:         name,
 		path:         path,
 		pathSegments: pathSegments,
@@ -107,10 +116,10 @@ func NewResource(
 	}
 
 	if parent != nil {
-		parent.subresources[&resource] = struct{}{}
+		parent.addSubresource(resource)
 	}
 
-	return &resource, nil
+	return resource, nil
 }
 
 func (resource *Resource) addSubresource(sub *Resource) {
