@@ -19,3 +19,14 @@ func alreadyExists(entity string, idType string, id string) error {
 	msg := fmt.Sprintf("%s with %s %s already exists", entity, idType, id)
 	return errors.New(msg)
 }
+
+func noDelete(entity string, idType string, identifier string, reason string) error {
+	msg := fmt.Sprintf(
+		"can't delete %s with %s %s; %s",
+		entity,
+		idType,
+		identifier,
+		reason,
+	)
+	return errors.New(msg)
+}

@@ -6,7 +6,3 @@ type AuthRequest struct {
 	action      *Action
 	constraints Constraints
 }
-
-type BulkAuthRequest struct {
-	requests []*AuthRequest
-}

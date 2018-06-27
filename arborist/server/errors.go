@@ -16,5 +16,7 @@ func writeJSONReadError(w http.ResponseWriter, err error) {
 	if err != nil {
 		panic(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bytes)
 	w.WriteHeader(http.StatusBadRequest)
 }

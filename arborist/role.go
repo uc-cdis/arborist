@@ -44,3 +44,15 @@ func (role *Role) allows(action *Action, constraints Constraints) bool {
 	}
 	return false
 }
+
+func (role *Role) appendFrom(other *Role) {
+	if other.id != "" {
+		role.id = other.id
+	}
+	if other.description != "" {
+		role.description = other.description
+	}
+	for permission := range other.permissions {
+		role.permissions[permission] = struct{}{}
+	}
+}

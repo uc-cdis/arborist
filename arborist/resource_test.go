@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"sort"
 	"testing"
 )
 
@@ -36,7 +37,12 @@ func TestTraverse(t *testing.T) {
 	for resource := range root.traverse(done) {
 		result = append(result, resource.name)
 	}
+	// The traversal order is not guaranteed to be exactly BFS because of the
+	// channels implementation, so sort the results to check all the nodes are
+	// visited.
+	sort.Strings(result)
 	expected := []string{"root", "a", "b", "c", "d", "e", "f"}
+	sort.Strings(expected)
 
 	// Check that all elements are the same in the result, and in BFS order.
 	same := true

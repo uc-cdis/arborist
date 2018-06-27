@@ -54,12 +54,11 @@ func handleAuth(engine *arborist.Engine) http.Handler {
 			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
-		responseJSON, err := engine.HandleAuthRequestBytes(body)
+		response := engine.HandleAuthRequestBytes(body)
+		err = response.Write(w)
 		if err != nil {
-			msg := fmt.Sprintf("failed to parse auth request; encountered error: %s", err)
-			http.Error(w, msg, http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, responseJSON)
 	})
 }

@@ -150,8 +150,10 @@ func (resource *Resource) equals(other *Resource) bool {
 // through all the subresources starting from that resource, writing the output
 // to a channel. It receives a channel (`done`) which can indicate to cut off
 // the output and return early.
+//
+// NOTE that the traversal order is not guaranteed to be anything in particular.
 func (resource *Resource) traverse(done chan struct{}) <-chan *Resource {
-	result := make(chan *Resource, 1)
+	result := make(chan *Resource)
 
 	go func() {
 		var head *Resource

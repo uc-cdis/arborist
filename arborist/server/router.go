@@ -2,8 +2,10 @@ package server
 
 import (
 	"fmt"
-	//"github.com/gorilla/mux"
-	//"github.com/uc-cdis/arborist/arborist"
+
+	"github.com/gorilla/mux"
+
+	"github.com/uc-cdis/arborist/arborist"
 )
 
 type EndpointInformation struct {
@@ -31,4 +33,18 @@ var Endpoints EndpointInformation = EndpointInformation{
 	AuthURL:        "/auth",
 	PolicyBaseURL:  "/policy/",
 	EngineURL:      "/engine",
+}
+
+func MakeRouter(engine *arborist.Engine, config *ServerConfig) *mux.Router {
+	router := mux.NewRouter().StrictSlash(config.StrictSlashes)
+	router.Handle("/", handleRoot(config)).Methods("GET")
+	router.HandleFunc("/health", handleHealthCheck).Methods("GET")
+	router.Handle("/auth", handleAuth(engine)).Methods("POST")
+
+	addEngineRouter(router, engine)
+	addResourceRouter(router, engine)
+	addRoleRouter(router, engine)
+	addPolicyRouter(router, engine)
+
+	return router
 }
