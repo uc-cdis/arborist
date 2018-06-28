@@ -16,7 +16,12 @@ import (
 
 func handleListResources(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		engine.HandleListResourcePaths().Write(w)
+		response := engine.HandleListResourcePaths()
+		err := response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
@@ -27,14 +32,24 @@ func handleResourceCreate(engine *arborist.Engine) http.Handler {
 			writeJSONReadError(w, err)
 			return
 		}
-		engine.HandleResourceCreate(body).Write(w)
+		response := engine.HandleResourceCreate(body)
+		err = response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
 func handleResourceGet(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resourcePath := mux.Vars(r)["resourcePath"]
-		engine.HandleResourceRead(resourcePath).Write(w)
+		response := engine.HandleResourceRead(resourcePath)
+		err := response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
@@ -46,14 +61,24 @@ func handleResourceUpdate(engine *arborist.Engine) http.Handler {
 			return
 		}
 		resourcePath := mux.Vars(r)["resourcePath"]
-		engine.HandleResourceUpdate(resourcePath, body).Write(w)
+		response := engine.HandleResourceUpdate(resourcePath, body)
+		err = response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
 func handleResourceRemove(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resourcePath := mux.Vars(r)["resourcePath"]
-		engine.HandleResourceRemove(resourcePath).Write(w)
+		response := engine.HandleResourceRemove(resourcePath)
+		err := response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 

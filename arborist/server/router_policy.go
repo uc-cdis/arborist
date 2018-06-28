@@ -16,7 +16,7 @@ import (
 
 func handleListPolicies(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		engine.HandleListPolicyIDs().Write(w)
+		engine.HandleListPolicyIDs().Write(w, wantPrettyJSON(r))
 	})
 }
 
@@ -27,14 +27,22 @@ func handlePolicyCreate(engine *arborist.Engine) http.Handler {
 			writeJSONReadError(w, err)
 			return
 		}
-		engine.HandleCreatePolicyBytes(body).Write(w)
+		err = engine.HandleCreatePolicyBytes(body).Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
 func handlePolicyGet(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		policyID := mux.Vars(r)["policyID"]
-		engine.HandlePolicyRead(policyID).Write(w)
+		err := engine.HandlePolicyRead(policyID).Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
@@ -46,7 +54,11 @@ func handlePolicyUpdate(engine *arborist.Engine) http.Handler {
 			return
 		}
 		policyID := mux.Vars(r)["policyID"]
-		engine.HandlePolicyUpdate(policyID, body).Write(w)
+		engine.HandlePolicyUpdate(policyID, body).Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
@@ -58,14 +70,22 @@ func handlePolicyPatch(engine *arborist.Engine) http.Handler {
 			return
 		}
 		policyID := mux.Vars(r)["policyID"]
-		engine.HandlePolicyPatch(policyID, body).Write(w)
+		err = engine.HandlePolicyPatch(policyID, body).Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
 func handlePolicyRemove(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		policyID := mux.Vars(r)["policyID"]
-		engine.HandlePolicyRemove(policyID).Write(w)
+		err := engine.HandlePolicyRemove(policyID).Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 

@@ -49,3 +49,10 @@ func (resourceJSON *ResourceJSON) defaultsFromResource(resource *Resource) {
 		resourceJSON.Subresources = subresources
 	}
 }
+
+func (resourceJSON *ResourceJSON) validate() error {
+	if resourceJSON.Name == "" {
+		return missingRequiredField("resource", "name")
+	}
+	return nil
+}

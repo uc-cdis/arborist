@@ -19,6 +19,9 @@ type Engine struct {
 	policies     map[string]*Policy
 }
 
+// makeEngine just does the necessary allocations (i.e. maps) to return a
+// functioning Engine structure, and skips the rest of the setup such as adding
+// a root resource node. Should use only for NewAuthEngine and tests.
 func makeEngine() *Engine {
 	return &Engine{
 		roles:       make(map[string]*Role),
@@ -331,7 +334,7 @@ func (engine *Engine) removeLeafResource(resource *Resource) {
 		return
 	}
 	if resource.parent != nil {
-		delete(resource.parent.subresources, resource)
+		resource.parent.rmSubresource(resource)
 	}
 	delete(engine.resources, resource.path)
 }

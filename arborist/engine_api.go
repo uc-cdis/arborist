@@ -23,7 +23,6 @@ package arborist
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 )
 
@@ -34,6 +33,11 @@ type Response struct {
 	Code          int
 }
 
+type errorInfo struct {
+	Message string `json:"message"`
+	Code    int    `json:"code,omitempty"`
+}
+
 func (response *Response) ok() bool {
 	return response.InternalError == nil && response.ExternalError == nil
 }
@@ -41,50 +45,52 @@ func (response *Response) ok() bool {
 // errorResponse takes a Response with a
 func (response *Response) addErrorJSON() *Response {
 	var errResponse = struct {
-		Error string `json:"error"`
-		Code  int    `json:"code,omitempty"`
-	}{}
+		Err errorInfo `json:"error"`
+	}{
+		Err: errorInfo{},
+	}
 	if response.InternalError != nil {
 		if response.Code == 0 {
 			response.Code = http.StatusInternalServerError
 		}
-		errResponse.Error = fmt.Sprintf("%s", response.InternalError)
+		errResponse.Err.Message = response.InternalError.Error()
 	} else if response.ExternalError != nil {
 		if response.Code == 0 {
 			response.Code = http.StatusBadRequest
 		}
-		errResponse.Error = fmt.Sprintf("%s", response.ExternalError)
+		errResponse.Err.Message = response.ExternalError.Error()
 	}
-	errResponse.Code = response.Code
+	errResponse.Err.Code = response.Code
 	bytes, err := json.Marshal(errResponse)
 	if err != nil {
-		// should never happen
+		// should never happen; fix errResponse above
 		panic(err)
 	}
 	response.Bytes = bytes
 	return response
 }
 
-func (response *Response) writeBytes() []byte {
-	if !response.ok() {
-		response.addErrorJSON()
-	}
-	return response.Bytes
-}
-
-func (response *Response) Write(w http.ResponseWriter) error {
+func (response *Response) Write(w http.ResponseWriter, pretty bool) error {
 	if response.Code > 0 {
 		w.WriteHeader(response.Code)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	bytes := response.writeBytes()
-	bytes = append(bytes, "\n"...)
-	_, err := w.Write(bytes)
+	if !response.ok() {
+		response.addErrorJSON()
+	}
+
+	if pretty {
+		response.Prettify()
+	}
+
+	response.Bytes = append(response.Bytes, "\n"...)
+	_, err := w.Write(response.Bytes)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -92,10 +98,12 @@ func (response *Response) Prettify() *Response {
 	content := make(map[string]interface{})
 	err := json.Unmarshal(response.Bytes, &content)
 	if err != nil {
+		// unrecoverable; response has written garbage JSON
 		panic(err)
 	}
 	pretty, err := json.MarshalIndent(content, "", "    ")
 	if err != nil {
+		// should never happen; previous unmarshal is incorrect for some reason
 		panic(err)
 	}
 	response.Bytes = pretty
@@ -123,8 +131,8 @@ func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {
 	authRequest, err := engine.readAuthRequestFromJSON(authRequestJSON)
 	if err != nil {
 		response := &Response{
-			InternalError: err,
-			Code:          http.StatusInternalServerError,
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
 		}
 		return response
 	}
@@ -364,6 +372,13 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 			Code:          http.StatusBadRequest,
 		}
 	}
+	err = resourceJSON.validate()
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
 	resource, err := engine.addResourceFromJSON(&resourceJSON)
 	if err != nil {
 		return &Response{
@@ -514,6 +529,47 @@ func (engine *Engine) HandleRoleCreate(bytes []byte) *Response {
 			Code:          http.StatusBadRequest,
 		}
 	}
+	return &Response{
+		Bytes: responseBytes,
+		Code:  http.StatusCreated,
+	}
+}
+
+func (engine *Engine) HandleRolesCreate(bytes []byte) *Response {
+	var rolesJSON RolesJSON
+	err := json.Unmarshal(bytes, &rolesJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	content := struct {
+		Created []RoleJSON `json:"created"`
+	}{
+		Created: make([]RoleJSON, 0),
+	}
+
+	for _, roleJSON := range rolesJSON.Roles {
+		role, err := engine.addRoleFromJSON(&roleJSON)
+		if err != nil {
+			return &Response{
+				ExternalError: err,
+				Code:          http.StatusBadRequest,
+			}
+		}
+		content.Created = append(content.Created, role.toJSON())
+	}
+
+	responseBytes, err := json.Marshal(content)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
 	return &Response{
 		Bytes: responseBytes,
 		Code:  http.StatusCreated,

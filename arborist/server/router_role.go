@@ -21,9 +21,10 @@ func handleListRoles(engine *arborist.Engine) http.Handler {
 		if pretty := r.URL.Query().Get("prettyJSON"); pretty == "true" {
 			response.Prettify()
 		}
-		err := response.Write(w)
+		err := response.Write(w, wantPrettyJSON(r))
 		if err != nil {
-			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 }
@@ -35,13 +36,18 @@ func handleRoleCreate(engine *arborist.Engine) http.Handler {
 			writeJSONReadError(w, err)
 			return
 		}
-		response := engine.HandleRoleCreate(body)
-		if pretty := r.URL.Query().Get("prettyJSON"); pretty == "true" {
-			response.Prettify()
+
+		var response *arborist.Response
+		if bulk := r.URL.Query().Get("bulk"); bulk == "true" {
+			response = engine.HandleRolesCreate(body)
+		} else {
+			response = engine.HandleRoleCreate(body)
 		}
-		err = response.Write(w)
+
+		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			return
 		}
 	})
 }
@@ -49,9 +55,10 @@ func handleRoleCreate(engine *arborist.Engine) http.Handler {
 func handleRoleGet(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		roleID := mux.Vars(r)["roleID"]
-		err := engine.HandleRoleRead(roleID).Write(w)
+		err := engine.HandleRoleRead(roleID).Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			return
 		}
 	})
 }
@@ -64,9 +71,10 @@ func handleRoleUpdate(engine *arborist.Engine) http.Handler {
 			return
 		}
 		roleID := mux.Vars(r)["roleID"]
-		err = engine.HandleRoleUpdate(roleID, body).Write(w)
+		err = engine.HandleRoleUpdate(roleID, body).Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			return
 		}
 	})
 }
@@ -79,9 +87,10 @@ func handleRolePatch(engine *arborist.Engine) http.Handler {
 			return
 		}
 		roleID := mux.Vars(r)["roleID"]
-		err = engine.HandleRolePatch(roleID, body).Write(w)
+		err = engine.HandleRolePatch(roleID, body).Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			return
 		}
 	})
 }
@@ -89,9 +98,10 @@ func handleRolePatch(engine *arborist.Engine) http.Handler {
 func handleRoleRemove(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		roleID := mux.Vars(r)["roleID"]
-		err := engine.HandleRoleRemove(roleID).Write(w)
+		err := engine.HandleRoleRemove(roleID).Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			return
 		}
 	})
 }

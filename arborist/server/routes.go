@@ -1,3 +1,6 @@
+// server/routes.go contains miscellaneous utilities and routes which go
+// immediately under the root and not under a different subrouter.
+
 package server
 
 import (
@@ -14,8 +17,18 @@ import (
 // returning a 200 code.
 func writeJSON(w http.ResponseWriter, bytes []byte) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(bytes)
+	_, err := w.Write(bytes)
+	if err != nil {
+		w.Header().Del("Content-Type")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func wantPrettyJSON(r *http.Request) bool {
+	pretty := r.URL.Query().Get("prettyJSON")
+	return pretty == "true"
 }
 
 // handleHealthCheck handles the health check route to indicate that the
@@ -55,9 +68,9 @@ func handleAuth(engine *arborist.Engine) http.Handler {
 			return
 		}
 		response := engine.HandleAuthRequestBytes(body)
-		err = response.Write(w)
+		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
-			http.Error(w, fmt.Sprintf("%s", err), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})

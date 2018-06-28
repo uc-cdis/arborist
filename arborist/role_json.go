@@ -1,10 +1,8 @@
 package arborist
 
-type RoleJSON struct {
-	ID          string           `json:"id"`
-	Description string           `json:"description"`
-	Permissions []PermissionJSON `json:"permissions"`
-}
+import (
+	"encoding/json"
+)
 
 func (role *Role) toJSON() RoleJSON {
 	permissions := make([]PermissionJSON, 0)
@@ -16,6 +14,38 @@ func (role *Role) toJSON() RoleJSON {
 		Description: role.description,
 		Permissions: permissions,
 	}
+}
+
+type RoleJSON struct {
+	ID          string           `json:"id"`
+	Description string           `json:"description"`
+	Permissions []PermissionJSON `json:"permissions"`
+}
+
+func (roleJSON *RoleJSON) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"description": struct{}{},
+	}
+	err = validateJSON("role", roleJSON, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the RoleJSON to. Since this is just type conversion there's no
+	// runtime cost.
+	type loader RoleJSON
+	err = json.Unmarshal(data, (*loader)(roleJSON))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (roleJSON *RoleJSON) defaultsFromRole(role *Role) {
@@ -33,4 +63,8 @@ func (roleJSON *RoleJSON) defaultsFromRole(role *Role) {
 			roleJSON.Permissions = append(roleJSON.Permissions, permission.toJSON())
 		}
 	}
+}
+
+type RolesJSON struct {
+	Roles []RoleJSON `json:"roles"`
 }
