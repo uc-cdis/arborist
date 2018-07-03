@@ -224,31 +224,24 @@ func (engine *Engine) getResourceJSON(resourcePath string) (*ResourceJSON, error
 // NOTE: the returned Resource should have a parent node filled out for that
 // field, but the parent itself will NOT have the resource in its subresources
 // yet. If the load is successful then the caller should do this.
-func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON) (*Resource, error) {
-	subresources := make(map[*Resource]struct{})
-	for _, subresourceJSON := range resourceJSON.Subresources {
-		subresource, err := engine.readResourceFromJSON(&subresourceJSON)
-		if err != nil {
-			return nil, err
-		}
-		subresources[subresource] = struct{}{}
+//
+// An error is returned if a resource exists in the engine already with what
+// the path will be to this resource, or if the resource input is invalid for
+// any reason, or if any subresource creation returns an error.
+func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON, parentPath string) (*Resource, error) {
+	path := strings.Join([]string{parentPath, resourceJSON.Name}, "/")
+	_, exists := engine.resources[path]
+	if exists {
+		return nil, alreadyExists("resource", "path", path)
 	}
 
-	// Find the parent resource, if the path given has at least two segments.
 	var parent *Resource
-	if len(strings.Split(resourceJSON.Path, "/")) > 0 {
-		pathSegments := strings.Split(resourceJSON.Path, "/")[1:]
-		if len(pathSegments) > 1 {
-			parentPathSegments := pathSegments[:len(pathSegments)-1]
-			parentPath := pathString(parentPathSegments)
-			var exists bool
-			parent, exists = engine.resources[parentPath]
-			if !exists {
-				err := notExist("resource", "path", parentPath)
-				return nil, err
-			}
-		} else {
-			parent = nil
+	// Find the parent resource (if a path was given).
+	if parentPath != "" {
+		parent, exists = engine.resources[parentPath]
+		if !exists {
+			err := notExist("resource", "path", parentPath)
+			return nil, err
 		}
 	}
 
@@ -258,11 +251,21 @@ func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON) (*Resourc
 		resourceJSON.Name,
 		resourceJSON.Description,
 		parent,
-		subresources,
+		nil,
 	)
 	if err != nil {
 		return nil, err
 	}
+
+	subresources := make(map[*Resource]struct{})
+	for _, subresourceJSON := range resourceJSON.Subresources {
+		subresource, err := engine.readResourceFromJSON(&subresourceJSON, path)
+		if err != nil {
+			return nil, err
+		}
+		subresources[subresource] = struct{}{}
+	}
+
 	return resource, nil
 }
 
@@ -273,8 +276,8 @@ func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON) (*Resourc
 
 // addResourceFromJSON goes through the whole process of loading a *Resource
 // from a *ResourceJSON and registering it in the engine.
-func (engine *Engine) addResourceFromJSON(resourceJSON *ResourceJSON) (*Resource, error) {
-	resource, err := engine.readResourceFromJSON(resourceJSON)
+func (engine *Engine) addResourceFromJSON(resourceJSON *ResourceJSON, parentPath string) (*Resource, error) {
+	resource, err := engine.readResourceFromJSON(resourceJSON, parentPath)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +316,7 @@ func (engine *Engine) updateResourceWithJSON(resourcePath string, resourceJSON *
 	// we load these from the resource we're trying to update.
 	resourceJSON.defaultsFromResource(resource)
 
-	updatedResource, err := engine.readResourceFromJSON(resourceJSON)
+	updatedResource, err := engine.readResourceFromJSON(resourceJSON, "")
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +403,56 @@ func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, err
 		resources:   resources,
 	}
 
+	engine.policies[policy.id] = policy
+
 	return policy, nil
+}
+
+func (engine *Engine) validatePolicies(policiesJSON *PolicyBulkJSON) ([]*Policy, error) {
+	policies := []*Policy{}
+	for _, policyJSON := range policiesJSON.Policies {
+		// Check that the policy doesn't exist yet.
+		if _, exists := engine.policies[policyJSON.ID]; exists {
+			return nil, alreadyExists("policy", "id", policyJSON.ID)
+		}
+		// Check that the roles exist.
+		roles := make(map[*Role]struct{}, len(policyJSON.RoleIDs))
+		for _, roleID := range policyJSON.RoleIDs {
+			role, exists := engine.roles[roleID]
+			if !exists {
+				return nil, notExist("role", "id", roleID)
+			}
+			roles[role] = struct{}{}
+		}
+		// Check that the resources exist.
+		resources := make(map[*Resource]struct{}, len(policyJSON.ResourcePaths))
+		for _, resourcePath := range policyJSON.ResourcePaths {
+			resource, exists := engine.resources[resourcePath]
+			if !exists {
+				return nil, notExist("resource", "path", resourcePath)
+			}
+			resources[resource] = struct{}{}
+		}
+		policy := &Policy{
+			id:          policyJSON.ID,
+			description: policyJSON.Description,
+			roles:       roles,
+			resources:   resources,
+		}
+		policies = append(policies, policy)
+	}
+	return policies, nil
+}
+
+func (engine *Engine) createPoliciesFromJSON(policiesJSON *PolicyBulkJSON) ([]*Policy, error) {
+	policies, err := engine.validatePolicies(policiesJSON)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		engine.policies[policy.id] = policy
+	}
+	return policies, nil
 }
 
 // updatePolicyWithJSON finds a policy with the given ID (returning an error if

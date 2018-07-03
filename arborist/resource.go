@@ -12,6 +12,12 @@ func pathString(segments []string) string {
 	return strings.Join([]string{"/", strings.Join(segments, "/")}, "")
 }
 
+func parentPathString(path string) string {
+	segments := strings.Split(path, "/")
+	parentSegments := segments[1 : len(segments)-1]
+	return pathString(parentSegments)
+}
+
 // Resource defines a resource in the RBAC model, which is some entity to which
 // access should be controlled (such as a "project"). Policies bind Roles, which
 // allow for some permissions, to a set of Resources.
@@ -24,7 +30,7 @@ func pathString(segments []string) string {
 // Example serialization to JSON:
 //
 // {
-//     "name": "foo",
+//     "name": "resource-foo",
 //     "path": "/service-x/resource-foo",
 //     "description": "some_resource",
 //     "subresources": [

@@ -1,15 +1,8 @@
 package arborist
 
-import ()
-
-// ResoruceJSON defines a representation of a Resource that can be serialized
-// directly into JSON using `json.Marshal`.
-type ResourceJSON struct {
-	Name         string         `json:"name"`
-	Path         string         `json:"path"`
-	Description  string         `json:"description"`
-	Subresources []ResourceJSON `json:"subresources"`
-}
+import (
+	"encoding/json"
+)
 
 // toJSON converts a Resource to a ResourceJSON for serialization.
 func (resource *Resource) toJSON() ResourceJSON {
@@ -26,6 +19,52 @@ func (resource *Resource) toJSON() ResourceJSON {
 	return resourceJSON
 }
 
+// ResoruceJSON defines a representation of a Resource that can be serialized
+// directly into JSON using `json.Marshal`.
+//
+// A note on the fields here: either the resource must have been created
+// through the subresources field of a parent resource, in which case the path
+// is formed from the parent path joined with this resource's name, or with an
+// explicit full path here.
+type ResourceJSON struct {
+	Name         string         `json:"name"`
+	Path         string         `json:"path"`
+	Description  string         `json:"description"`
+	Subresources []ResourceJSON `json:"subresources"`
+}
+
+func (resourceJSON *ResourceJSON) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"description":  struct{}{},
+		"subresources": struct{}{},
+		"path":         struct{}{},
+	}
+	err = validateJSON("resource", resourceJSON, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the ResourceJSON to.
+	type loader ResourceJSON
+	err = json.Unmarshal(data, (*loader)(resourceJSON))
+	if err != nil {
+		return err
+	}
+	resourceJSON.Path = ""
+
+	if resourceJSON.Subresources == nil {
+		resourceJSON.Subresources = []ResourceJSON{}
+	}
+
+	return nil
+}
+
 // defaultsFromResource fills out the fields of a resourceJSON so that any
 // empty fields in the JSON default to the contents of the resource. This can
 // be used to allow JSON inputs for updating a resource to validate despite
@@ -34,9 +73,6 @@ func (resource *Resource) toJSON() ResourceJSON {
 func (resourceJSON *ResourceJSON) defaultsFromResource(resource *Resource) {
 	if resourceJSON.Name == "" {
 		resourceJSON.Name = resource.name
-	}
-	if resourceJSON.Path == "" {
-		resourceJSON.Path = resource.path
 	}
 	if resourceJSON.Description == "" {
 		resourceJSON.Description = resource.description
@@ -50,9 +86,6 @@ func (resourceJSON *ResourceJSON) defaultsFromResource(resource *Resource) {
 	}
 }
 
-func (resourceJSON *ResourceJSON) validate() error {
-	if resourceJSON.Name == "" {
-		return missingRequiredField("resource", "name")
-	}
-	return nil
+type ResourceBulkJSON struct {
+	Resources []ResourceJSON `json:"resources"`
 }

@@ -168,34 +168,7 @@ func (engine *Engine) HandleListPolicyIDs() *Response {
 	return &Response{Bytes: bytes, Code: http.StatusOK}
 }
 
-func (engine *Engine) HandleCreatePolicy(policy *Policy) *Response {
-	if _, exists := engine.policies[policy.id]; exists {
-		err := alreadyExists("policy", "id", policy.id)
-		return &Response{
-			ExternalError: err,
-			Code:          http.StatusConflict,
-		}
-	}
-	engine.policies[policy.id] = policy
-
-	content := struct {
-		Created PolicyJSON `json:"created"`
-	}{
-		Created: policy.toJSON(),
-	}
-	bytes, err := json.Marshal(content)
-	if err != nil {
-		// should never happen
-		panic(err)
-	}
-
-	return &Response{
-		Bytes: bytes,
-		Code:  http.StatusCreated,
-	}
-}
-
-func (engine *Engine) HandleCreatePolicyBytes(bytes []byte) *Response {
+func (engine *Engine) HandlePolicyCreate(bytes []byte) *Response {
 	var policyJSON PolicyJSON
 	err := json.Unmarshal(bytes, &policyJSON)
 	if err != nil {
@@ -211,7 +184,74 @@ func (engine *Engine) HandleCreatePolicyBytes(bytes []byte) *Response {
 			Code:          http.StatusConflict,
 		}
 	}
-	return engine.HandleCreatePolicy(policy)
+
+	if _, exists := engine.policies[policy.id]; exists {
+		err := alreadyExists("policy", "id", policy.id)
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusConflict,
+		}
+	}
+	engine.policies[policy.id] = policy
+
+	content := struct {
+		Created PolicyJSON `json:"created"`
+	}{
+		Created: policy.toJSON(),
+	}
+
+	bytes, err = json.Marshal(content)
+	if err != nil {
+		// should never happen; fix `content` JSON just above
+		panic(err)
+	}
+
+	return &Response{
+		Bytes: bytes,
+		Code:  http.StatusCreated,
+	}
+}
+
+func (engine *Engine) HandlePolicyCreateBulk(bytes []byte) *Response {
+	var policiesJSON PolicyBulkJSON
+	err := json.Unmarshal(bytes, &policiesJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	content := struct {
+		Created []PolicyJSON `json:"created"`
+	}{
+		Created: make([]PolicyJSON, 0),
+	}
+
+	policies, err := engine.createPoliciesFromJSON(&policiesJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	for _, policy := range policies {
+		content.Created = append(content.Created, policy.toJSON())
+	}
+
+	responseBytes, err := json.Marshal(content)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+
+	return &Response{
+		Bytes: responseBytes,
+		Code:  http.StatusCreated,
+	}
 }
 
 func (engine *Engine) HandlePolicyRead(policyID string) *Response {
@@ -372,14 +412,7 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 			Code:          http.StatusBadRequest,
 		}
 	}
-	err = resourceJSON.validate()
-	if err != nil {
-		return &Response{
-			ExternalError: err,
-			Code:          http.StatusBadRequest,
-		}
-	}
-	resource, err := engine.addResourceFromJSON(&resourceJSON)
+	resource, err := engine.addResourceFromJSON(&resourceJSON, "/")
 	if err != nil {
 		return &Response{
 			ExternalError: err,

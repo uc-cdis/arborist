@@ -16,7 +16,11 @@ import (
 
 func handleListPolicies(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		engine.HandleListPolicyIDs().Write(w, wantPrettyJSON(r))
+		err := engine.HandleListPolicyIDs().Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 
@@ -27,7 +31,15 @@ func handlePolicyCreate(engine *arborist.Engine) http.Handler {
 			writeJSONReadError(w, err)
 			return
 		}
-		err = engine.HandleCreatePolicyBytes(body).Write(w, wantPrettyJSON(r))
+
+		var response *arborist.Response
+		if r.URL.Query().Get("bulk") == "true" {
+			response = engine.HandlePolicyCreateBulk(body)
+		} else {
+			response = engine.HandlePolicyCreate(body)
+		}
+
+		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -54,7 +66,7 @@ func handlePolicyUpdate(engine *arborist.Engine) http.Handler {
 			return
 		}
 		policyID := mux.Vars(r)["policyID"]
-		engine.HandlePolicyUpdate(policyID, body).Write(w, wantPrettyJSON(r))
+		err = engine.HandlePolicyUpdate(policyID, body).Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

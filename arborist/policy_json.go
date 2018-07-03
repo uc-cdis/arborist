@@ -1,11 +1,8 @@
 package arborist
 
-type PolicyJSON struct {
-	ID            string   `json:"id"`
-	Description   string   `json:"description"`
-	RoleIDs       []string `json:"role_ids"`
-	ResourcePaths []string `json:"resource_paths"`
-}
+import (
+	"encoding/json"
+)
 
 func (policy *Policy) toJSON() PolicyJSON {
 	roleIDs := make([]string, len(policy.roles))
@@ -22,6 +19,38 @@ func (policy *Policy) toJSON() PolicyJSON {
 		RoleIDs:       roleIDs,
 		ResourcePaths: resourcePaths,
 	}
+}
+
+type PolicyJSON struct {
+	ID            string   `json:"id"`
+	Description   string   `json:"description"`
+	RoleIDs       []string `json:"role_ids"`
+	ResourcePaths []string `json:"resource_paths"`
+}
+
+func (policyJSON *PolicyJSON) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"description": struct{}{},
+	}
+	err = validateJSON("policy", policyJSON, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the PolicyJSON to.
+	type loader PolicyJSON
+	err = json.Unmarshal(data, (*loader)(policyJSON))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // defaultsFromPolicy fills out any empty fields in the PolicyJSON with the
@@ -47,4 +76,8 @@ func (policyJSON *PolicyJSON) defaultsFromPolicy(policy *Policy) {
 		}
 		policyJSON.ResourcePaths = paths
 	}
+}
+
+type PolicyBulkJSON struct {
+	Policies []PolicyJSON `json:"policies"`
 }

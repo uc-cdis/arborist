@@ -27,8 +27,8 @@ func writeJSON(w http.ResponseWriter, bytes []byte) {
 }
 
 func wantPrettyJSON(r *http.Request) bool {
-	pretty := r.URL.Query().Get("prettyJSON")
-	return pretty == "true"
+	// url.Values.Get returns empty string if the parameter doesn't exist
+	return r.URL.Query().Get("prettyJSON") == "true"
 }
 
 // handleHealthCheck handles the health check route to indicate that the

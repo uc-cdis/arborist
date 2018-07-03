@@ -85,6 +85,25 @@ func TestPathString(t *testing.T) {
 	check(expected, result)
 }
 
+func TestParentPathString(t *testing.T) {
+	check := func(expected string, result string) {
+		if result != expected {
+			t.Log("incorrect path")
+			t.Logf("expected: %s", expected)
+			t.Logf("result: %s", result)
+			t.Fail()
+		}
+	}
+
+	result := parentPathString("/a/b/c")
+	expected := "/a/b"
+	check(expected, result)
+
+	result = parentPathString("/a")
+	expected = "/"
+	check(expected, result)
+}
+
 func TestResourcePath(t *testing.T) {
 	root := resource("root", "", nil, nil)
 	node_a := resource("a", "", root, nil)

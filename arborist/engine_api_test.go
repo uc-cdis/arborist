@@ -13,7 +13,7 @@ func TestResponse(t *testing.T) {
 		response.Code = 500
 		response.addErrorJSON()
 		result := string(response.Bytes)
-		expected := "{\"error\":\"example\",\"code\":500}"
+		expected := `{"error":{"message":"example","code":500}}`
 		if result != expected {
 			t.Logf("result: %s", result)
 			t.Logf("expected: %s", expected)
@@ -25,7 +25,7 @@ func TestResponse(t *testing.T) {
 		response.Code = 400
 		response.addErrorJSON()
 		result = string(response.Bytes)
-		expected = "{\"error\":\"user error\",\"code\":400}"
+		expected = `{"error":{"message":"user error","code":400}}`
 		if result != expected {
 			t.Logf("result: %s", result)
 			t.Logf("expected: %s", expected)

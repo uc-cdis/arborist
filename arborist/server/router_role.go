@@ -38,7 +38,7 @@ func handleRoleCreate(engine *arborist.Engine) http.Handler {
 		}
 
 		var response *arborist.Response
-		if bulk := r.URL.Query().Get("bulk"); bulk == "true" {
+		if r.URL.Query().Get("bulk") == "true" {
 			response = engine.HandleRolesCreate(body)
 		} else {
 			response = engine.HandleRoleCreate(body)

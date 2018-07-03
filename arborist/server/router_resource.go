@@ -14,6 +14,18 @@ import (
 	"github.com/uc-cdis/arborist/arborist"
 )
 
+const resourcePath string = `/{resourcePath:[a-zA-Z0-9_\-\/]+}`
+
+func parseResourcePath(r *http.Request) string {
+	path, exists := mux.Vars(r)["resourcePath"]
+	if !exists {
+		// should never happen: route was set up to call this function when the
+		// URL did not actually match a resource path
+		panic("fix resource routes")
+	}
+	return path
+}
+
 func handleListResources(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := engine.HandleListResourcePaths()
@@ -43,7 +55,7 @@ func handleResourceCreate(engine *arborist.Engine) http.Handler {
 
 func handleResourceGet(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resourcePath := mux.Vars(r)["resourcePath"]
+		resourcePath := parseResourcePath(r)
 		response := engine.HandleResourceRead(resourcePath)
 		err := response.Write(w, wantPrettyJSON(r))
 		if err != nil {
@@ -60,7 +72,7 @@ func handleResourceUpdate(engine *arborist.Engine) http.Handler {
 			writeJSONReadError(w, err)
 			return
 		}
-		resourcePath := mux.Vars(r)["resourcePath"]
+		resourcePath := parseResourcePath(r)
 		response := engine.HandleResourceUpdate(resourcePath, body)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
@@ -72,7 +84,7 @@ func handleResourceUpdate(engine *arborist.Engine) http.Handler {
 
 func handleResourceRemove(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resourcePath := mux.Vars(r)["resourcePath"]
+		resourcePath := parseResourcePath(r)
 		response := engine.HandleResourceRemove(resourcePath)
 		err := response.Write(w, wantPrettyJSON(r))
 		if err != nil {
@@ -88,7 +100,7 @@ func addResourceRouter(mainRouter *mux.Router, engine *arborist.Engine) {
 	resourceRouter := mainRouter.PathPrefix("/resource").Subrouter()
 	resourceRouter.Handle("/", handleListResources(engine)).Methods("GET")
 	resourceRouter.Handle("/", handleResourceCreate(engine)).Methods("POST")
-	resourceRouter.Handle("/{resourcePath}", handleResourceGet(engine)).Methods("GET")
-	resourceRouter.Handle("/{resourcePath}", handleResourceUpdate(engine)).Methods("PUT")
-	resourceRouter.Handle("/{resourcePath}", handleResourceRemove(engine)).Methods("DELETE")
+	resourceRouter.Handle(resourcePath, handleResourceGet(engine)).Methods("GET")
+	resourceRouter.Handle(resourcePath, handleResourceUpdate(engine)).Methods("PUT")
+	resourceRouter.Handle(resourcePath, handleResourceRemove(engine)).Methods("DELETE")
 }
