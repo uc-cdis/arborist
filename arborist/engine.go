@@ -8,7 +8,6 @@ package arborist
 
 import (
 	"fmt"
-	"strings"
 )
 
 type Engine struct {
@@ -144,7 +143,6 @@ func (engine *Engine) updateRoleWithJSON(roleID string, roleJSON *RoleJSON) (*Ro
 	return role, nil
 }
 
-//
 func (engine *Engine) appendRoleWithJSON(roleID string, roleJSON *RoleJSON) (*Role, error) {
 	role, exists := engine.roles[roleID]
 	if !exists {
@@ -225,19 +223,20 @@ func (engine *Engine) getResourceJSON(resourcePath string) (*ResourceJSON, error
 // field, but the parent itself will NOT have the resource in its subresources
 // yet. If the load is successful then the caller should do this.
 //
+// Also note that there's no validation here for conflicts with existing
+// resources having the same paths; all that has to happen when the engine adds
+// this resource to the tree.
+//
 // An error is returned if a resource exists in the engine already with what
 // the path will be to this resource, or if the resource input is invalid for
 // any reason, or if any subresource creation returns an error.
 func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON, parentPath string) (*Resource, error) {
-	path := strings.Join([]string{parentPath, resourceJSON.Name}, "/")
-	_, exists := engine.resources[path]
-	if exists {
-		return nil, alreadyExists("resource", "path", path)
-	}
-
 	var parent *Resource
+	var exists bool
 	// Find the parent resource (if a path was given).
-	if parentPath != "" {
+	if parentPath == "" {
+		parent = engine.rootResource
+	} else {
 		parent, exists = engine.resources[parentPath]
 		if !exists {
 			err := notExist("resource", "path", parentPath)
@@ -245,8 +244,33 @@ func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON, parentPat
 		}
 	}
 
-	// NewResource will do some basic validation for the resource creation,
-	// specifically that the name is valid.
+	//// NewResource will do some basic validation for the resource creation,
+	//// specifically that the name is valid.
+	//resource, err := NewResource(
+	//	resourceJSON.Name,
+	//	resourceJSON.Description,
+	//	parent,
+	//	nil,
+	//)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	//subresources := make(map[*Resource]struct{})
+	//for _, subresourceJSON := range resourceJSON.Subresources {
+	//	subresource, err := engine.readSubresourceFromJSON(&subresourceJSON, resource)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	subresources[subresource] = struct{}{}
+	//}
+
+	//return resource, nil
+
+	return engine.readSubresourceFromJSON(resourceJSON, parent)
+}
+
+func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent *Resource) (*Resource, error) {
 	resource, err := NewResource(
 		resourceJSON.Name,
 		resourceJSON.Description,
@@ -259,7 +283,7 @@ func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON, parentPat
 
 	subresources := make(map[*Resource]struct{})
 	for _, subresourceJSON := range resourceJSON.Subresources {
-		subresource, err := engine.readResourceFromJSON(&subresourceJSON, path)
+		subresource, err := engine.readSubresourceFromJSON(&subresourceJSON, resource)
 		if err != nil {
 			return nil, err
 		}
@@ -287,15 +311,28 @@ func (engine *Engine) addResourceFromJSON(resourceJSON *ResourceJSON, parentPath
 // addResource adds an already-instantiated resource into the engine. An error
 // is returned if the resource already exists.
 func (engine *Engine) addResource(resource *Resource) (*Resource, error) {
-	if _, exists := engine.resources[resource.path]; exists {
-		err := alreadyExists("resource", "path", resource.path)
-		return nil, err
+	// Check that none of the paths for this resource or its subresources exist
+	// yet in the engine.
+	done := make(chan struct{})
+	for r := range resource.traverse(done) {
+		if _, exists := engine.resources[r.path]; exists {
+			done <- struct{}{}
+			return nil, alreadyExists("resource", "path", r.path)
+		}
 	}
-	// The resource is not yet attached underneath the parent
+
+	// Add all the paths for this resource and its subresources to the engine.
+	done = make(chan struct{})
+	for r := range resource.traverse(done) {
+		engine.resources[r.path] = r
+	}
+
+	// The resource is not yet attached underneath the parent, so do that.
 	engine.resources[resource.path] = resource
 	if resource.parent != nil {
 		resource.parent.addSubresource(resource)
 	}
+
 	return resource, nil
 }
 

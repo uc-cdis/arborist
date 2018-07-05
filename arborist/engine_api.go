@@ -137,7 +137,7 @@ func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {
 		return response
 	}
 	authResponse := engine.HandleAuthRequest(authRequest)
-	responseBytes, err := json.Marshal(authResponse)
+	responseBytes, err := json.Marshal(authResponse.toJSON())
 	if err != nil {
 		response := &Response{
 			InternalError: err,
@@ -412,7 +412,7 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 			Code:          http.StatusBadRequest,
 		}
 	}
-	resource, err := engine.addResourceFromJSON(&resourceJSON, "/")
+	resource, err := engine.addResourceFromJSON(&resourceJSON, "")
 	if err != nil {
 		return &Response{
 			ExternalError: err,

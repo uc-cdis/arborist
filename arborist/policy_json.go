@@ -5,11 +5,11 @@ import (
 )
 
 func (policy *Policy) toJSON() PolicyJSON {
-	roleIDs := make([]string, len(policy.roles))
+	roleIDs := make([]string, 0)
 	for role := range policy.roles {
 		roleIDs = append(roleIDs, role.id)
 	}
-	resourcePaths := make([]string, len(policy.resources))
+	resourcePaths := make([]string, 0)
 	for resource := range policy.resources {
 		resourcePaths = append(resourcePaths, resource.path)
 	}
