@@ -1,50 +1,21 @@
 package server
 
 import (
-	"fmt"
-
 	"github.com/gorilla/mux"
-
-	"github.com/uc-cdis/arborist/arborist"
 )
 
-type EndpointInformation struct {
-	HealthCheckURL  string `json:"health_check_url"`
-	AuthURL         string `json:"auth_url"`
-	PolicyBaseURL   string `json:"policy_base_url"`
-	RoleBaseURL     string `json:"role_base_url"`
-	ResourceBaseURL string `json:"resource_base_url"`
-	EngineURL       string `json:"engine_url"`
-}
+func (server *Server) MakeRouter() *mux.Router {
+	versionRouter := mux.NewRouter().StrictSlash(server.config.StrictSlashes)
 
-func (endpointInfo EndpointInformation) fullURLs(baseURL string) EndpointInformation {
-	return EndpointInformation{
-		HealthCheckURL: fmt.Sprintf("%s%s", baseURL, endpointInfo.HealthCheckURL),
-		AuthURL:        fmt.Sprintf("%s%s", baseURL, endpointInfo.AuthURL),
-		PolicyBaseURL:  fmt.Sprintf("%s%s", baseURL, endpointInfo.PolicyBaseURL),
-		EngineURL:      fmt.Sprintf("%s%s", baseURL, endpointInfo.EngineURL),
-	}
-}
-
-// Record the endpoints mapping so that the server can return some information
-// about what endpoints are located at what URLs.
-var Endpoints EndpointInformation = EndpointInformation{
-	HealthCheckURL: "/health",
-	AuthURL:        "/auth",
-	PolicyBaseURL:  "/policy/",
-	EngineURL:      "/engine",
-}
-
-func MakeRouter(engine *arborist.Engine, config *ServerConfig) *mux.Router {
-	router := mux.NewRouter().StrictSlash(config.StrictSlashes)
-	router.Handle("/", handleRoot(config)).Methods("GET")
+	router := versionRouter.PathPrefix("/v0").Subrouter()
+	router.Handle("/", handleRoot(server.config)).Methods("GET")
 	router.HandleFunc("/health", handleHealthCheck).Methods("GET")
-	router.Handle("/auth", handleAuth(engine)).Methods("POST")
 
-	addEngineRouter(router, engine)
-	addResourceRouter(router, engine)
-	addRoleRouter(router, engine)
-	addPolicyRouter(router, engine)
+	server.addAuthRouter(router)
+	server.addEngineRouter(router)
+	server.addResourceRouter(router)
+	server.addRoleRouter(router)
+	server.addPolicyRouter(router)
 
 	return router
 }

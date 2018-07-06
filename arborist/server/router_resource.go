@@ -16,12 +16,11 @@ import (
 	"github.com/uc-cdis/arborist/arborist"
 )
 
-const resourcePath string = `/{resourcePath:[a-zA-Z0-9_\-\/]+}`
-
 // For some reason this is not allowed:
 //
 //    `{resourcePath:/[a-zA-Z0-9_\-\/]+}`
 // so we put the slash at the front here and fix it in parseResourcePath.
+const resourcePath string = `/{resourcePath:[a-zA-Z0-9_\-\/]+}`
 
 func parseResourcePath(r *http.Request) string {
 	path, exists := mux.Vars(r)["resourcePath"]
@@ -104,11 +103,11 @@ func handleResourceRemove(engine *arborist.Engine) http.Handler {
 
 // addResourceRouter attaches the handlers defined in this file to a main
 // router, using the prefix `/resource`.
-func addResourceRouter(mainRouter *mux.Router, engine *arborist.Engine) {
+func (server *Server) addResourceRouter(mainRouter *mux.Router) {
 	resourceRouter := mainRouter.PathPrefix("/resource").Subrouter()
-	resourceRouter.Handle("/", handleListResources(engine)).Methods("GET")
-	resourceRouter.Handle("/", handleResourceCreate(engine)).Methods("POST")
-	resourceRouter.Handle(resourcePath, handleResourceGet(engine)).Methods("GET")
-	resourceRouter.Handle(resourcePath, handleResourceUpdate(engine)).Methods("PUT")
-	resourceRouter.Handle(resourcePath, handleResourceRemove(engine)).Methods("DELETE")
+	resourceRouter.Handle("/", handleListResources(server.engine)).Methods("GET")
+	resourceRouter.Handle("/", handleResourceCreate(server.engine)).Methods("POST")
+	resourceRouter.Handle(resourcePath, handleResourceGet(server.engine)).Methods("GET")
+	resourceRouter.Handle(resourcePath, handleResourceUpdate(server.engine)).Methods("PUT")
+	resourceRouter.Handle(resourcePath, handleResourceRemove(server.engine)).Methods("DELETE")
 }

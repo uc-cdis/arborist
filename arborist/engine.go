@@ -613,3 +613,20 @@ func (engine *Engine) giveAuthResponse(authRequest *AuthRequest) AuthResponse {
 	}
 	return AuthResponse{auth: false}
 }
+
+func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, error) {
+	resources := make([]*Resource, 0)
+	for _, policyID := range policyIDs {
+		policy, exists := engine.policies[policyID]
+		if !exists {
+			return nil, notExist("policy", "id", policyID)
+		}
+		for resource := range policy.resources {
+			done := make(chan struct{})
+			for r := range resource.traverse(done) {
+				resources = append(resources, r)
+			}
+		}
+	}
+	return resources, nil
+}

@@ -19,7 +19,7 @@ func handleEngineSerialize(engine *arborist.Engine) http.Handler {
 	})
 }
 
-func addEngineRouter(mainRouter *mux.Router, engine *arborist.Engine) {
+func (server *Server) addEngineRouter(mainRouter *mux.Router) {
 	engineRouter := mainRouter.PathPrefix("/engine").Subrouter()
-	engineRouter.Handle("/", handleEngineSerialize(engine)).Methods("GET")
+	engineRouter.Handle("/", handleEngineSerialize(server.engine)).Methods("GET")
 }

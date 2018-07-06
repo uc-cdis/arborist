@@ -108,14 +108,14 @@ func handleRoleRemove(engine *arborist.Engine) http.Handler {
 
 // addRoleRouter attaches the handlers defined in this file to a main router,
 // using the prefix `/role`.
-func addRoleRouter(mainRouter *mux.Router, engine *arborist.Engine) {
+func (server *Server) addRoleRouter(mainRouter *mux.Router) {
 	roleRouter := mainRouter.PathPrefix("/role").Subrouter()
-	roleRouter.Handle("/", handleListRoles(engine)).Methods("GET")
-	roleRouter.Handle("/", handleRoleCreate(engine)).Methods("POST")
+	roleRouter.Handle("/", handleListRoles(server.engine)).Methods("GET")
+	roleRouter.Handle("/", handleRoleCreate(server.engine)).Methods("POST")
 
 	roleOperations := roleRouter.PathPrefix("/{roleID}").Subrouter()
-	roleOperations.Handle("", handleRoleGet(engine)).Methods("GET")
-	roleOperations.Handle("", handleRolePatch(engine)).Methods("PATCH")
-	roleOperations.Handle("", handleRoleUpdate(engine)).Methods("PUT")
-	roleOperations.Handle("", handleRoleRemove(engine)).Methods("DELETE")
+	roleOperations.Handle("", handleRoleGet(server.engine)).Methods("GET")
+	roleOperations.Handle("", handleRolePatch(server.engine)).Methods("PATCH")
+	roleOperations.Handle("", handleRoleUpdate(server.engine)).Methods("PUT")
+	roleOperations.Handle("", handleRoleRemove(server.engine)).Methods("DELETE")
 }

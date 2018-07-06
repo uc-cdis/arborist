@@ -116,6 +116,33 @@ func (engine *Engine) HandleAuthRequest(request *AuthRequest) AuthResponse {
 	return engine.giveAuthResponse(request)
 }
 
+// HandleListAuthorizedResources takes a list of policies granted to a user
+// and lists all the resources which that user has access to through any role.
+func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response {
+	resources, err := engine.listAuthedResources(policies)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	paths := make([]string, len(resources))
+	for i := range resources {
+		paths[i] = resources[i].path
+	}
+	resourcesObject := struct {
+		resources []string `json:"resources"`
+	}{
+		resources: paths,
+	}
+	bytes, err := json.Marshal(resourcesObject)
+	if err != nil {
+		// should never happen; fix struct above
+		panic(err)
+	}
+	return &Response{Bytes: bytes, Code: http.StatusOK}
+}
+
 // HandleAuthRequestBytes is a wrapper around HandleAuthRequest that includes
 // JSON encoding and decoding for the request and response bytes.
 func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {

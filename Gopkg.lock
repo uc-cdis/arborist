@@ -19,9 +19,35 @@
   revision = "53c1911da2b537f792e7cafcb446b05ffe33b996"
   version = "v1.6.1"
 
+[[projects]]
+  branch = "master"
+  name = "github.com/uc-cdis/go-authutils"
+  packages = ["authutils"]
+  revision = "7f87cc9311ab1023e31e6d7d5d560f4bb4ea75f0"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = [
+    "ed25519",
+    "ed25519/internal/edwards25519"
+  ]
+  revision = "a49355c7e3f8fe157a85be2f77e6e269a0f89602"
+
+[[projects]]
+  name = "gopkg.in/square/go-jose.v2"
+  packages = [
+    ".",
+    "cipher",
+    "json",
+    "jwt"
+  ]
+  revision = "76dd09796242edb5b897103a75df2645c028c960"
+  version = "v2.1.6"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "65acd35ba2ed4189085637c91cdf96e4047006850ccb1f1f31a186a05aafac3d"
+  inputs-digest = "4b88f1867a1b45ca51e3dd8dd91c96aacae22bc7b7f38fbb6e552dc1b912df60"
   solver-name = "gps-cdcl"
   solver-version = 1
