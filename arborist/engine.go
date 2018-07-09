@@ -410,6 +410,14 @@ func (engine *Engine) removeResourceRecursively(resource *Resource) {
 
 // Operations for working with policies
 
+func (engine *Engine) addPolicy(policy *Policy) error {
+	if _, exists := engine.policies[policy.id]; exists {
+		return alreadyExists("policy", "id", policy.id)
+	}
+	engine.policies[policy.id] = policy
+	return nil
+}
+
 // The returned error is non-nil iff there is a role or a resource which was
 // used in the policy that does not exist in the engine.
 func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error) {
@@ -440,7 +448,10 @@ func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, err
 		resources:   resources,
 	}
 
-	engine.policies[policy.id] = policy
+	err := engine.addPolicy(policy)
+	if err != nil {
+		return nil, err
+	}
 
 	return policy, nil
 }
@@ -518,6 +529,8 @@ func (engine *Engine) updatePolicyWithJSON(policyID string, policyJSON *PolicyJS
 	return policy, nil
 }
 
+// appendPolicyWithJSON is the same as updatePolicyWithJSON, except instead of
+// overwriting the existing policy the fields are appended with new content.
 func (engine *Engine) appendPolicyWithJSON(policyID string, policyJSON *PolicyJSON) (*Policy, error) {
 	policy, exists := engine.policies[policyID]
 	if !exists {
@@ -543,6 +556,9 @@ func (engine *Engine) removePolicy(policyID string) error {
 	return nil
 }
 
+// readPolicyFromJSON transforms a PolicyJSON to a Policy, without modifying
+// anything in the engine. It returns an error if any roles or resources in
+// the PolicyJSON do not exist in the engine.
 func (engine *Engine) readPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error) {
 	roles := make(map[*Role]struct{}, len(policyJSON.RoleIDs))
 	for _, roleID := range policyJSON.RoleIDs {
@@ -614,6 +630,9 @@ func (engine *Engine) giveAuthResponse(authRequest *AuthRequest) AuthResponse {
 	return AuthResponse{auth: false}
 }
 
+// listAuthedResources takes a list of policy IDs (which all must exist in the
+// engine, otherwise this function returns an error) and returns a list of all
+// the resources which those policies grant any form of access to).
 func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, error) {
 	resources := make([]*Resource, 0)
 	for _, policyID := range policyIDs {

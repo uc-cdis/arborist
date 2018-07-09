@@ -17,19 +17,15 @@ func validateRoleID(id string) error {
 	return nil
 }
 
-func NewRole(id string, description string) (*Role, error) {
-	err := validateRoleID(id)
+func NewRole(role *Role) (*Role, error) {
+	err := validateRoleID(role.id)
 	if err != nil {
 		return nil, err
 	}
-
-	role := Role{
-		id:          id,
-		description: description,
-		permissions: make(map[*Permission]struct{}),
+	if role.permissions == nil {
+		role.permissions = make(map[*Permission]struct{})
 	}
-
-	return &role, nil
+	return role, nil
 }
 
 func (role *Role) equals(other *Role) bool {

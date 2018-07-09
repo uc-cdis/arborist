@@ -15,89 +15,245 @@ func makeTestEngine() *Engine {
 	return engine
 }
 
-func TestRemoveResourceRecursively(t *testing.T) {
+func makeTestEngineWithPolicies() *Engine {
 	engine := makeTestEngine()
+	addTestResources(engine)
+	addTestRoles(engine)
+	addTestPolicies(engine)
+	return engine
+}
 
-	// Set up the resource tree to look like this:
-	//
-	//     /
-	//       foo
-	//         bar
-	//           x
-	//           y
-	//       baz
-	//
-	// then remove the `bar` node recursively. Check that the bar, x, and y
-	// nodes are gone, and foo and baz still exist.
-
+// addTestResources sets up the resource tree to look like this:
+//
+//     / (root)
+//     ├── coffee
+//     │   ├── beans
+//     │   ├── grinder
+//     │   ├── filter
+//     └── kitchen
+//         ├── dishes
+//         │   ├── kettle
+//         │   └── mug
+//         └── refrigerator
+//             └── milk
+//
+// so that the engine has some basic resources set up to use for tests. Refer to
+// this digram for what the test engine's resource tree should look like.
+func addTestResources(engine *Engine) {
 	addResourceOrFail := func(resource *Resource, err error) *Resource {
 		if err != nil {
-			t.Fatalf("%s", err)
+			// should never happen; resources added below are wrong somehow
+			panic("fix addTestResources")
 		}
 		_, err = engine.addResource(resource)
 		if err != nil {
-			t.Fatalf("%s", err)
+			// should never happen; adding resource caused error from engine
+			panic("fix addTestResources")
 		}
 		return resource
 	}
 
-	resource_foo := addResourceOrFail(NewResource(
-		"foo",
+	coffee := addResourceOrFail(NewResource(
+		"coffee",
 		"example resource",
 		engine.rootResource,
 		nil,
 	))
 	_ = addResourceOrFail(NewResource(
-		"baz",
+		"beans",
+		"example resource",
+		coffee,
+		nil,
+	))
+	_ = addResourceOrFail(NewResource(
+		"grinder",
+		"example resource",
+		coffee,
+		nil,
+	))
+	_ = addResourceOrFail(NewResource(
+		"filter",
+		"example resource",
+		coffee,
+		nil,
+	))
+
+	kitchen := addResourceOrFail(NewResource(
+		"kitchen",
 		"example resource",
 		engine.rootResource,
 		nil,
 	))
-	resource_foo_bar := addResourceOrFail(NewResource(
-		"bar",
+	dishes := addResourceOrFail(NewResource(
+		"dishes",
 		"example resource",
-		resource_foo,
+		kitchen,
 		nil,
 	))
 	_ = addResourceOrFail(NewResource(
-		"x",
+		"mug",
 		"example resource",
-		resource_foo_bar,
+		dishes,
 		nil,
 	))
 	_ = addResourceOrFail(NewResource(
-		"y",
+		"kettle",
 		"example resource",
-		resource_foo_bar,
+		dishes,
 		nil,
 	))
+	refrigerator := addResourceOrFail(NewResource(
+		"refrigerator",
+		"example resource",
+		kitchen,
+		nil,
+	))
+	_ = addResourceOrFail(NewResource(
+		"milk",
+		"example resource",
+		refrigerator,
+		nil,
+	))
+}
+
+// addTestRoles sets up the following roles in the engine:
+//
+// TODO
+func addTestRoles(engine *Engine) {
+	addRoleOrFail := func(role *Role, err error) *Role {
+		if err != nil {
+			// should never happen; roles added below are wrong somehow
+			panic("fix addTestRoles")
+		}
+		_, err = engine.addRole(role)
+		if err != nil {
+			// should never happen; adding role caused error from engine
+			panic("fix addTestRoles")
+		}
+		return role
+	}
+
+	grind := &Permission{
+		id:          "grind",
+		description: "",
+		action:      Action{"barista", "grind"},
+		constraints: map[string]string{},
+	}
+	addRoleOrFail(NewRole(&Role{
+		id:          "grind",
+		description: "example role for grinding (beans)",
+		permissions: map[*Permission]struct{}{grind: struct{}{}},
+	}))
+
+	boil := &Permission{
+		id:          "boil",
+		description: "",
+		action:      Action{"barista", "boil"},
+		constraints: map[string]string{},
+	}
+	addRoleOrFail(NewRole(&Role{
+		id:          "boil",
+		description: "example role for boiling (water)",
+		permissions: map[*Permission]struct{}{boil: struct{}{}},
+	}))
+
+	pour := &Permission{
+		id:          "pour",
+		description: "",
+		action:      Action{"barista", "pour"},
+		constraints: map[string]string{},
+	}
+	addRoleOrFail(NewRole(&Role{
+		id:          "pour",
+		description: "example role for pouring (water)",
+		permissions: map[*Permission]struct{}{pour: struct{}{}},
+	}))
+}
+
+func addTestPolicies(engine *Engine) {
+	engine.addPolicy(&Policy{
+		id: "boil_water",
+		roles: map[*Role]struct{}{
+			engine.roles["boil"]: struct{}{},
+		},
+		resources: map[*Resource]struct{}{
+			engine.resources["/kitchen/dishes/kettle"]: struct{}{},
+		},
+	})
+}
+
+func TestAddResources(t *testing.T) {
+	// Setup an engine for testing and add the test resources.
+	engine := makeTestEngine()
+	addTestResources(engine)
 
 	// Check resources were added correctly.
-	if _, exists := engine.resources["/foo/bar"]; !exists {
-		t.Fatal("didn't create /foo/bar resource")
+	check := func(path string) {
+		if _, exists := engine.resources[path]; !exists {
+			t.Fatalf("didn't create %s resource", path)
+		}
 	}
-	if _, exists := engine.resources["/foo/bar/x"]; !exists {
-		t.Fatal("didn't create /foo/bar/x resource")
+	check("/coffee")
+	check("/coffee/beans")
+	check("/coffee/grinder")
+	check("/coffee/filter")
+	check("/kitchen")
+	check("/kitchen/dishes")
+	check("/kitchen/dishes/mug")
+	check("/kitchen/dishes/kettle")
+	check("/kitchen/refrigerator")
+	check("/kitchen/refrigerator/milk")
+}
+
+// checkRemoved is a helper function which fails a test if the resource with the
+// given path still exists in the engine.
+func checkRemoved(t *testing.T, engine *Engine, path string) {
+	if _, exists := engine.resources[path]; exists {
+		t.Fatalf("%s resource still exists", path)
 	}
-	if _, exists := engine.resources["/foo/bar/y"]; !exists {
-		t.Fatal("didn't create /foo/bar/y resource")
+}
+
+func TestRemoveResourceRecursively(t *testing.T) {
+	engine := makeTestEngine()
+	addTestResources(engine)
+
+	// Remove the `refrigerator` node recursively. Check that the refrigerator
+	// node is gone, and its child node `milk` is also gone, but that the other
+	// nodes are still there.
+	refrigerator := engine.resources["/kitchen/refrigerator"]
+	engine.removeResourceRecursively(refrigerator)
+	checkRemoved(t, engine, "/kitchen/refrigerator")
+	checkRemoved(t, engine, "/kitchen/refrigerator/milk")
+
+	// Remove the entire `kitchen` node recursively and check that subnodes are
+	// removed.
+	kitchen := engine.resources["/kitchen"]
+	engine.removeResourceRecursively(kitchen)
+	checkRemoved(t, engine, "/kitchen")
+	checkRemoved(t, engine, "/kitchen/dishes")
+	checkRemoved(t, engine, "/kitchen/dishes/mug")
+}
+
+func TestListAuthedResources(t *testing.T) {
+	engine := makeTestEngineWithPolicies()
+
+	listResourcesOrFail := func(policyIDs []string) []*Resource {
+		resources, err := engine.listAuthedResources(policyIDs)
+		if err != nil {
+			t.Fatal(err.Error())
+			return nil
+		}
+		return resources
 	}
 
-	// Remove the /foo/bar node and check everything is as expected.
-	engine.removeResourceRecursively(resource_foo_bar)
-	if _, exists := engine.resources["/foo"]; !exists {
-		t.Fatal("/foo/bar resource still exists")
+	check := func(resources []*Resource, expected []string) {
+		resultPaths := make([]string, len(resources))
+		for i := range resources {
+			resultPaths[i] = resources[i].path
+		}
 	}
-	if _, exists := engine.resources["/baz"]; !exists {
-		t.Fatal("/foo/bar resource still exists")
-	}
-	if _, exists := engine.resources["/foo/bar"]; exists {
-		t.Fatal("/foo/bar resource still exists")
-	}
-	if _, exists := engine.resources["/foo/bar/x"]; exists {
-		t.Fatal("/foo/bar/x resource still exists")
-	}
-	if _, exists := engine.resources["/foo/bar/y"]; exists {
-		t.Fatal("/foo/bar/y resource still exists")
-	}
+
+	resources := listResourcesOrFail([]string{"boil_water"})
+	expected := []string{"/kitchen/dishes/kettle"}
+	check(resources, expected)
 }
