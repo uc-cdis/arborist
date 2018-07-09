@@ -1,0 +1,760 @@
+openapi: 3.0.1
+info:
+  title: Arborist
+  version: 1.1.1
+  description: authorization microservice to handle RBAC based on configured policies
+  license:
+    name: 'Apache 2.0'
+    url: 'https://github.com/uc-cdis/arborist'
+tags:
+  - name: auth
+    description: make requests to determine authorization
+  - name: engine
+    description: render the global state for everything currently stored in arborist
+  - name: resource
+    description: manage resources registered in the engine
+  - name: role
+    description: manage roles registered in the engine
+  - name: policy
+    description: manage policies to grant authorization
+paths:
+  /auth/request:
+    post:
+      tags:
+        - auth
+      description: >-
+        Ask arborist to check authorization on a user request. A client of the
+        Gen3 auth stack sends the user's JWT to this endpoint, along with the
+        information about the user's specific request. The terminology used to
+        describe user requests is flexible and arborist does not "nail it down";
+        however our usage so far is to use the permission model to capture the
+        basic set of operations one might expect in RBAC (read/write, etc.)
+        combined with the client service, and the path for the resource the user
+        is trying to access.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequestBody'
+      responses:
+        200:
+          description: >-
+            Arborist successfully returned an authorization decision. NOTE
+            that a 200 status DOES NOT indicate authorization, only that the
+            input was valid. The `"auth"` field in the response indicates
+            authorization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthRequestResponse'
+        400:
+          description: >-
+            The input was somehow invalid; for example, a given resource does
+            not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+  /auth/resources:
+    post:
+      tags:
+        - auth
+      description: >-
+        Given a user token, return a list of resources which are accessible to
+        the user (using any action) according to the policies listed in the
+        token.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthResourcesRequestBody'
+      responses:
+        200:
+          description: >-
+            Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResourcesResponse'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        401:
+          description: >-
+            Token failed to validate (authentication error)
+  /engine/:
+    get:
+      tags:
+        - engine
+      description: >-
+        Return the entire model which arborist has in memory, serialized into
+        JSON.
+      responses:
+        200:
+          description: arborist engine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Engine'
+  /resource/:
+    get:
+      tags:
+        - resource
+      description: >-
+        List all resources which have been created in arborist. The resources in
+        arborist are saved in a tree structure; however this endpoint will
+        traverse through all the resources and return a flattened list of just
+        the full resource paths for all available resources.
+      responses:
+        200:
+          description: list of resources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resource_paths:
+                    type: array
+                    items:
+                      type: string
+                    example: ["/data_file", "/programs", "/", "/programs/DEV","/programs/DEV/projects","/programs/DEV/projects/test"]
+  /resource/{resourcePath}:
+    parameters:
+      - in: path
+        name: resourcePath
+        required: true
+        schema:
+          type: string
+        description: >-
+          The full path for a resource registered in the engine, which includes
+          slashes. For example, if a resource was created which has the path
+          `/a/b/c`, then the endpoint `/resource/a/b/c` can now be used to access
+          this resource.
+    get:
+      tags:
+        - resource
+      description: Read the resource given by the path
+      responses:
+        200:
+          description: JSON representation of the specified resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        404:
+          description: no resource exists with the given `resourcePath`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    post:
+      tags:
+        - resource
+      description: >-
+        Add a new subresource, *underneath* an existing resource. The path *is
+        allowed to be empty*, in which case `resourcePath` is empty, the resource
+        is created under the root resource, as `/new_resource`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Resource'
+      responses:
+        201:
+          description: JSON representation of successfully-created resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Resource'
+        404:
+          description: no resource exists with the given `resourcePath`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+    put:
+      tags:
+        - resource
+      description: >-
+        Overwrite an existing resource. This endpoint requires a fully-formed
+        resource model (and cannot patch over individual fields on the existing
+        resources).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Resource'
+      responses:
+        200:
+          description: JSON representation of successfully-updated resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Resource'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no resource exists with the given `resourcePath`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    delete:
+      tags:
+        - resource
+      responses:
+        204:
+          description: resource successfully deleted
+        404:
+          description: no resource exists with the given `resourcePath`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+  /role/:
+    get:
+      tags:
+        - role
+      description: List all the roles registered in arborist.
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              # example JSON:
+              #     {"role_ids":["create","upload","update","delete","file_uploader","read"]}
+              schema:
+                $ref: '#/components/schemas/Roles'
+    post:
+      tags:
+        - role
+      description: Create a new role
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Role'
+      responses:
+        201:
+          description: Success; returns JSON representation of created role
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Role'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+  /role/{roleID}:
+    parameters:
+      - in: path
+        name: roleID
+        required: true
+        schema:
+          type: string
+        description: The ID for a role registered in arborist.
+    get:
+      tags:
+        - role
+      description: >-
+        Output the information for a specific role.
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        404:
+          description: no role exists with the given `roleID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    put:
+      tags:
+        - role
+      description: >-
+        Overwrite an existing role with new content. This endpoint requires a
+        fully-formed role (and cannot patch over individual fields on the
+        existing resources).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Role'
+      responses:
+        201:
+          description: Success; returns JSON representation of updated role
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Role'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no role exists with the given `roleID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    patch:
+      tags:
+        - role
+      description: >-
+        Append information to an existing role. The contents of all the fields
+        provided in a `PATCH` request are appended to the existing fields on
+        this role.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Role'
+      responses:
+        201:
+          description: Success; returns JSON representation of updated role
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Role'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no role exists with the given `roleID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    delete:
+      tags:
+        - role
+      description: Delete this role.
+      responses:
+        204:
+          description: role successfully deleted
+        404:
+          description: no role exists with the given `roleID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+  /policy/:
+    get:
+      tags:
+        - policy
+      description: >-
+        List just the IDs for all policies which have been created in arborist.
+      responses:
+        200:
+          description: list of resources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_ids:
+                    type: array
+                    items:
+                      type: string
+                example:
+                  policy_ids: ["programs.DEV-update","programs.DEV-delete","data_upload","programs.DEV-read","programs.DEV-create","programs.DEV-upload"]
+    post:
+      tags:
+        - policy
+      description: Create a new policy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        201:
+          description: Success; returns JSON representation of created policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Policy'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+  /policy/{policyID}:
+    parameters:
+      - in: path
+        name: policyID
+        required: true
+        schema:
+          type: string
+        description: The ID for a policy registered in arborist.
+    get:
+      tags:
+        - role
+      description: >-
+        Output the information for a specific policy.
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        404:
+          description: no role exists with the given `policyID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    put:
+      tags:
+        - policy
+      description: >-
+        Overwrite an existing policy with new content. This endpoint requires a
+        fully-formed policy (and cannot patch over individual fields on the
+        existing resources).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        201:
+          description: Success; returns JSON representation of updated policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Policy'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no policy exists with the given `policyID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    patch:
+      tags:
+        - policy
+      description: >-
+        Append information to an existing policy. The contents of all the fields
+        provided in a `PATCH` request are appended to the existing fields on
+        this policy.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        201:
+          description: Success; returns JSON representation of updated policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Policy'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no policy exists with the given `policyID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    delete:
+      tags:
+        - policy
+      description: Delete this policy.
+      responses:
+        204:
+          description: policy successfully deleted
+        404:
+          description: no policy exists with the given `policyID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+components:
+  schemas:
+    AuthRequestBody:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            jwt:
+              type: string
+              description: >-
+                A JWT belonging to a user, as defined by RFC 7519. It must contain a
+                field `context.user.policies` listing the policies granted to the user.
+              example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
+        request:
+          type: object
+          properties:
+            resource:
+              type: string
+              example: '/programs/DEV/projects/test'
+            action:
+              type: object
+              properties:
+                service:
+                  type: string
+                  example: 'fence'
+                method:
+                  type: string
+                  example: 'read-storage'
+              required:
+                - service
+                  method
+          required:
+            - token
+    AuthRequestResponse:
+      type: object
+      properties:
+        auth:
+          type: boolean
+    AuthResourcesRequestBody:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            token:
+              type: string
+              example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
+          required:
+            - token
+      required:
+        - user
+    AuthResourcesResponse:
+      type: object
+      properties:
+        resources:
+          type: array
+          items:
+            type: string
+          example: ['/programs/DEV/projects/test', '/programs/foo/projects/bar']
+    UserError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              description: an explanation of the error that occurred
+            code:
+              type: integer
+              description: the HTTP error code
+      example:
+        error:
+          message: "input resource is missing the following required fields: ..."
+          code: 400
+    NotFound:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              description: an explanation of the error that occurred
+            code:
+              type: integer
+              description: the HTTP error code
+      example:
+        error:
+          message: "resource with path `/foo/bar` does not exist"
+          code: 404
+    Resource:
+      # example JSON:
+      #
+      #     {
+      #       "name": "data_file",
+      #       "path": "/data_file",
+      #       "description": "data files, stored in s3",
+      #       "subresources": []
+      #     }
+      type: object
+      properties:
+        name:
+          type: string
+          description: >-
+            The name (final path segment) of this particular resource. The names
+            are not globally unique; they must be unique only within the
+            "directory" of the tree they live in.  example: "programs"
+        path:
+          type: string
+          description: >-
+            The full path to this resource, which is formed from the list of resource
+            names starting from the root and continuing down to this one, joined by slashes.
+            Note that the path is generated by arborist and should not be included in the
+            input value.
+          example: "/programs"
+        description:
+          type: string
+        subresources:
+          type: array
+          description: nested Resource items
+          items:
+            $ref: '#/components/schemas/Resource'
+          example:  { "name": "programs", "path": "/programs", "description": "", "subresources": [ { "name": "DEV", "path": "/programs/DEV", "description": "", "subresources": [ { "name": "projects", "path": "/programs/DEV/projects", "description": "", "subresources": [ { "name": "test", "path": "/programs/DEV/projects/test", "description": "", "subresources": [] } ] } ] } ] }
+    Roles:
+      type: object
+      properties:
+        role_ids:
+          type: array
+          items:
+            type: string
+      example:
+        role_ids: ["create","upload","update","delete","file_uploader","read"]
+    Role:
+      # example JSON:
+      #
+      #     {
+      #       "id": "file_uploader",
+      #       "description": "can upload data files",
+      #       "permissions": [
+      #         {
+      #           "id": "file_upload",
+      #           "description": "permission to upload data files",
+      #           "action": {"service": "fence", "method": "file_upload"}
+      #         }
+      #       ]
+      #     }
+      type: object
+      properties:
+        id:
+          type: string
+          description: a name which uniquely identifies this role in arborist
+          example: "read"
+        description:
+          type: string
+          description: some optional human-readable information about the role
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+      required:
+        - id
+          permissions
+    Permission:
+      type: object
+      description: a permission to do a specific action.
+      properties:
+        id:
+          type: string
+          description: a name which uniquely identifies this permission in arborist
+          example: "read"
+        description:
+          type: string
+          description: some optional human-readable information about the permission
+        action:
+          type: object
+          description: a model for an action that a user can do
+          properties:
+            service:
+              type: string
+              description: >-
+                the service in which the action is granted; or, `"*"` to grant
+                the role for all, arbitrary services
+              example: "fence"
+            method:
+              type: string
+              description: >-
+                a basic operation such as read or write; could also use RESTful
+                language such as GET/POST/etc.
+              example: "read"
+          required:
+            - service
+              method
+      required:
+        - id
+          action
+    Policy:
+      type: object
+      properties:
+        id:
+          type: string
+          description: a name which uniquely identifies this permission in arborist
+        role_ids:
+          type: array
+          description: a list of role IDs
+          items:
+            type: string
+          example: ["upload"]
+        resource_paths:
+          type: array
+          description: a list of resource paths
+          items:
+            type: string
+          example: ["/programs/DEV/projects/test"]
+    Engine:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        timestamp:
+          type: string
+          description: >-
+            the timestamp in ISO 8601 format for when this information was
+            generated
+          example: '2019-01-23T19:01:28Z'
