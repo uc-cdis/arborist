@@ -105,9 +105,9 @@ func handleResourceRemove(engine *arborist.Engine) http.Handler {
 // router, using the prefix `/resource`.
 func (server *Server) addResourceRouter(mainRouter *mux.Router) {
 	resourceRouter := mainRouter.PathPrefix("/resource").Subrouter()
-	resourceRouter.Handle("/", handleListResources(server.engine)).Methods("GET")
-	resourceRouter.Handle("/", handleResourceCreate(server.engine)).Methods("POST")
-	resourceRouter.Handle(resourcePath, handleResourceGet(server.engine)).Methods("GET")
-	resourceRouter.Handle(resourcePath, handleResourceUpdate(server.engine)).Methods("PUT")
-	resourceRouter.Handle(resourcePath, handleResourceRemove(server.engine)).Methods("DELETE")
+	resourceRouter.Handle("/", handleListResources(server.Engine)).Methods("GET")
+	resourceRouter.Handle("/", handleResourceCreate(server.Engine)).Methods("POST")
+	resourceRouter.Handle(resourcePath, handleResourceGet(server.Engine)).Methods("GET")
+	resourceRouter.Handle(resourcePath, handleResourceUpdate(server.Engine)).Methods("PUT")
+	resourceRouter.Handle(resourcePath, handleResourceRemove(server.Engine)).Methods("DELETE")
 }

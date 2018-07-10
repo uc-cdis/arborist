@@ -105,10 +105,10 @@ func handlePolicyRemove(engine *arborist.Engine) http.Handler {
 // using the prefix `/policy`.
 func (server *Server) addPolicyRouter(mainRouter *mux.Router) {
 	policyRouter := mainRouter.PathPrefix("/policy").Subrouter()
-	policyRouter.Handle("/", handleListPolicies(server.engine)).Methods("GET")
-	policyRouter.Handle("/", handlePolicyCreate(server.engine)).Methods("POST")
-	policyRouter.Handle("/{policyID}", handlePolicyGet(server.engine)).Methods("GET")
-	policyRouter.Handle("/{policyID}", handlePolicyPatch(server.engine)).Methods("PATCH")
-	policyRouter.Handle("/{policyID}", handlePolicyUpdate(server.engine)).Methods("PUT")
-	policyRouter.Handle("/{policyID}", handlePolicyRemove(server.engine)).Methods("DELETE")
+	policyRouter.Handle("/", handleListPolicies(server.Engine)).Methods("GET")
+	policyRouter.Handle("/", handlePolicyCreate(server.Engine)).Methods("POST")
+	policyRouter.Handle("/{policyID}", handlePolicyGet(server.Engine)).Methods("GET")
+	policyRouter.Handle("/{policyID}", handlePolicyPatch(server.Engine)).Methods("PATCH")
+	policyRouter.Handle("/{policyID}", handlePolicyUpdate(server.Engine)).Methods("PUT")
+	policyRouter.Handle("/{policyID}", handlePolicyRemove(server.Engine)).Methods("DELETE")
 }

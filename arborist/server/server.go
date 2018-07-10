@@ -9,10 +9,10 @@ import (
 )
 
 type Server struct {
-	engine *arborist.Engine
-	jwtApp *authutils.JWTApplication
-	config *ServerConfig
-	logger *log.Logger
+	Engine *arborist.Engine
+	JWTApp *authutils.JWTApplication
+	Config *ServerConfig
+	Logger *log.Logger
 }
 
 func typeError(field string, expectedType string) error {
@@ -24,12 +24,12 @@ func typeError(field string, expectedType string) error {
 }
 
 func (server *Server) readPoliciesFromJWT(token string) ([]string, error) {
-	if server.jwtApp == nil {
+	if server.JWTApp == nil {
 		// should never happen; server initialization code is incorrect
 		panic("jwtApp not initialized")
 	}
 
-	claims, err := server.jwtApp.Decode(token)
+	claims, err := server.JWTApp.Decode(token)
 	if err != nil {
 		return nil, err
 	}

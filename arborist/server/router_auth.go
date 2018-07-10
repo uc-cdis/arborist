@@ -54,7 +54,7 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		}
 		encodedToken := requestFields.request.token
 		policies, err := server.readPoliciesFromJWT(encodedToken)
-		response := server.engine.HandleListAuthorizedResources(policies)
+		response := server.Engine.HandleListAuthorizedResources(policies)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -65,6 +65,6 @@ func (server *Server) handleListResourceAuth() http.Handler {
 
 func (server *Server) addAuthRouter(mainRouter *mux.Router) {
 	authRouter := mainRouter.PathPrefix("/auth").Subrouter()
-	authRouter.Handle("/request", handleAuthRequest(server.engine)).Methods("POST")
+	authRouter.Handle("/request", handleAuthRequest(server.Engine)).Methods("POST")
 	authRouter.Handle("/resources", server.handleListResourceAuth()).Methods("POST")
 }
