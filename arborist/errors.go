@@ -38,9 +38,11 @@ func missingRequiredField(entity string, field string) error {
 }
 
 func missingRequiredFields(entity string, fields []string) error {
-	formattedFields := make([]string, 0)
+	formattedFields := make([]string, len(fields))
+	i := 0
 	for _, field := range fields {
-		formattedFields = append(formattedFields, fmt.Sprintf("`%s`", field))
+		formattedFields[i] = fmt.Sprintf("`%s`", field)
+		i++
 	}
 	requiredFields := strings.Join(formattedFields, ", ")
 	msg := fmt.Sprintf(
@@ -52,9 +54,11 @@ func missingRequiredFields(entity string, fields []string) error {
 }
 
 func containsUnexpectedFields(entity string, fields []string) error {
-	formattedFields := make([]string, 0)
+	formattedFields := make([]string, len(fields))
+	i := 0
 	for _, field := range fields {
-		formattedFields = append(formattedFields, fmt.Sprintf("`%s`", field))
+		formattedFields[i] = fmt.Sprintf("`%s`", field)
+		i++
 	}
 	requiredFields := strings.Join(formattedFields, ", ")
 	msg := fmt.Sprintf(

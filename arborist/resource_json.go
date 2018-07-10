@@ -6,9 +6,11 @@ import (
 
 // toJSON converts a Resource to a ResourceJSON for serialization.
 func (resource *Resource) toJSON() ResourceJSON {
-	subresources := make([]ResourceJSON, 0)
+	subresources := make([]ResourceJSON, len(resource.subresources))
+	i := 0
 	for subresource := range resource.subresources {
-		subresources = append(subresources, subresource.toJSON())
+		subresources[i] = subresource.toJSON()
+		i++
 	}
 	resourceJSON := ResourceJSON{
 		Name:         resource.name,

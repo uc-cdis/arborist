@@ -5,9 +5,11 @@ import (
 )
 
 func (role *Role) toJSON() RoleJSON {
-	permissions := make([]PermissionJSON, 0)
+	permissions := make([]PermissionJSON, len(role.permissions))
+	i := 0
 	for permission := range role.permissions {
-		permissions = append(permissions, permission.toJSON())
+		permissions[i] = permission.toJSON()
+		i++
 	}
 	return RoleJSON{
 		ID:          role.id,
@@ -56,7 +58,12 @@ func (roleJSON *RoleJSON) defaultsFromRole(role *Role) {
 		roleJSON.Description = role.description
 	}
 	if roleJSON.Permissions == nil {
-		roleJSON.Permissions = make([]PermissionJSON, 0)
+		roleJSON.Permissions = make([]PermissionJSON, len(role.permissions))
+		i := 0
+		for permission := range role.permissions {
+			roleJSON.Permissions[i] = permission.toJSON()
+			i++
+		}
 	}
 	if len(roleJSON.Permissions) == 0 {
 		for permission := range role.permissions {

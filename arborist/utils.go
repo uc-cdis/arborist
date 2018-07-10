@@ -71,7 +71,7 @@ func validateJSON(
 
 	// First, check that the content contains an entry for every field in the
 	// input with a JSON tag.
-	missingFields := make([]string, 0)
+	missingFields := []string{}
 	for field := range expectFields {
 		_, exists := content[field]
 		_, optional := optionalFields[field]
@@ -84,7 +84,7 @@ func validateJSON(
 	}
 
 	// Now, check that the content does not contain any unexpected fields.
-	unexpectedFields := make([]string, 0)
+	unexpectedFields := []string{}
 	for field := range content {
 		if _, exists := expectFields[field]; !exists {
 			unexpectedFields = append(unexpectedFields, field)

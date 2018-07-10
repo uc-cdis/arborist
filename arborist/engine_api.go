@@ -249,12 +249,6 @@ func (engine *Engine) HandlePolicyCreateBulk(bytes []byte) *Response {
 		}
 	}
 
-	content := struct {
-		Created []PolicyJSON `json:"created"`
-	}{
-		Created: make([]PolicyJSON, 0),
-	}
-
 	policies, err := engine.createPoliciesFromJSON(&policiesJSON)
 	if err != nil {
 		return &Response{
@@ -263,8 +257,16 @@ func (engine *Engine) HandlePolicyCreateBulk(bytes []byte) *Response {
 		}
 	}
 
+	content := struct {
+		Created []PolicyJSON `json:"created"`
+	}{
+		Created: make([]PolicyJSON, len(policies)),
+	}
+
+	i := 0
 	for _, policy := range policies {
-		content.Created = append(content.Created, policy.toJSON())
+		content.Created[i] = policy.toJSON()
+		i++
 	}
 
 	responseBytes, err := json.Marshal(content)
@@ -608,9 +610,10 @@ func (engine *Engine) HandleRolesCreate(bytes []byte) *Response {
 	content := struct {
 		Created []RoleJSON `json:"created"`
 	}{
-		Created: make([]RoleJSON, 0),
+		Created: make([]RoleJSON, len(rolesJSON.Roles)),
 	}
 
+	i := 0
 	for _, roleJSON := range rolesJSON.Roles {
 		role, err := engine.addRoleFromJSON(&roleJSON)
 		if err != nil {
@@ -619,7 +622,8 @@ func (engine *Engine) HandleRolesCreate(bytes []byte) *Response {
 				Code:          http.StatusBadRequest,
 			}
 		}
-		content.Created = append(content.Created, role.toJSON())
+		content.Created[i] = role.toJSON()
+		i++
 	}
 
 	responseBytes, err := json.Marshal(content)

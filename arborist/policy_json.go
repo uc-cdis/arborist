@@ -5,14 +5,20 @@ import (
 )
 
 func (policy *Policy) toJSON() PolicyJSON {
-	roleIDs := make([]string, 0)
+	roleIDs := make([]string, len(policy.roles))
+	i := 0
 	for role := range policy.roles {
-		roleIDs = append(roleIDs, role.id)
+		roleIDs[i] = role.id
+		i++
 	}
-	resourcePaths := make([]string, 0)
+
+	resourcePaths := make([]string, len(policy.resources))
+	i = 0
 	for resource := range policy.resources {
-		resourcePaths = append(resourcePaths, resource.path)
+		resourcePaths[i] = resource.path
+		i++
 	}
+
 	return PolicyJSON{
 		ID:            policy.id,
 		Description:   policy.description,

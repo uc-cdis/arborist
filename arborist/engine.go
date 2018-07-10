@@ -197,9 +197,11 @@ func (engine *Engine) removeRole(role *Role) error {
 // Operations for working with resources
 
 func (engine *Engine) listResourcePaths() []string {
-	result := make([]string, 0)
+	result := make([]string, len(engine.resources))
+	i := 0
 	for resourcePath := range engine.resources {
-		result = append(result, resourcePath)
+		result[i] = resourcePath
+		i++
 	}
 	return result
 }
@@ -387,7 +389,7 @@ func (engine *Engine) removeResourceRecursively(resource *Resource) {
 	if resource == nil {
 		return
 	}
-	toRemove := make([]*Resource, 0)
+	toRemove := []*Resource{}
 	queue := []*Resource{resource}
 	var next *Resource
 	for len(queue) > 0 {
@@ -634,7 +636,7 @@ func (engine *Engine) giveAuthResponse(authRequest *AuthRequest) AuthResponse {
 // engine, otherwise this function returns an error) and returns a list of all
 // the resources which those policies grant any form of access to).
 func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, error) {
-	resources := make([]*Resource, 0)
+	resources := []*Resource{}
 	for _, policyID := range policyIDs {
 		policy, exists := engine.policies[policyID]
 		if !exists {

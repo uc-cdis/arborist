@@ -13,28 +13,32 @@ type EngineJSON struct {
 }
 
 func (engine *Engine) toJSON() EngineJSON {
-	permissions := make([]PermissionJSON, 0)
+	permissions := make([]PermissionJSON, len(engine.permissions))
+	i := 0
 	for _, permission := range engine.permissions {
-		permissionJSON := permission.toJSON()
-		permissions = append(permissions, permissionJSON)
+		permissions[i] = permission.toJSON()
+		i++
 	}
 
-	roles := make([]RoleJSON, 0)
+	roles := make([]RoleJSON, len(engine.roles))
+	i = 0
 	for _, role := range engine.roles {
-		roleJSON := role.toJSON()
-		roles = append(roles, roleJSON)
+		roles[i] = role.toJSON()
+		i++
 	}
 
-	resources := make([]ResourceJSON, 0)
+	resources := make([]ResourceJSON, len(engine.resources))
+	i = 0
 	for _, resource := range engine.resources {
-		resourceJSON := resource.toJSON()
-		resources = append(resources, resourceJSON)
+		resources[i] = resource.toJSON()
+		i++
 	}
 
-	policies := make([]PolicyJSON, 0)
+	policies := make([]PolicyJSON, len(engine.policies))
+	i = 0
 	for _, policy := range engine.policies {
-		policyJSON := policy.toJSON()
-		policies = append(policies, policyJSON)
+		policies[i] = policy.toJSON()
+		i++
 	}
 
 	timestamp := time.Now().Unix()
