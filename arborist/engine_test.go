@@ -237,23 +237,37 @@ func TestRemoveResourceRecursively(t *testing.T) {
 func TestListAuthedResources(t *testing.T) {
 	engine := makeTestEngineWithPolicies()
 
-	listResourcesOrFail := func(policyIDs []string) []*Resource {
-		resources, err := engine.listAuthedResources(policyIDs)
-		if err != nil {
-			t.Fatal(err.Error())
-			return nil
+	t.Run("valid", func(t *testing.T) {
+		listResourcesOrFail := func(policyIDs []string) []*Resource {
+			resources, err := engine.listAuthedResources(policyIDs)
+			if err != nil {
+				t.Fatal(err.Error())
+				return nil
+			}
+			return resources
 		}
-		return resources
-	}
 
-	check := func(resources []*Resource, expected []string) {
-		resultPaths := make([]string, len(resources))
-		for i := range resources {
-			resultPaths[i] = resources[i].path
+		check := func(resources []*Resource, expected []string) {
+			resultPaths := make([]string, len(resources))
+			for i := range resources {
+				resultPaths[i] = resources[i].path
+			}
 		}
-	}
 
-	resources := listResourcesOrFail([]string{"boil_water"})
-	expected := []string{"/kitchen/dishes/kettle"}
-	check(resources, expected)
+		resources := listResourcesOrFail([]string{"boil_water"})
+		expected := []string{"/kitchen/dishes/kettle"}
+		check(resources, expected)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		_, err := engine.listAuthedResources([]string{"not in the engine"})
+		if err == nil {
+			t.Error("no error from listing resources for missing policy")
+		}
+
+		_, err = engine.listAuthedResources([]string{"boil_water", "not in the engine"})
+		if err == nil {
+			t.Error("no error from listing resources for missing policy")
+		}
+	})
 }

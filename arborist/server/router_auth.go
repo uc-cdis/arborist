@@ -54,6 +54,9 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		}
 		encodedToken := requestFields.request.token
 		policies, err := server.readPoliciesFromJWT(encodedToken)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		response := server.Engine.HandleListAuthorizedResources(policies)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {

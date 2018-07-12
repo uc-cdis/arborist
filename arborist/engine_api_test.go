@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestResponse(t *testing.T) {
+func TestResponseErrors(t *testing.T) {
 	// Test that errors in the response serialize correctly.
 	t.Run("addErrorJSON", func(t *testing.T) {
 		err := errors.New("example")

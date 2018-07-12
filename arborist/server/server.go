@@ -49,28 +49,29 @@ func (server *Server) readPoliciesFromJWT(token string) ([]string, error) {
 }
 
 type ServerConfig struct {
-	StrictSlashes bool
-	BaseURL       string
-	EndpointInfo  EndpointInformation
+	StrictSlashes bool   `toml:"strict_slashes"`
+	BaseURL       string `toml:"base_url"`
 }
 
 type EndpointInformation struct {
-	HealthCheckURL  string `json:"health_check_url"`
 	AuthURL         string `json:"auth_url"`
-	PolicyBaseURL   string `json:"policy_base_url"`
-	RoleBaseURL     string `json:"role_base_url"`
-	ResourceBaseURL string `json:"resource_base_url"`
 	EngineURL       string `json:"engine_url"`
+	HealthCheckURL  string `json:"health_check_url"`
+	PolicyBaseURL   string `json:"policy_base_url"`
+	ResourceBaseURL string `json:"resource_base_url"`
+	RoleBaseURL     string `json:"role_base_url"`
 }
 
 // fullURLs returns a copy of the endpoint information with the base URL
 // included, suitable for returning functional links to actual API endpoints.
-func (endpointInfo EndpointInformation) fullURLs(baseURL string) EndpointInformation {
+func fullURLs(baseURL string) EndpointInformation {
 	return EndpointInformation{
-		HealthCheckURL: fmt.Sprintf("%s%s", baseURL, endpointInfo.HealthCheckURL),
-		AuthURL:        fmt.Sprintf("%s%s", baseURL, endpointInfo.AuthURL),
-		PolicyBaseURL:  fmt.Sprintf("%s%s", baseURL, endpointInfo.PolicyBaseURL),
-		EngineURL:      fmt.Sprintf("%s%s", baseURL, endpointInfo.EngineURL),
+		AuthURL:         fmt.Sprintf("%s%s", baseURL, ENDPOINTS.AuthURL),
+		EngineURL:       fmt.Sprintf("%s%s", baseURL, ENDPOINTS.EngineURL),
+		HealthCheckURL:  fmt.Sprintf("%s%s", baseURL, ENDPOINTS.HealthCheckURL),
+		PolicyBaseURL:   fmt.Sprintf("%s%s", baseURL, ENDPOINTS.PolicyBaseURL),
+		ResourceBaseURL: fmt.Sprintf("%s%s", baseURL, ENDPOINTS.ResourceBaseURL),
+		RoleBaseURL:     fmt.Sprintf("%s%s", baseURL, ENDPOINTS.RoleBaseURL),
 	}
 }
 
@@ -78,9 +79,11 @@ func (endpointInfo EndpointInformation) fullURLs(baseURL string) EndpointInforma
 // about what endpoints are located at what URLs.
 //
 // This really should be a `const`.
-var Endpoints EndpointInformation = EndpointInformation{
-	HealthCheckURL: "/health",
-	AuthURL:        "/auth",
-	PolicyBaseURL:  "/policy/",
-	EngineURL:      "/engine",
+var ENDPOINTS EndpointInformation = EndpointInformation{
+	AuthURL:         "/auth",
+	EngineURL:       "/engine",
+	HealthCheckURL:  "/health",
+	PolicyBaseURL:   "/policy/",
+	ResourceBaseURL: "/resource/",
+	RoleBaseURL:     "/role/",
 }

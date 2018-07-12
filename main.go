@@ -14,21 +14,21 @@ import (
 )
 
 func main() {
-	var port *uint = flag.Uint("port", 8000, "port on which to expose the API")
+	var port *uint = flag.Uint("port", 80, "port on which to expose the API")
 	var jwkEndpoint *string = flag.String(
 		"jwks",
 		"",
 		"endpoint from which the application can fetch a JWKS",
 	)
+	flag.Parse()
+
 	if *jwkEndpoint == "" {
 		print("WARNING: no JWKS endpoint specified; endpoints requiring JWT validation will error\n")
 	}
-	flag.Parse()
 	addr := fmt.Sprintf(":%d", *port)
 
 	config := &server.ServerConfig{
 		BaseURL:       fmt.Sprintf("http://localhost%s", addr),
-		EndpointInfo:  server.Endpoints,
 		StrictSlashes: true,
 	}
 	engine := arborist.NewAuthEngine()

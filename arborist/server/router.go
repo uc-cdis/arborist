@@ -5,9 +5,8 @@ import (
 )
 
 func (server *Server) MakeRouter() *mux.Router {
-	versionRouter := mux.NewRouter().StrictSlash(server.Config.StrictSlashes)
+	router := mux.NewRouter().StrictSlash(server.Config.StrictSlashes)
 
-	router := versionRouter.PathPrefix("/v0").Subrouter()
 	router.Handle("/", handleRoot(server.Config)).Methods("GET")
 	router.HandleFunc("/health", handleHealthCheck).Methods("GET")
 

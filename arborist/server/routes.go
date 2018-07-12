@@ -19,7 +19,6 @@ func writeJSON(w http.ResponseWriter, bytes []byte) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func wantPrettyJSON(r *http.Request) bool {
@@ -39,14 +38,13 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 // For the root endpoint `/`.
 func handleRoot(config *ServerConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		endpoints := config.EndpointInfo.fullURLs(config.BaseURL)
+		endpoints := fullURLs(config.BaseURL)
 		responseJSON, err := json.MarshalIndent(endpoints, "", "    ")
 		if err != nil {
 			msg := "failed to marshal endpoint information"
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
 		}
-
 		writeJSON(w, responseJSON)
 	})
 }
