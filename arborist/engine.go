@@ -289,7 +289,7 @@ func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent
 		if err != nil {
 			return nil, err
 		}
-		subresources[subresource] = struct{}{}
+		resource.addSubresource(subresource)
 	}
 
 	return resource, nil

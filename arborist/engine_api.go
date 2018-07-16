@@ -466,6 +466,45 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 	}
 }
 
+// HandleAddSubresource takes the path to a parent resource and some JSON
+// describing a new resource, and creates the new resource as a subresource
+// under the parent.
+func (engine *Engine) HandleAddSubresource(parentPath string, bytes []byte) *Response {
+	var resourceJSON ResourceJSON
+	err := json.Unmarshal(bytes, &resourceJSON)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	_, exists := engine.resources[parentPath]
+	if !exists {
+		return &Response{
+			ExternalError: notExist("resource", "path", parentPath),
+			Code:          http.StatusNotFound,
+		}
+	}
+	subresource, err := engine.addResourceFromJSON(&resourceJSON, parentPath)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	responseBytes, err := json.Marshal(subresource.toJSON())
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	return &Response{
+		Bytes: responseBytes,
+		Code:  http.StatusCreated,
+	}
+}
+
 func (engine *Engine) HandleResourceUpdate(resourcePath string, bytes []byte) *Response {
 	var resourceJSON ResourceJSON
 	err := json.Unmarshal(bytes, &resourceJSON)

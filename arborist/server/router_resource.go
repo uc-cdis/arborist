@@ -72,6 +72,23 @@ func handleResourceGet(engine *arborist.Engine) http.Handler {
 	})
 }
 
+func handleAddSubresource(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			writeJSONReadError(w, err)
+			return
+		}
+		resourcePath := parseResourcePath(r)
+		response := engine.HandleAddSubresource(resourcePath, body)
+		err = response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
 func handleResourceUpdate(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
@@ -108,6 +125,7 @@ func (server *Server) addResourceRouter(mainRouter *mux.Router) {
 	resourceRouter.Handle("/", handleListResources(server.Engine)).Methods("GET")
 	resourceRouter.Handle("/", handleResourceCreate(server.Engine)).Methods("POST")
 	resourceRouter.Handle(resourcePath, handleResourceGet(server.Engine)).Methods("GET")
+	resourceRouter.Handle(resourcePath, handleAddSubresource(server.Engine)).Methods("POST")
 	resourceRouter.Handle(resourcePath, handleResourceUpdate(server.Engine)).Methods("PUT")
 	resourceRouter.Handle(resourcePath, handleResourceRemove(server.Engine)).Methods("DELETE")
 }
