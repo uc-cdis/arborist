@@ -51,6 +51,11 @@ func NewAuthEngine() *Engine {
 // readPermissionFromJSON instantiates a PermissionJSON into a Permission. This
 // generally shouldn't need to be used except in the other functions to load
 // other entities from JSON.
+//
+// FIXME (rudyardrichter, 2018-07): fix the create/load logic for permission
+// IDs vs actual permissions inside roles. Maybe allow passing just permission
+// ID in roles if the permission already exists? Maybe make all permissions
+// pass by value?
 func (engine *Engine) readPermissionFromJSON(permissionJSON PermissionJSON) *Permission {
 	permission, exists := engine.permissions[permissionJSON.ID]
 	if exists {
@@ -87,8 +92,8 @@ func (engine *Engine) listRoleIDs() []string {
 	return result
 }
 
-// readRole uses the information stored in the Engine to load a RoleJSON into a
-// *Role (without modifying the engine at all).
+// readRoleFromJSON uses the information stored in the Engine to load a
+// RoleJSON into a *Role (without modifying the engine at all).
 func (engine *Engine) readRoleFromJSON(roleJSON *RoleJSON) (*Role, error) {
 	permissions := make(map[*Permission]struct{})
 	for _, permissionJSON := range roleJSON.Permissions {
@@ -196,6 +201,10 @@ func (engine *Engine) removeRole(role *Role) error {
 
 // Operations for working with resources
 
+// listResourcePaths returns a slice of paths for all resources in the engine.
+//
+// Note that because `engine.resources` is a map, the order of paths in the
+// slice is not guaranteed to be in any particular order.
 func (engine *Engine) listResourcePaths() []string {
 	result := make([]string, len(engine.resources))
 	i := 0
@@ -283,7 +292,6 @@ func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent
 		return nil, err
 	}
 
-	subresources := make(map[*Resource]struct{})
 	for _, subresourceJSON := range resourceJSON.Subresources {
 		subresource, err := engine.readSubresourceFromJSON(&subresourceJSON, resource)
 		if err != nil {
@@ -294,11 +302,6 @@ func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent
 
 	return resource, nil
 }
-
-//
-// TODO: fix the create/load logic for permission IDs vs actual permissions
-// inside roles or whatever
-//
 
 // addResourceFromJSON goes through the whole process of loading a *Resource
 // from a *ResourceJSON and registering it in the engine.
@@ -365,9 +368,9 @@ func (engine *Engine) updateResourceWithJSON(resourcePath string, resourceJSON *
 	return resource, nil
 }
 
-// removeResource deletes a single resource from the engine, iff it has no
-// subresources. This function is a no-op if the resource does not exist, or if
-// the resource contained subresources underneath it.
+// removeLeafResource deletes a single resource from the engine, if and only if
+// it has no subresources; this function is a no-op if the resource does not
+// exist, or if the resource contained subresources underneath it.
 func (engine *Engine) removeLeafResource(resource *Resource) {
 	if resource == nil {
 		return
@@ -384,7 +387,7 @@ func (engine *Engine) removeLeafResource(resource *Resource) {
 // removeResourceRecursively deletes this resources, and also removes the
 // subresources recursively.
 //
-// This funciton is a no-op if the resource does not exist.
+// This function is a no-op if the resource does not exist.
 func (engine *Engine) removeResourceRecursively(resource *Resource) {
 	if resource == nil {
 		return
@@ -420,8 +423,11 @@ func (engine *Engine) addPolicy(policy *Policy) error {
 	return nil
 }
 
-// The returned error is non-nil iff there is a role or a resource which was
-// used in the policy that does not exist in the engine.
+// createPolicyFromJSON reads in a PolicyJSON and returns a Policy which has
+// pointers to Roles and Resources from the engine.
+//
+// The returned error is non-nil if and only if there is a role or a resource
+// which was used in the policy that does not exist in the engine.
 func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error) {
 	roles := make(map[*Role]struct{}, len(policyJSON.RoleIDs))
 	for _, roleID := range policyJSON.RoleIDs {

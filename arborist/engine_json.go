@@ -9,7 +9,7 @@ type EngineJSON struct {
 	Roles       []RoleJSON       `json:"roles"`
 	Resources   []ResourceJSON   `json:"resources"`
 	Policies    []PolicyJSON     `json:"policies"`
-	Timestamp   int64            `json:"timestamp"`
+	Timestamp   string           `json:"timestamp"`
 }
 
 func (engine *Engine) toJSON() EngineJSON {
@@ -41,7 +41,7 @@ func (engine *Engine) toJSON() EngineJSON {
 		i++
 	}
 
-	timestamp := time.Now().Unix()
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	return EngineJSON{
 		Permissions: permissions,
