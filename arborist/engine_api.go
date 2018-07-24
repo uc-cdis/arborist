@@ -144,16 +144,32 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 }
 
 // HandleAuthRequestBytes is a wrapper around HandleAuthRequest that includes
-// JSON encoding and decoding for the request and response bytes.
-func (engine *Engine) HandleAuthRequestBytes(bytes []byte) *Response {
-	var authRequestJSON AuthRequestJSON
-	err := json.Unmarshal(bytes, &authRequestJSON)
+// JSON encoding and decoding for the request and response bytes. The
+// tokenReader argument must be a function which will decode the token and
+// extract a list of policies.
+func (engine *Engine) HandleAuthRequestBytes(
+	bytes []byte,
+	tokenReader func(string) ([]string, error),
+) *Response {
+	var authRequestJSON *AuthRequestJSON
+	err := json.Unmarshal(bytes, authRequestJSON)
 	if err != nil {
 		response := &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
 		}
 		return response
+	}
+	// Get the policies from the token using the tokenReader.
+	if authRequestJSON.User.Policies == nil {
+		authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
+		if err != nil {
+			response := &Response{
+				ExternalError: err,
+				Code:          http.StatusBadRequest,
+			}
+			return response
+		}
 	}
 	authRequest, err := engine.readAuthRequestFromJSON(authRequestJSON)
 	if err != nil {

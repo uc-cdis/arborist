@@ -5,13 +5,28 @@ import (
 )
 
 type AuthRequestJSON struct {
-	PolicyIDs    []string    `json:"policies"`
-	ResourcePath string      `json:"resource"`
-	Action       Action      `json:"action"`
-	Constraints  Constraints `json:"constraints,omitempty"`
+	User    AuthRequestJSON_User    `json:"user"`
+	Request AuthRequestJSON_Request `json:"request"`
 }
 
-func (requestJSON *AuthRequestJSON) UnmarshalJSON(data []byte) error {
+type AuthRequestJSON_User struct {
+	Token string `json:"token"`
+	// The Policies field is optional, and if the request provides a token
+	// this gets filled in by the first stage of handling by the engine, using
+	// the Token field.
+	Policies []string `json:"policies,omitempty"`
+}
+
+type AuthRequestJSON_Request struct {
+	Resource    string      `json:"resource"`
+	Action      Action      `json:"action"`
+	Constraints Constraints `json:"constraints,omitempty"`
+}
+
+// UnmarshalJSON defines the deserialization from JSON into an AuthRequestJSON
+// struct, which includes validating that required fields are present.
+// (Required fields are anything not in the `optionalFields` variable.)
+func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
 	if err != nil {
@@ -27,15 +42,11 @@ func (requestJSON *AuthRequestJSON) UnmarshalJSON(data []byte) error {
 
 	// Trick to use `json.Unmarshal` inside here, making a type alias which we
 	// cast the AuthRequestJSON to.
-	type loader AuthRequestJSON
+	type loader AuthRequestJSON_Request
 	err = json.Unmarshal(data, (*loader)(requestJSON))
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-type BulkAuthRequestJSON struct {
-	Requests []AuthRequestJSON `json:"requests"`
 }

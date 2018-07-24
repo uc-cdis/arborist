@@ -22,5 +22,6 @@ func TestRoleToJSON(t *testing.T) {
 	}
 
 	check(string(bytes), string(bytes))
-	// TODO
+	// TODO (rudyardrichter, 2018-07-18): write some test cases with the role
+	// and the bytestring
 }

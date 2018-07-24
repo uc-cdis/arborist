@@ -116,9 +116,8 @@ func addTestResources(engine *Engine) {
 	))
 }
 
-// addTestRoles sets up the following roles in the engine:
-//
-// TODO
+// addTestRoles sets up some example roles in the engine to go with the
+// resources.
 func addTestRoles(engine *Engine) {
 	addRoleOrFail := func(role *Role, err error) *Role {
 		if err != nil {

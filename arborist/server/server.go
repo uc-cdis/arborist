@@ -23,31 +23,6 @@ func typeError(field string, expectedType string) error {
 	)
 }
 
-func (server *Server) readPoliciesFromJWT(token string) ([]string, error) {
-	if server.JWTApp == nil {
-		// should never happen; server initialization code is incorrect
-		panic("jwtApp not initialized")
-	}
-
-	claims, err := server.JWTApp.Decode(token)
-	if err != nil {
-		return nil, err
-	}
-	context, casted := (*claims)["context"].(map[string]interface{})
-	if !casted {
-		return nil, typeError("context", "map")
-	}
-	contextUser, casted := context["user"].(map[string]interface{})
-	if !casted {
-		return nil, typeError("user", "map")
-	}
-	policies, casted := contextUser["policies"].([]string)
-	if !casted {
-		return nil, typeError("policies", "list of strings")
-	}
-	return policies, nil
-}
-
 type ServerConfig struct {
 	StrictSlashes bool   `toml:"strict_slashes"`
 	BaseURL       string `toml:"base_url"`

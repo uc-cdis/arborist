@@ -555,11 +555,9 @@ func (engine *Engine) appendPolicyWithJSON(policyID string, policyJSON *PolicyJS
 	return policy, nil
 }
 
+// removePolicy deletes the policy with the given ID from the engine. If no
+// such policy exists, this function is just a no-op.
 func (engine *Engine) removePolicy(policyID string) error {
-	_, exists := engine.policies[policyID]
-	if !exists {
-		return notExist("policy", "id", policyID)
-	}
 	delete(engine.policies, policyID)
 	return nil
 }
@@ -599,9 +597,9 @@ func (engine *Engine) readPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error
 
 // readAuthRequestFromJSON uses the information stored in the Engine to load an
 // AuthRequestJSON into an *AuthRequest (without modifying the engine at all).
-func (engine *Engine) readAuthRequestFromJSON(requestJSON AuthRequestJSON) (*AuthRequest, error) {
+func (engine *Engine) readAuthRequestFromJSON(requestJSON *AuthRequestJSON) (*AuthRequest, error) {
 	policies := make(map[*Policy]struct{})
-	for _, policyID := range requestJSON.PolicyIDs {
+	for _, policyID := range requestJSON.User.Policies {
 		policy, exists := engine.policies[policyID]
 		if !exists {
 			err := notExist("policy", "id", policyID)
@@ -610,17 +608,17 @@ func (engine *Engine) readAuthRequestFromJSON(requestJSON AuthRequestJSON) (*Aut
 		policies[policy] = struct{}{}
 	}
 
-	resource, exists := engine.resources[requestJSON.ResourcePath]
+	resource, exists := engine.resources[requestJSON.Request.Resource]
 	if !exists {
-		err := notExist("resource", "path", requestJSON.ResourcePath)
+		err := notExist("resource", "path", requestJSON.Request.Resource)
 		return nil, err
 	}
 
 	authRequest := AuthRequest{
 		policies:    policies,
 		resource:    resource,
-		action:      &requestJSON.Action,
-		constraints: requestJSON.Constraints,
+		action:      &requestJSON.Request.Action,
+		constraints: requestJSON.Request.Constraints,
 	}
 
 	return &authRequest, nil
