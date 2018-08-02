@@ -110,19 +110,21 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		err = json.Unmarshal(body, &requestFields)
 		if err != nil {
 			msg := "incorrect format in request body"
-			http.Error(w, msg, http.StatusBadRequest)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
 			return
 		}
 		encodedToken := requestFields.User.Token
 		policies, err := server.tokenReader(encodedToken)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			newErrorJSON(err.Error(), http.StatusBadRequest).
+				write(w, wantPrettyJSON(r))
 			return
 		}
 		response := server.Engine.HandleListAuthorizedResources(policies)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			newErrorJSON(err.Error(), http.StatusBadRequest).
+				write(w, wantPrettyJSON(r))
 			return
 		}
 	})
