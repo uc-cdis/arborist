@@ -16,7 +16,10 @@ type ErrorJSON struct {
 
 func newErrorJSON(message string, code int) ErrorJSON {
 	return ErrorJSON{
-		Error: {
+		Error: struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		}{
 			Message: message,
 			Code:    code,
 		},
