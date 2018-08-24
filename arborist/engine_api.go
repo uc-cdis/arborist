@@ -195,8 +195,10 @@ func (engine *Engine) HandleAuthRequestBytes(
 
 func (engine *Engine) HandleListPolicyIDs() *Response {
 	policyIDs := make([]string, len(engine.policies))
+	var i = 0
 	for policyID := range engine.policies {
-		policyIDs = append(policyIDs, policyID)
+		policyIDs[i] = policyID
+		i++
 	}
 	policies := struct {
 		PolicyIDs []string `json:"policy_ids"`
