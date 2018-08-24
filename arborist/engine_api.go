@@ -131,9 +131,9 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 		paths[i] = resources[i].path
 	}
 	resourcesObject := struct {
-		resources []string `json:"resources"`
+		Resources []string `json:"resources"`
 	}{
-		resources: paths,
+		Resources: paths,
 	}
 	bytes, err := json.Marshal(resourcesObject)
 	if err != nil {
