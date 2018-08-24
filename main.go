@@ -25,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
-		print("WARNING: no JWKS endpoint specified; endpoints requiring JWT validation will error\n")
+		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
 	addr := fmt.Sprintf(":%d", *port)
 

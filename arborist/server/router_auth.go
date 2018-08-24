@@ -37,7 +37,9 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	expected := &authutils.Expected{}
+	expected := &authutils.Expected{
+		Audiences: []string{"openid"},
+	}
 	err = expected.Validate(claims)
 	if err != nil {
 		return nil, err
