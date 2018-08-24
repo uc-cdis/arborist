@@ -2,6 +2,7 @@ package authutils
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	jose "gopkg.in/square/go-jose.v2"
@@ -69,7 +70,7 @@ func (manager *KeysManager) Refresh() error {
 	// Get the JSON response from the URL configured in the manager.
 	resp, err := http.Get(manager.URL)
 	if err != nil {
-		return err
+		return fmt.Errorf("couldn't get keys from %s: %s", manager.URL, err.Error())
 	}
 
 	// Parse the response JSON into a jose.JSONWebKeySet.
