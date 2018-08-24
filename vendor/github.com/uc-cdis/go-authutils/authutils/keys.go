@@ -2,8 +2,6 @@ package authutils
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 
 	jose "gopkg.in/square/go-jose.v2"
@@ -41,7 +39,7 @@ func (manager *KeysManager) Lookup(keyID string) (*jose.JSONWebKey, error) {
 		jwk, exists = manager.KeyMap[keyID]
 		// If still no key is found, return an error.
 		if !exists {
-			return jwk, errors.New(fmt.Sprintf("no key exists with ID: %s", keyID))
+			return nil, missingKey(keyID)
 		}
 	}
 	return jwk, nil

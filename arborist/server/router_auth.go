@@ -9,6 +9,8 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/uc-cdis/go-authutils/authutils"
+
 	"github.com/uc-cdis/arborist/arborist"
 )
 
@@ -35,6 +37,12 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	expected := &authutils.Expected{}
+	err = expected.Validate(claims)
+	if err != nil {
+		return nil, err
+	}
+
 	contextInterface, exists := (*claims)["context"]
 	if !exists {
 		return nil, missingRequiredField("context")
@@ -125,7 +133,7 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		encodedToken := requestFields.User.Token
 		policies, err := server.tokenReader(encodedToken)
 		if err != nil {
-			newErrorJSON(err.Error(), http.StatusBadRequest).
+			newErrorJSON(err.Error(), http.StatusUnauthorized).
 				write(w, wantPrettyJSON(r))
 			return
 		}
