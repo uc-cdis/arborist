@@ -55,9 +55,18 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	if !exists {
 		return nil, missingRequiredField("policies")
 	}
-	policies, casted := policiesInterface.([]string)
+	// policiesInterface should really be a []string
+	policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 	if !casted {
 		return nil, fieldTypeError("policies")
+	}
+	policies := make([]string, len(policiesInterfaceSlice))
+	for i, policyInterface := range policiesInterfaceSlice {
+		policyString, casted := policyInterface.(string)
+		if !casted {
+			return nil, fieldTypeError("policies")
+		}
+		policies[i] = policyString
 	}
 	return policies, nil
 }
