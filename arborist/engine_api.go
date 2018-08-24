@@ -71,24 +71,22 @@ func (response *Response) addErrorJSON() *Response {
 }
 
 func (response *Response) Write(w http.ResponseWriter, pretty bool) error {
-	w.Header().Set("Content-Type", "application/json")
-	if !response.ok() {
-		response.addErrorJSON()
-	}
-
-	if pretty {
-		response.Prettify()
-	}
-
-	response.Bytes = append(response.Bytes, "\n"...)
-	_, err := w.Write(response.Bytes)
-	if err != nil {
-		return err
-	}
 	if response.Code > 0 {
 		w.WriteHeader(response.Code)
 	} else {
 		w.WriteHeader(http.StatusOK)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if !response.ok() {
+		response.addErrorJSON()
+	}
+	if pretty {
+		response.Prettify()
+	}
+	response.Bytes = append(response.Bytes, "\n"...)
+	_, err := w.Write(response.Bytes)
+	if err != nil {
+		return err
 	}
 
 	return nil
