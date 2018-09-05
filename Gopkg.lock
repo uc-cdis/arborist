@@ -20,10 +20,10 @@
   version = "v1.6.1"
 
 [[projects]]
-  branch = "master"
+  branch = "feat/initial"
   name = "github.com/uc-cdis/go-authutils"
   packages = ["authutils"]
-  revision = "7f87cc9311ab1023e31e6d7d5d560f4bb4ea75f0"
+  revision = "06edbd276257f7d544b2cc5605e61549ee74d4b7"
 
 [[projects]]
   branch = "master"
@@ -48,6 +48,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4b88f1867a1b45ca51e3dd8dd91c96aacae22bc7b7f38fbb6e552dc1b912df60"
+  inputs-digest = "c2878e9005ba9a3171f6060f8e61632c095ee067a89b78c9ad1098e86a0d9d31"
   solver-name = "gps-cdcl"
   solver-version = 1

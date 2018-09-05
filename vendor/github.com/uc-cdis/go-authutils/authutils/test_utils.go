@@ -89,10 +89,12 @@ func makeDefaultClaims() Claims {
 
 func makeDefaultExpected() Expected {
 	purpose := "access"
+	now := time.Now().Unix()
+	exp := &now
 	expected := Expected{
 		Audiences:  []string{"test"},
 		Issuers:    []string{"https://example-iss.net"},
-		Expiration: time.Now().Unix(),
+		Expiration: exp,
 		Purpose:    &purpose,
 	}
 	return expected

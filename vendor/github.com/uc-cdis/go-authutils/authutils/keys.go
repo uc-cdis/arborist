@@ -2,7 +2,6 @@ package authutils
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -41,7 +40,7 @@ func (manager *KeysManager) Lookup(keyID string) (*jose.JSONWebKey, error) {
 		jwk, exists = manager.KeyMap[keyID]
 		// If still no key is found, return an error.
 		if !exists {
-			return jwk, errors.New(fmt.Sprintf("no key exists with ID: %s", keyID))
+			return nil, missingKey(keyID)
 		}
 	}
 	return jwk, nil
@@ -71,7 +70,7 @@ func (manager *KeysManager) Refresh() error {
 	// Get the JSON response from the URL configured in the manager.
 	resp, err := http.Get(manager.URL)
 	if err != nil {
-		return err
+		return fmt.Errorf("couldn't get keys from %s: %s", manager.URL, err.Error())
 	}
 
 	// Parse the response JSON into a jose.JSONWebKeySet.

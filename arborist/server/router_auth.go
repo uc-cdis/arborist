@@ -9,6 +9,8 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/uc-cdis/go-authutils/authutils"
+
 	"github.com/uc-cdis/arborist/arborist"
 )
 
@@ -35,6 +37,14 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	expected := &authutils.Expected{
+		Audiences: []string{"openid"},
+	}
+	err = expected.Validate(claims)
+	if err != nil {
+		return nil, err
+	}
+
 	contextInterface, exists := (*claims)["context"]
 	if !exists {
 		return nil, missingRequiredField("context")
@@ -55,9 +65,18 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	if !exists {
 		return nil, missingRequiredField("policies")
 	}
-	policies, casted := policiesInterface.([]string)
+	// policiesInterface should really be a []string
+	policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 	if !casted {
 		return nil, fieldTypeError("policies")
+	}
+	policies := make([]string, len(policiesInterfaceSlice))
+	for i, policyInterface := range policiesInterfaceSlice {
+		policyString, casted := policyInterface.(string)
+		if !casted {
+			return nil, fieldTypeError("policies")
+		}
+		policies[i] = policyString
 	}
 	return policies, nil
 }
@@ -110,19 +129,21 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		err = json.Unmarshal(body, &requestFields)
 		if err != nil {
 			msg := "incorrect format in request body"
-			http.Error(w, msg, http.StatusBadRequest)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
 			return
 		}
 		encodedToken := requestFields.User.Token
 		policies, err := server.tokenReader(encodedToken)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			newErrorJSON(err.Error(), http.StatusUnauthorized).
+				write(w, wantPrettyJSON(r))
 			return
 		}
 		response := server.Engine.HandleListAuthorizedResources(policies)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			newErrorJSON(err.Error(), http.StatusBadRequest).
+				write(w, wantPrettyJSON(r))
 			return
 		}
 	})

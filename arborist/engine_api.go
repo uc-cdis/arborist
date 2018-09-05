@@ -80,11 +80,9 @@ func (response *Response) Write(w http.ResponseWriter, pretty bool) error {
 	if !response.ok() {
 		response.addErrorJSON()
 	}
-
 	if pretty {
 		response.Prettify()
 	}
-
 	response.Bytes = append(response.Bytes, "\n"...)
 	_, err := w.Write(response.Bytes)
 	if err != nil {
@@ -131,9 +129,9 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 		paths[i] = resources[i].path
 	}
 	resourcesObject := struct {
-		resources []string `json:"resources"`
+		Resources []string `json:"resources"`
 	}{
-		resources: paths,
+		Resources: paths,
 	}
 	bytes, err := json.Marshal(resourcesObject)
 	if err != nil {
@@ -195,8 +193,10 @@ func (engine *Engine) HandleAuthRequestBytes(
 
 func (engine *Engine) HandleListPolicyIDs() *Response {
 	policyIDs := make([]string, len(engine.policies))
+	var i = 0
 	for policyID := range engine.policies {
-		policyIDs = append(policyIDs, policyID)
+		policyIDs[i] = policyID
+		i++
 	}
 	policies := struct {
 		PolicyIDs []string `json:"policy_ids"`

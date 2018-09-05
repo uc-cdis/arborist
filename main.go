@@ -14,16 +14,18 @@ import (
 )
 
 func main() {
+	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
+
 	var port *uint = flag.Uint("port", 80, "port on which to expose the API")
 	var jwkEndpoint *string = flag.String(
 		"jwks",
-		"",
+		jwkEndpointEnv,
 		"endpoint from which the application can fetch a JWKS",
 	)
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
-		print("WARNING: no JWKS endpoint specified; endpoints requiring JWT validation will error\n")
+		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
 	addr := fmt.Sprintf(":%d", *port)
 

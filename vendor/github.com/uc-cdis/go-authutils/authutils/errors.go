@@ -43,3 +43,7 @@ func missingAudience(missingAud string, containsAuds []string) error {
 	msg := fmt.Sprintf("token missing required audience: %s; contains: %s\n", missingAud, containsString)
 	return errors.New(msg)
 }
+
+func missingKey(keyID string) error {
+	return fmt.Errorf("no key exists with ID: %s", keyID)
+}

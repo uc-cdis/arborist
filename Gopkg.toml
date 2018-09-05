@@ -24,6 +24,9 @@
 #   go-tests = true
 #   unused-packages = true
 
+[[constraint]]
+  name = "github.com/uc-cdis/go-authutils"
+  branch = "feat/initial"
 
 [[constraint]]
   name = "github.com/gorilla/mux"

@@ -86,8 +86,10 @@ func (engine *Engine) getRoleJSON(roleID string) (*RoleJSON, error) {
 // engine.
 func (engine *Engine) listRoleIDs() []string {
 	result := make([]string, len(engine.roles))
+	var i = 0
 	for _, role := range engine.roles {
-		result = append(result, role.id)
+		result[i] = role.id
+		i++
 	}
 	return result
 }
