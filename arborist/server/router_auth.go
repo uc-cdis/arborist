@@ -9,9 +9,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/uc-cdis/go-authutils/authutils"
-
 	"github.com/uc-cdis/arborist/arborist"
+	"github.com/uc-cdis/go-authutils/authutils"
 )
 
 // tokenReader extracts the `context.user.policies` field from a token. This
@@ -23,6 +22,7 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 			"failed to decode token: missing required field `%s`",
 			field,
 		)
+		server.Log.Error(msg)
 		return errors.New(msg)
 	}
 	fieldTypeError := func(field string) error {
@@ -30,11 +30,14 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 			"failed to decode token: field `%s` has wrong type",
 			field,
 		)
+		server.Log.Error(msg)
 		return errors.New(msg)
 	}
 
+	server.Log.Info("decoding token: %s", token)
 	claims, err := server.JWTApp.Decode(token)
 	if err != nil {
+		server.Log.Error("error decoding token: %s", err.Error())
 		return nil, err
 	}
 	expected := &authutils.Expected{
@@ -42,6 +45,7 @@ func (server *Server) tokenReader(token string) ([]string, error) {
 	}
 	err = expected.Validate(claims)
 	if err != nil {
+		server.Log.Error("error decoding token: %s", err.Error())
 		return nil, err
 	}
 

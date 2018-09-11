@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/uc-cdis/arborist/arborist"
 	"github.com/uc-cdis/go-authutils/authutils"
@@ -12,7 +11,7 @@ type Server struct {
 	Engine *arborist.Engine
 	JWTApp *authutils.JWTApplication
 	Config *ServerConfig
-	Logger *log.Logger
+	Log    *LogHandler
 }
 
 func typeError(field string, expectedType string) error {

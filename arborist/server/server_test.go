@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"testing"
 )
 
@@ -10,7 +11,7 @@ func makeTestServer() *Server {
 		Engine: nil,
 		JWTApp: nil,
 		Config: nil,
-		Logger: nil,
+		Log:    NewLogHandler(os.Stdout, 0),
 	}
 }
 
