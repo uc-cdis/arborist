@@ -228,15 +228,6 @@ func (engine *Engine) HandlePolicyCreate(bytes []byte) *Response {
 		}
 	}
 
-	if _, exists := engine.policies[policy.id]; exists {
-		err := alreadyExists("policy", "id", policy.id)
-		return &Response{
-			ExternalError: err,
-			Code:          http.StatusConflict,
-		}
-	}
-	engine.policies[policy.id] = policy
-
 	content := struct {
 		Created PolicyJSON `json:"created"`
 	}{
