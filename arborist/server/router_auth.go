@@ -149,8 +149,27 @@ func (server *Server) handleListResourceAuth() http.Handler {
 	})
 }
 
+func (server *Server) handleListResourceAuthForPolicy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		policy, exists := mux.Vars(r)["policy"]
+		if !exists {
+			msg := "missing `policy` argument"
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+		}
+		policies := []string{policy}
+		response := server.Engine.HandleListAuthorizedResources(policies)
+		err := response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			newErrorJSON(err.Error(), http.StatusBadRequest).
+				write(w, wantPrettyJSON(r))
+			return
+		}
+	})
+}
+
 func (server *Server) addAuthRouter(mainRouter *mux.Router) {
 	authRouter := mainRouter.PathPrefix("/auth").Subrouter()
 	authRouter.Handle("/request", server.handleAuthRequest(server.Engine)).Methods("POST")
+	authRouter.Handle("/resources", server.handleListResourceAuthForPolicy()).Methods("GET").Queries("policy", "{policy:.+}")
 	authRouter.Handle("/resources", server.handleListResourceAuth()).Methods("POST")
 }
