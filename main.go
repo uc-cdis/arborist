@@ -34,25 +34,26 @@ func main() {
 		StrictSlashes: true,
 	}
 	engine := arborist.NewAuthEngine()
-	logger := log.New(os.Stdout, "arborist: ", log.LstdFlags)
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
+	logHandler := server.NewLogHandler(os.Stdout, 0) // 0 for default log flags
 	arboristServer := server.Server{
 		Config: config,
 		Engine: engine,
-		Logger: logger,
 		JWTApp: jwtApp,
+		Log:    logHandler,
 	}
 
 	router := arboristServer.MakeRouter()
 	handler := server.ApplyMiddleware(router)
 
+	httpLogger := log.New(os.Stdout, "", log.LstdFlags)
 	httpServer := &http.Server{
 		Addr:         addr,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		ErrorLog:     logger,
+		ErrorLog:     httpLogger,
 		Handler:      handler,
 	}
-	logger.Println(fmt.Sprintf("serving at %s", httpServer.Addr))
-	logger.Fatal(httpServer.ListenAndServe())
+	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
+	httpLogger.Fatal(httpServer.ListenAndServe())
 }
