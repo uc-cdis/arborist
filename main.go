@@ -16,7 +16,7 @@ import (
 func main() {
 	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
 
-	var port *uint = flag.Uint("port", 80, "port on which to expose the API")
+	var port *uint = flag.Uint("port", 8088, "port on which to expose the API")
 	var jwkEndpoint *string = flag.String(
 		"jwks",
 		jwkEndpointEnv,
