@@ -41,10 +41,9 @@ func exitErrorf(msg string, args ...interface{}) {
 }
 
 // AddFileToS3 add file to s3 bucket
-func (client *AwsClient) AddFileToS3(buffer []byte, fileKey string) error {
+func (client *AwsClient) AddFileToS3(buffer []byte, bucketName string, fileKey string) error {
 
 	// Upload input parameters
-	bucketName := "xssxs"
 	upParams := &s3manager.UploadInput{
 		Bucket: &bucketName,
 		Key:    &fileKey,
@@ -65,7 +64,7 @@ func (client *AwsClient) AddFileToS3(buffer []byte, fileKey string) error {
 
 }
 
-func (client *AwsClient) DownloadDataS3(filename string) error {
+func (client *AwsClient) DownloadDataS3(bucket string, key string, filename string) error {
 
 	// The session the S3 Downloader will use
 	sess := client.session
@@ -86,8 +85,8 @@ func (client *AwsClient) DownloadDataS3(filename string) error {
 
 	// Write the contents of S3 Object to the file
 	_, err = downloader.Download(f, &s3.GetObjectInput{
-		Bucket: aws.String("xssxs"),
-		Key:    aws.String("result3.txt"),
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
 	})
 
 	return err
@@ -105,14 +104,9 @@ func main() {
 
 	buff, _ := readFile("result.csv")
 
-	err := awsClient.AddFileToS3(buff, "result3.txt")
+	err := awsClient.AddFileToS3(buff, "xssxs", "result3.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	awsClient.DownloadDataS3("./test.txt")
-
-	//jsonBytes, _ := readCredentials("credentials.json")
-	//printCredentials(jsonBytes)
-	//fmt.Println(getValue(jsonBytes, []string{"AWS", "social", "facebook"}))
-	//fmt.Println(getValue(jsonBytes, []string{"AWS", "age"}))
+	//awsClient.DownloadDataS3("xssxs", "result3.txt", "./test.txt")
 }
