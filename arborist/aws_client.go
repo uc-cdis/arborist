@@ -73,9 +73,6 @@ func (client *AwsClient) UploadObjectToS3(buffer []byte, bucketName string, file
 		Body:   bytes.NewReader(buffer),
 	}
 
-	size := int64(len(buffer))
-	fmt.Println(size)
-
 	// Create an uploader with the session and default options
 	uploader := s3manager.NewUploader(client.session, func(u *s3manager.Uploader) {
 		u.PartSize = 64 * 1024 * 1024 // 64MB per part

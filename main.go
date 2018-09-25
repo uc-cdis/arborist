@@ -13,10 +13,15 @@ import (
 	"github.com/uc-cdis/go-authutils/authutils"
 )
 
+//CredPath path to aws credentials
+const CredPath = "./credentials.json"
+
 func startPolling(engine *arborist.Engine) {
 	for {
-		time.Sleep(2 * time.Second)
-		engine.HandleUpdateModel()
+		time.Sleep(20 * time.Second)
+		engine.HandleUpdateModel(CredPath)
+		//print("running!")
+
 	}
 }
 
@@ -24,7 +29,7 @@ func main() {
 
 	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
 
-	var port *uint = flag.Uint("port", 8088, "port on which to expose the API")
+	var port *uint = flag.Uint("port", 80, "port on which to expose the API")
 	var jwkEndpoint *string = flag.String(
 		"jwks",
 		jwkEndpointEnv,
@@ -65,7 +70,7 @@ func main() {
 		Handler:      handler,
 	}
 	go startPolling(engine)
-	engine.HandleUpdateModel()
+	engine.HandleUpdateModel(CredPath)
 	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
 	httpLogger.Fatal(httpServer.ListenAndServe())
 }

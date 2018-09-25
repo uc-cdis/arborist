@@ -663,14 +663,13 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 }
 
 //HandleUpdateModel updates data model to S3
-func (engine *Engine) HandleUpdateModel() {
-	fmt.Println("Not implemented")
+func (engine *Engine) HandleUpdateModel(path string) {
 	bytes, err := json.Marshal(engine.toJSON())
 	if err != nil {
 		panic(err)
 	}
 	awsClient := AwsClient{}
-	awsClient.LoadConfigFile("./credentials.json")
+	awsClient.LoadConfigFile(path)
 	err = awsClient.UploadObjectToS3(bytes, "xssxs", "model.json")
 	if err != nil {
 		panic(err)
