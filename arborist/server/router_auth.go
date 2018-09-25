@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-
 	"github.com/uc-cdis/arborist/arborist"
 	"github.com/uc-cdis/go-authutils/authutils"
 )

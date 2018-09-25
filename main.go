@@ -13,7 +13,15 @@ import (
 	"github.com/uc-cdis/go-authutils/authutils"
 )
 
+func startPolling(engine *arborist.Engine) {
+	for {
+		time.Sleep(2 * time.Second)
+		engine.HandleUpdateModel()
+	}
+}
+
 func main() {
+
 	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
 
 	var port *uint = flag.Uint("port", 8088, "port on which to expose the API")
@@ -34,6 +42,8 @@ func main() {
 		StrictSlashes: true,
 	}
 	engine := arborist.NewAuthEngine()
+	//engine.getModelFromS3()
+
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	logHandler := server.NewLogHandler(os.Stdout, 0) // 0 for default log flags
 	arboristServer := server.Server{
@@ -54,6 +64,8 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      handler,
 	}
+	//go startPolling(engine)
+	engine.HandleUpdateModel()
 	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
 	httpLogger.Fatal(httpServer.ListenAndServe())
 }

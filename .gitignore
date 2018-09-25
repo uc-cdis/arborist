@@ -17,3 +17,4 @@ _*
 
 # Specific binaries arborist compiles.
 bin/arborist
+credentials.json

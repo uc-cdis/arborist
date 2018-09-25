@@ -7,7 +7,10 @@
 package arborist
 
 import (
+	"encoding/json"
 	"fmt"
+
+	"github.com/uc-cdis/go-s3/s3client"
 )
 
 type Engine struct {
@@ -659,4 +662,33 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 		}
 	}
 	return resources, nil
+}
+
+//HandleUpdateModel updates data model to S3
+func (engine *Engine) HandleUpdateModel() {
+	fmt.Println("Not implemented")
+	bytes, err := json.Marshal(engine.toJSON())
+	if err != nil {
+		panic(err)
+	}
+	awsClient := s3client.AwsClient{}
+	awsClient.LoadConfigFile("/credentials.json")
+	err = awsClient.UploadObjectToS3(bytes, "xssxs", "model.json")
+	if err != nil {
+		panic(err)
+
+	}
+
+}
+
+func (engine *Engine) loadModelFromS3() {
+
+	awsClient := s3client.AwsClient{}
+	awsClient.LoadConfigFile("./credentials.json")
+	//awsClient.createNewSession()
+
+	//buff, _ := readFile("result.csv")
+
+	//err := awsClient.UploadObjectToS3(buff, "xssxs", "result3.txt")
+
 }
