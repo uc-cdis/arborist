@@ -64,7 +64,7 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      handler,
 	}
-	//go startPolling(engine)
+	go startPolling(engine)
 	engine.HandleUpdateModel()
 	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
 	httpLogger.Fatal(httpServer.ListenAndServe())

@@ -9,8 +9,6 @@ package arborist
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/uc-cdis/go-s3/s3client"
 )
 
 type Engine struct {
@@ -671,8 +669,8 @@ func (engine *Engine) HandleUpdateModel() {
 	if err != nil {
 		panic(err)
 	}
-	awsClient := s3client.AwsClient{}
-	awsClient.LoadConfigFile("/credentials.json")
+	awsClient := AwsClient{}
+	awsClient.LoadConfigFile("./credentials.json")
 	err = awsClient.UploadObjectToS3(bytes, "xssxs", "model.json")
 	if err != nil {
 		panic(err)
@@ -683,7 +681,7 @@ func (engine *Engine) HandleUpdateModel() {
 
 func (engine *Engine) loadModelFromS3() {
 
-	awsClient := s3client.AwsClient{}
+	awsClient := AwsClient{}
 	awsClient.LoadConfigFile("./credentials.json")
 	//awsClient.createNewSession()
 
