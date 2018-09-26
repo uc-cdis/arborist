@@ -130,7 +130,6 @@ func getValue(buff []byte, keys []string) (interface{}, error) {
 		if err == false {
 			return nil, errors.New("KeyValue")
 		}
-
 	}
 
 	return result, nil

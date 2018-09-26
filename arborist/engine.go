@@ -663,13 +663,13 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 }
 
 //HandleUpdateModel updates data model to S3
-func (engine *Engine) HandleUpdateModel(path string) {
+func (engine *Engine) UploadModelToS3(cfgPath string) {
 	bytes, err := json.Marshal(engine.toJSON())
 	if err != nil {
 		panic(err)
 	}
 	awsClient := AwsClient{}
-	awsClient.LoadConfigFile(path)
+	awsClient.LoadConfigFile(cfgPath)
 	err = awsClient.UploadObjectToS3(bytes, "xssxs", "model.json")
 	if err != nil {
 		panic(err)
@@ -678,14 +678,46 @@ func (engine *Engine) HandleUpdateModel(path string) {
 
 }
 
-func (engine *Engine) loadModelFromS3() {
+func (engine *Engine) DownloadModelFromS3(cfgPath string) {
 
 	awsClient := AwsClient{}
-	awsClient.LoadConfigFile("./credentials.json")
-	//awsClient.createNewSession()
+	awsClient.LoadConfigFile(cfgPath)
 
-	//buff, _ := readFile("result.csv")
+	err := awsClient.DownloadObjectFromS3("xssxs", "model.json", "./model.json")
+	if err != nil {
+		panic(err)
+	}
 
-	//err := awsClient.UploadObjectToS3(buff, "xssxs", "result3.txt")
+}
 
+func (engine *Engine) LoadDataModelFromFile(path string) {
+	bytes, _ := readFile(path)
+
+	engineJson := EngineJSON{}
+
+	json.Unmarshal(bytes, &engineJson)
+	resourceJsons := engineJson.Resources
+	roleJsons := engineJson.Roles
+	policyJsons := engineJson.Policies
+
+	resourceRoot := engineJson.Resources[0]
+	for i := 1; i < len(resourceJsons); i++ {
+		resourceRoot.Subresources = append(resourceRoot.Subresources, engineJson.Resources[i])
+	}
+
+	newEngine := makeEngine()
+	newEngine.addResourceFromJSON(&resourceRoot, "")
+
+	for i := 0; i < len(roleJsons); i++ {
+		newEngine.addRoleFromJSON(&roleJsons[i])
+	}
+
+	for i := 0; i < len(policyJsons); i++ {
+		newEngine.createPolicyFromJSON(&policyJsons[i])
+	}
+
+	engine = newEngine
+
+	//bytes, _ = json.Marshal(engine2.toJSON())
+	//fmt.Println(string(bytes))
 }

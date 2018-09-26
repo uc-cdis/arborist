@@ -59,9 +59,8 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-// UploadObjectToS3 add file to s3 bucket
+// UploadObjectToS3 adds an object file to s3 bucket
 func (client *AwsClient) UploadObjectToS3(buffer []byte, bucketName string, fileKey string) error {
-
 	if client.session == nil {
 		client.createNewSession()
 	}

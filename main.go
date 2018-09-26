@@ -18,10 +18,8 @@ const CredPath = "./credentials.json"
 
 func startPolling(engine *arborist.Engine) {
 	for {
-		time.Sleep(20 * time.Second)
-		engine.HandleUpdateModel(CredPath)
-		//print("running!")
-
+		time.Sleep(3600 * time.Second)
+		engine.UploadModelToS3(CredPath)
 	}
 }
 
@@ -47,7 +45,7 @@ func main() {
 		StrictSlashes: true,
 	}
 	engine := arborist.NewAuthEngine()
-	//engine.getModelFromS3()
+	engine.DownloadModelFromS3(CredPath)
 
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	logHandler := server.NewLogHandler(os.Stdout, 0) // 0 for default log flags
@@ -69,8 +67,8 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      handler,
 	}
-	go startPolling(engine)
-	engine.HandleUpdateModel(CredPath)
+	//go startPolling(engine)
+	//engine.UploadModelToS3(CredPath)
 	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
 	httpLogger.Fatal(httpServer.ListenAndServe())
 }
