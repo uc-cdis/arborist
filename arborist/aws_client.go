@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
+// S3Credentials contains AWS credentials
 type S3Credentials struct {
 	region             string
 	awsAccessKeyID     string
@@ -20,49 +21,65 @@ type S3Credentials struct {
 
 type AwsClient struct {
 	credentials S3Credentials
-	bucket      string
 	session     *session.Session
-}
-
-func (client *AwsClient) SetBucket(bucket string) {
-	client.bucket = bucket
 }
 
 func (client *AwsClient) SetS3Credentials(cred S3Credentials) {
 	client.credentials = cred
 }
 
-func (client *AwsClient) LoadConfigFile(path string) {
-	jsonBytes, _ := readFile(path)
-	data, _ := getValue(jsonBytes, []string{"AWS", "region"})
+// LoadCredentialFromConfigFile loads AWS credentials from the config file
+func (client *AwsClient) LoadCredentialFromConfigFile(path string) error {
+	// Read data file
+	jsonBytes, err := ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	// Get AWS region
+	data, err := GetValueFromKeys(jsonBytes, []string{"AWS", "region"})
+	if err != nil {
+		return err
+	}
 	client.credentials.region = data.(string)
-	data, _ = getValue(jsonBytes, []string{"AWS", "aws_access_key_id"})
+
+	// Get AWS access key id
+	data, err = GetValueFromKeys(jsonBytes, []string{"AWS", "aws_access_key_id"})
+	if err != nil {
+		return err
+	}
 	client.credentials.awsAccessKeyID = data.(string)
-	data, _ = getValue(jsonBytes, []string{"AWS", "aws_secret_access_key"})
+
+	// Get AWS secret access key
+	data, err = GetValueFromKeys(jsonBytes, []string{"AWS", "aws_secret_access_key"})
+	if err != nil {
+		return err
+	}
 	client.credentials.awsSecretAccessKey = data.(string)
+
+	return nil
 }
 
-func (client *AwsClient) createNewSession() {
+// createNewSession creats a aws s3 session
+func (client *AwsClient) createNewSession() error {
+
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(client.credentials.region),
 		Credentials: credentials.NewStaticCredentials(
 			client.credentials.awsAccessKeyID, client.credentials.awsSecretAccessKey, ""),
 	})
-	if err != nil {
-		panic("Can not establist aws client session")
-	}
 	client.session = sess
-}
 
-func exitErrorf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	os.Exit(1)
+	return err
 }
 
 // UploadObjectToS3 adds an object file to s3 bucket
 func (client *AwsClient) UploadObjectToS3(buffer []byte, bucketName string, fileKey string) error {
 	if client.session == nil {
-		client.createNewSession()
+		err := client.createNewSession()
+		if err != nil {
+			return nil
+		}
 	}
 
 	// Upload input parameters
@@ -86,7 +103,10 @@ func (client *AwsClient) UploadObjectToS3(buffer []byte, bucketName string, file
 // DownloadObjectFromS3 : Download an object from S3
 func (client *AwsClient) DownloadObjectFromS3(bucket string, key string, filename string) error {
 	if client.session == nil {
-		client.createNewSession()
+		err := client.createNewSession()
+		if err != nil {
+			return err
+		}
 	}
 	// The session the S3 Downloader will use
 	sess := client.session

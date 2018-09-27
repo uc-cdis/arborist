@@ -13,13 +13,16 @@ import (
 	"github.com/uc-cdis/go-authutils/authutils"
 )
 
-//CredPath path to aws credentials
-const CredPath = "./credentials.json"
+const ConfigFile string = "./credentials.json"
+const LocalSavedModel string = "./model.json"
 
-func startPolling(engine *arborist.Engine) {
+func startPolling(engine *arborist.Engine, bucketName string, keyName string) {
 	for {
-		time.Sleep(3600 * time.Second)
-		engine.UploadModelToS3(CredPath)
+		time.Sleep(30 * time.Second)
+		err := engine.UploadModelToS3(ConfigFile, bucketName, keyName)
+		if err != nil {
+			fmt.Println("WARNING: Can not upload data model to S3. Continue anyway!!!")
+		}
 	}
 }
 
@@ -36,16 +39,49 @@ func main() {
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
-		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
+		fmt.Println("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
 	addr := fmt.Sprintf(":%d", *port)
+
+	bucketName := ""
+	data, err := arborist.GetKeyValueFromConfigFile(ConfigFile, []string{"bucket"})
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("WARNING: There is no s3 bucket in config file")
+	} else {
+		bucketName = data.(string)
+	}
+
+	modelFileName := ""
+	data, err = arborist.GetKeyValueFromConfigFile(ConfigFile, []string{"model_file_name"})
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("WARNING: There is no data model name in config file")
+	} else {
+		modelFileName = data.(string)
+	}
 
 	config := &server.ServerConfig{
 		BaseURL:       fmt.Sprintf("http://localhost%s", addr),
 		StrictSlashes: true,
 	}
+
+	// Start a authentication engine
 	engine := arborist.NewAuthEngine()
-	engine.DownloadModelFromS3(CredPath)
+
+	// Try get update from S3
+	// err = engine.DownloadModelFromS3(ConfigFile, bucketName, modelFileName, LocalSavedModel)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	fmt.Println("WARNING: Can not download the data model from S3. Continue anyway!!!")
+	// } else {
+	// 	err = engine.LoadDataModelFromJSONFile(LocalSavedModel)
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 		fmt.Println("WARNING: Can not load model from JSON file. Continue anyway!!!")
+	// 	}
+
+	// }
 
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	logHandler := server.NewLogHandler(os.Stdout, 0) // 0 for default log flags
@@ -67,8 +103,10 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      handler,
 	}
-	//go startPolling(engine)
-	//engine.UploadModelToS3(CredPath)
+
+	// Periodically copy the data model to s3
+	go startPolling(engine, bucketName, modelFileName)
+
 	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
 	httpLogger.Fatal(httpServer.ListenAndServe())
 }

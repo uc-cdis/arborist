@@ -101,20 +101,26 @@ func validateJSON(
 	return nil
 }
 
-func readFile(path string) ([]byte, error) {
+func ReadFile(path string) ([]byte, error) {
 	buff, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return nil, err
 	}
 	return buff, nil
 }
 
-func printCredentials(creds []byte) {
-	fmt.Println(string(creds))
+func GetKeyValueFromConfigFile(cfgFile string, keys []string) (interface{}, error) {
+	buff, err := ReadFile(cfgFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return GetValueFromKeys(buff, keys)
+
 }
 
-func getValue(buff []byte, keys []string) (interface{}, error) {
+func GetValueFromKeys(buff []byte, keys []string) (interface{}, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("KeyValue")
 	}

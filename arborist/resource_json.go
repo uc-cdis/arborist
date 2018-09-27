@@ -44,6 +44,7 @@ func (resourceJSON *ResourceJSON) UnmarshalJSON(data []byte) error {
 	optionalFields := map[string]struct{}{
 		"description":  struct{}{},
 		"subresources": struct{}{},
+		"path":         struct{}{},
 	}
 	err = validateJSON("resource", resourceJSON, fields, optionalFields)
 	if err != nil {
@@ -57,6 +58,8 @@ func (resourceJSON *ResourceJSON) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+
+	//resourceJSON.Path = ""
 
 	if resourceJSON.Subresources == nil {
 		resourceJSON.Subresources = []ResourceJSON{}

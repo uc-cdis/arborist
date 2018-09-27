@@ -8,6 +8,7 @@ package arborist
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -662,62 +663,82 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 	return resources, nil
 }
 
-//HandleUpdateModel updates data model to S3
-func (engine *Engine) UploadModelToS3(cfgPath string) {
+// UploadModelToS3 uploads data model to S3. The function should break in the case
+// that it fails to dump the engine to JSON.
+func (engine *Engine) UploadModelToS3(cfgPath string, bucket string, key string) error {
 	bytes, err := json.Marshal(engine.toJSON())
 	if err != nil {
 		panic(err)
 	}
+
+	//Initialize AWS client and pass the config file
 	awsClient := AwsClient{}
-	awsClient.LoadConfigFile(cfgPath)
-	err = awsClient.UploadObjectToS3(bytes, "xssxs", "model.json")
-	if err != nil {
-		panic(err)
+	awsClient.LoadCredentialFromConfigFile(cfgPath)
 
-	}
-
+	// Perform upload to S3
+	return awsClient.UploadObjectToS3(bytes, bucket, key)
 }
 
-func (engine *Engine) DownloadModelFromS3(cfgPath string) {
+// DownloadModelFromS3 download data model from s3
+func (engine *Engine) DownloadModelFromS3(cfgPath string, bucket string, modelName string, toPath string) error {
 
+	// Initialize AWS client and pass the config file
 	awsClient := AwsClient{}
-	awsClient.LoadConfigFile(cfgPath)
+	awsClient.LoadCredentialFromConfigFile(cfgPath)
 
-	err := awsClient.DownloadObjectFromS3("xssxs", "model.json", "./model.json")
-	if err != nil {
-		panic(err)
-	}
-
+	// Perform download object from s3
+	return awsClient.DownloadObjectFromS3(bucket, modelName, toPath)
 }
 
-func (engine *Engine) LoadDataModelFromFile(path string) {
-	bytes, _ := readFile(path)
+// LoadDataModelFromJSONFile load data model from local json file
+func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
+	// Read the input file
+	//pathFile = "./model-3.json"
+	bytes, err := ReadFile(pathFile)
+	if err != nil {
+		println("Warning: no model data found!!!")
+		return err
+	}
 
-	engineJson := EngineJSON{}
+	// Initialize an engine to keep the model data
+	engineJSON := EngineJSON{}
 
-	json.Unmarshal(bytes, &engineJson)
-	resourceJsons := engineJson.Resources
-	roleJsons := engineJson.Roles
-	policyJsons := engineJson.Policies
+	// Unmarshal the JSON data
+	err = json.Unmarshal(bytes, &engineJSON)
+	if err != nil {
+		return err
+	}
+	resourceJsons := engineJSON.Resources
+	roleJsons := engineJSON.Roles
+	policyJsons := engineJSON.Policies
 
-	resourceRoot := engineJson.Resources[0]
+	// Create resource root and add sub-resources to root
+	// The first element always points to root
+	if len(resourceJsons) == 0 {
+		return errors.New("There is no resource")
+	}
+	resourceRoot := engineJSON.Resources[0]
 	for i := 1; i < len(resourceJsons); i++ {
-		resourceRoot.Subresources = append(resourceRoot.Subresources, engineJson.Resources[i])
+		resourceRoot.Subresources = append(resourceRoot.Subresources, engineJSON.Resources[i])
 	}
 
+	// Create new authentication engine
 	newEngine := makeEngine()
-	newEngine.addResourceFromJSON(&resourceRoot, "")
 
+	// Add resources, roles and policies to the engine
+	newEngine.addResourceFromJSON(&resourceRoot, "")
 	for i := 0; i < len(roleJsons); i++ {
 		newEngine.addRoleFromJSON(&roleJsons[i])
 	}
-
 	for i := 0; i < len(policyJsons); i++ {
 		newEngine.createPolicyFromJSON(&policyJsons[i])
 	}
 
+	//bytes, _ = json.Marshal(newEngine.toJSON())
+	//println(string(bytes))
+
+	// Replace the engine with newly created engine
 	engine = newEngine
 
-	//bytes, _ = json.Marshal(engine2.toJSON())
-	//fmt.Println(string(bytes))
+	return nil
 }
