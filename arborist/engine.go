@@ -36,7 +36,7 @@ func NewAuthEngine() *Engine {
 	engine := makeEngine()
 
 	// Create and insert the root resource in the engine.
-	rootResource, err := NewResource("", "root", nil, nil)
+	rootResource, err := NewResource("root", "root", nil, nil)
 	if err != nil {
 		// should not happen/unrecoverable; fix this function and/or NewResource
 		panic(err)

@@ -7,8 +7,7 @@ RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev
 RUN mkdir -p /go/src/github.com/uc-cdis/arborist
 WORKDIR /go/src/github.com/uc-cdis/arborist
 ADD . .
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
-#RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
+RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
 
 # Set up small scratch image, and copy necessary things over
 FROM scratch

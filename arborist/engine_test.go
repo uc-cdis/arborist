@@ -7,7 +7,7 @@ import (
 // makeTestEngine sets up a basic engine with a root node to use for testing.
 func makeTestEngine() *Engine {
 	engine := makeEngine()
-	root, err := NewResource("", "root", nil, nil)
+	root, err := NewResource("root", "root", nil, nil)
 	if err != nil {
 		panic(err)
 	}
