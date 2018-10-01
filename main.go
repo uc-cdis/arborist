@@ -18,7 +18,7 @@ const LocalSavedModel string = "./model.json"
 
 func startPolling(engine *arborist.Engine, bucketName string, keyName string) {
 	for {
-		time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
 		err := engine.UploadModelToS3(ConfigFile, bucketName, keyName)
 		if err != nil {
 			fmt.Println("WARNING: Can not upload data model to S3. Continue anyway!!!")
@@ -69,6 +69,7 @@ func main() {
 	// Start a authentication engine
 	engine := arborist.NewAuthEngine()
 
+	// err = engine.LoadDataModelFromJSONFile("")
 	// Try get update from S3
 	// err = engine.DownloadModelFromS3(ConfigFile, bucketName, modelFileName, LocalSavedModel)
 	// if err != nil {

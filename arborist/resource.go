@@ -103,8 +103,8 @@ func NewResource(
 		}
 		pathSegments[len(parent.pathSegments)] = name
 	} else {
-		pathSegments = []string{name}
-		//pathSegments = []string{}
+		//pathSegments = []string{name}
+		pathSegments = []string{}
 	}
 
 	path := pathString(pathSegments)
