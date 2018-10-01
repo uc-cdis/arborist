@@ -284,6 +284,9 @@ func (engine *Engine) readResourceFromJSON(resourceJSON *ResourceJSON, parentPat
 }
 
 func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent *Resource) (*Resource, error) {
+	if parent == nil {
+		return nil, fmt.Errorf("can't read resource `%s`; no parent specified", resourceJSON.Path)
+	}
 	resource, err := NewResource(
 		resourceJSON.Name,
 		resourceJSON.Description,
@@ -301,6 +304,7 @@ func (engine *Engine) readSubresourceFromJSON(resourceJSON *ResourceJSON, parent
 		}
 		resource.addSubresource(subresource)
 	}
+	parent.addSubresource(resource)
 
 	return resource, nil
 }
