@@ -454,7 +454,7 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 			Code:          http.StatusBadRequest,
 		}
 	}
-	resource, err := engine.addResourceFromJSON(&resourceJSON, "")
+	resource, err := engine.addResourceFromJSON(&resourceJSON, "/")
 	if err != nil {
 		if httpErr, ok := err.(*httpError); ok {
 			return &Response{

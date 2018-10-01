@@ -673,7 +673,11 @@ func (engine *Engine) UploadModelToS3(cfgPath string, bucket string, key string)
 
 	//Initialize AWS client and pass the config file
 	awsClient := AwsClient{}
-	awsClient.LoadCredentialFromConfigFile(cfgPath)
+	err = awsClient.LoadCredentialFromConfigFile(cfgPath)
+	if err != nil {
+		fmt.Println("ERROR: Can not load aws credentials")
+		return err
+	}
 
 	// Perform upload to S3
 	return awsClient.UploadObjectToS3(bytes, bucket, key)
@@ -690,6 +694,7 @@ func (engine *Engine) DownloadModelFromS3(cfgPath string, bucket string, modelNa
 	return awsClient.DownloadObjectFromS3(bucket, modelName, toPath)
 }
 
+// getRootResource get the root resource
 func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 	for _, resource := range resources {
 		if resource.Path == "/" {
@@ -699,23 +704,12 @@ func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 	return nil
 }
 
-func (engine *Engine) getProgramResource(resources []ResourceJSON) []ResourceJSON {
-	res := []ResourceJSON{}
-	for _, resource := range resources {
-		if resource.Path == "/programs" {
-			res = append(res, resource)
-		}
-	}
-	return res
-}
-
 // LoadDataModelFromJSONFile load data model from local json file
 func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	// Read the input file
-	pathFile = "./model-3.json"
 	bytes, err := ReadFile(pathFile)
 	if err != nil {
-		println("Warning: no model data found!!!")
+		fmt.Println("WARNING: no model data found!!!")
 		return err
 	}
 
@@ -731,14 +725,11 @@ func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	roleJsons := engineJSON.Roles
 	policyJsons := engineJSON.Policies
 
-	// Create resource root and add sub-resources to root
-	// The first element always points to root
-	if len(resourceJsons) == 0 {
-		return errors.New("There is no resource")
+	// Get root resource
+	resourceRoot := engine.getRootResource(resourceJsons)
+	if resourceRoot == nil {
+		return errors.New("ERROR: Can not get the root resource from JSON data")
 	}
-	//resourceRoot := engineJSON.Resources[0]
-	resourceRoot := engine.getRootResource(engineJSON.Resources)
-	resourceRoot.Subresources = engine.getProgramResource(engineJSON.Resources)
 
 	// Create new authentication engine
 	newEngine := makeEngine()
@@ -746,14 +737,17 @@ func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	// Add resources, roles and policies to the engine
 	newEngine.addResourceFromJSON(resourceRoot, "")
 	for i := 0; i < len(roleJsons); i++ {
-		newEngine.addRoleFromJSON(&roleJsons[i])
+		_, err = newEngine.addRoleFromJSON(&roleJsons[i])
+		if err != nil {
+			return err
+		}
 	}
 	for i := 0; i < len(policyJsons); i++ {
-		newEngine.createPolicyFromJSON(&policyJsons[i])
+		_, err = newEngine.createPolicyFromJSON(&policyJsons[i])
+		if err != nil {
+			return err
+		}
 	}
-
-	bytes, _ = json.Marshal(newEngine.toJSON())
-	println(string(bytes))
 
 	// Replace the engine with newly created engine
 	engine = newEngine

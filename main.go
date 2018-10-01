@@ -16,9 +16,10 @@ import (
 const ConfigFile string = "./credentials.json"
 const LocalSavedModel string = "./model.json"
 
+// startPolling periodically upload the model to S3
 func startPolling(engine *arborist.Engine, bucketName string, keyName string) {
 	for {
-		time.Sleep(10 * time.Second)
+		time.Sleep(3600 * time.Second)
 		err := engine.UploadModelToS3(ConfigFile, bucketName, keyName)
 		if err != nil {
 			fmt.Println("WARNING: Can not upload data model to S3. Continue anyway!!!")
@@ -39,7 +40,7 @@ func main() {
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
-		fmt.Println("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
+		fmt.Println("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error")
 	}
 	addr := fmt.Sprintf(":%d", *port)
 
@@ -69,20 +70,19 @@ func main() {
 	// Start a authentication engine
 	engine := arborist.NewAuthEngine()
 
-	// err = engine.LoadDataModelFromJSONFile("")
-	// Try get update from S3
-	// err = engine.DownloadModelFromS3(ConfigFile, bucketName, modelFileName, LocalSavedModel)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	fmt.Println("WARNING: Can not download the data model from S3. Continue anyway!!!")
-	// } else {
-	// 	err = engine.LoadDataModelFromJSONFile(LocalSavedModel)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 		fmt.Println("WARNING: Can not load model from JSON file. Continue anyway!!!")
-	// 	}
+	// Try get updated model from S3
+	err = engine.DownloadModelFromS3(ConfigFile, bucketName, modelFileName, LocalSavedModel)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("WARNING: Can not download the data model from S3. Continue anyway!!!")
+	} else {
+		err = engine.LoadDataModelFromJSONFile(LocalSavedModel)
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("WARNING: Can not load model from JSON file. Continue anyway!!!")
+		}
 
-	// }
+	}
 
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	logHandler := server.NewLogHandler(os.Stdout, 0) // 0 for default log flags
