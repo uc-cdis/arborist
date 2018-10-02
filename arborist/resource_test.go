@@ -121,13 +121,13 @@ func TestResourcePath(t *testing.T) {
 		}
 	}
 
-	check(root.path, "/root")
-	check(node_a.path, "/root/a")
-	check(node_x.path, "/root/x")
-	check(node_a_b.path, "/root/a/b")
-	check(node_a_b_c.path, "/root/a/b/c")
-	check(node_a_b_d.path, "/root/a/b/d")
-	check(node_a_b_e.path, "/root/a/b/e")
+	check(root.path, "/")
+	check(node_a.path, "/a")
+	check(node_x.path, "/x")
+	check(node_a_b.path, "/a/b")
+	check(node_a_b_c.path, "/a/b/c")
+	check(node_a_b_d.path, "/a/b/d")
+	check(node_a_b_e.path, "/a/b/e")
 }
 
 func TestEquals(t *testing.T) {

@@ -23,7 +23,7 @@ func TestToJSON(t *testing.T) {
 	// Fields in the JSON are in the order defined in the struct.
 	expected := ("{" +
 		"\"name\":\"root\"," +
-		"\"path\":\"/root\"," +
+		"\"path\":\"/\"," +
 		"\"description\":\"\"," +
 		"\"subresources\":[]" +
 		"}")
@@ -38,7 +38,7 @@ func TestToJSON(t *testing.T) {
 	// Fields in the JSON are in the order defined in the struct.
 	expected_subnode_0 := ("{" +
 		"\"name\":\"foo\"," +
-		"\"path\":\"/root/foo\"," +
+		"\"path\":\"/foo\"," +
 		"\"description\":\"subnode under root\"," +
 		"\"subresources\":[]" +
 		"}")
@@ -53,7 +53,7 @@ func TestToJSON(t *testing.T) {
 	// Fields in the JSON are in the order defined in the struct.
 	expected = ("{" +
 		"\"name\":\"root\"," +
-		"\"path\":\"/root\"," +
+		"\"path\":\"/\"," +
 		"\"description\":\"\"," +
 		"\"subresources\":[" +
 		expected_subnode_0 +

@@ -76,7 +76,7 @@ func main() {
 		fmt.Println(err)
 		fmt.Println("WARNING: Can not download the data model from S3. Continue anyway!!!")
 	} else {
-		err = engine.LoadDataModelFromJSONFile(LocalSavedModel)
+		engine, err = engine.LoadDataModelFromJSONFile(LocalSavedModel)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("WARNING: Can not load model from JSON file. Continue anyway!!!")

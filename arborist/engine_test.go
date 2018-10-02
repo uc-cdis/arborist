@@ -12,6 +12,7 @@ func makeTestEngine() *Engine {
 		panic(err)
 	}
 	engine.addResource(root)
+	engine.rootResource = root
 	return engine
 }
 

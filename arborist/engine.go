@@ -42,6 +42,7 @@ func NewAuthEngine() *Engine {
 		panic(err)
 	}
 	_, err = engine.addResource(rootResource)
+	engine.rootResource = rootResource
 	if err != nil {
 		// should not happen/unrecoverable; fix this function and/or addResource
 		panic(fmt.Sprintf("failed to initialize auth engine: %s", err))
@@ -705,12 +706,12 @@ func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 }
 
 // LoadDataModelFromJSONFile load data model from local json file
-func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
+func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) (*Engine, error) {
 	// Read the input file
 	bytes, err := ReadFile(pathFile)
 	if err != nil {
 		fmt.Println("WARNING: no model data found!!!")
-		return err
+		return nil, err
 	}
 
 	// Initialize an engine to keep the model data
@@ -719,7 +720,7 @@ func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	// Unmarshal the JSON data
 	err = json.Unmarshal(bytes, &engineJSON)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resourceJsons := engineJSON.Resources
 	roleJsons := engineJSON.Roles
@@ -728,7 +729,7 @@ func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	// Get root resource
 	resourceRoot := engine.getRootResource(resourceJsons)
 	if resourceRoot == nil {
-		return errors.New("ERROR: Can not get the root resource from JSON data")
+		return nil, errors.New("ERROR: Can not get the root resource from JSON data")
 	}
 
 	// Create new authentication engine
@@ -739,18 +740,15 @@ func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) error {
 	for i := 0; i < len(roleJsons); i++ {
 		_, err = newEngine.addRoleFromJSON(&roleJsons[i])
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for i := 0; i < len(policyJsons); i++ {
 		_, err = newEngine.createPolicyFromJSON(&policyJsons[i])
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Replace the engine with newly created engine
-	engine = newEngine
-
-	return nil
+	return newEngine, nil
 }
