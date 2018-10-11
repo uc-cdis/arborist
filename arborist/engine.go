@@ -360,12 +360,15 @@ func (engine *Engine) updateResourceWithJSON(resourcePath string, resourceJSON *
 	// we load these from the resource we're trying to update.
 	resourceJSON.defaultsFromResource(resource)
 
+	engine.removeResourceRecursively(resource)
+
 	updatedResource, err := engine.readResourceFromJSON(resourceJSON, "")
 	if err != nil {
 		return nil, err
 	}
 
 	*resource = *updatedResource
+	engine.addResource(resource)
 
 	return resource, nil
 }
@@ -441,14 +444,14 @@ func (engine *Engine) createPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, err
 		roles[role] = struct{}{}
 	}
 
-	resources := make(map[*Resource]struct{}, len(policyJSON.ResourcePaths))
+	resources := make(map[string]struct{}, len(policyJSON.ResourcePaths))
 	for _, resourcePath := range policyJSON.ResourcePaths {
-		resource, exists := engine.resources[resourcePath]
+		_, exists := engine.resources[resourcePath]
 		if !exists {
 			err := notExist("resource", "path", resourcePath)
 			return nil, err
 		}
-		resources[resource] = struct{}{}
+		resources[resourcePath] = struct{}{}
 	}
 
 	policy := &Policy{
@@ -483,13 +486,13 @@ func (engine *Engine) validatePolicies(policiesJSON *PolicyBulkJSON) ([]*Policy,
 			roles[role] = struct{}{}
 		}
 		// Check that the resources exist.
-		resources := make(map[*Resource]struct{}, len(policyJSON.ResourcePaths))
+		resources := make(map[string]struct{}, len(policyJSON.ResourcePaths))
 		for _, resourcePath := range policyJSON.ResourcePaths {
-			resource, exists := engine.resources[resourcePath]
+			_, exists := engine.resources[resourcePath]
 			if !exists {
 				return nil, notExist("resource", "path", resourcePath)
 			}
-			resources[resource] = struct{}{}
+			resources[resourcePath] = struct{}{}
 		}
 		policy := &Policy{
 			id:          policyJSON.ID,
@@ -578,14 +581,14 @@ func (engine *Engine) readPolicyFromJSON(policyJSON *PolicyJSON) (*Policy, error
 		roles[role] = struct{}{}
 	}
 
-	resources := make(map[*Resource]struct{}, len(policyJSON.ResourcePaths))
+	resources := make(map[string]struct{}, len(policyJSON.ResourcePaths))
 	for _, resourcePath := range policyJSON.ResourcePaths {
-		resource, exists := engine.resources[resourcePath]
+		_, exists := engine.resources[resourcePath]
 		if !exists {
 			err := notExist("resource", "path", resourcePath)
 			return nil, err
 		}
-		resources[resource] = struct{}{}
+		resources[resourcePath] = struct{}{}
 	}
 
 	policy := &Policy{
@@ -648,9 +651,9 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 		if !exists {
 			return nil, notExist("policy", "id", policyID)
 		}
-		for resource := range policy.resources {
+		for resourcePath := range policy.resources {
 			done := make(chan struct{})
-			for r := range resource.traverse(done) {
+			for r := range engine.resources[resourcePath].traverse(done) {
 				resources = append(resources, r)
 			}
 		}

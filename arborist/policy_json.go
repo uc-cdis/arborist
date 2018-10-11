@@ -15,7 +15,7 @@ func (policy *Policy) toJSON() PolicyJSON {
 	resourcePaths := make([]string, len(policy.resources))
 	i = 0
 	for resource := range policy.resources {
-		resourcePaths[i] = resource.path
+		resourcePaths[i] = resource
 		i++
 	}
 
@@ -78,7 +78,7 @@ func (policyJSON *PolicyJSON) defaultsFromPolicy(policy *Policy) {
 	if policyJSON.ResourcePaths == nil || len(policyJSON.ResourcePaths) == 0 {
 		paths := make([]string, len(policy.resources))
 		for resource := range policy.resources {
-			paths = append(paths, resource.path)
+			paths = append(paths, resource)
 		}
 		policyJSON.ResourcePaths = paths
 	}
