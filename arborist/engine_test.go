@@ -175,8 +175,8 @@ func addTestPolicies(engine *Engine) {
 		roles: map[*Role]struct{}{
 			engine.roles["boil"]: struct{}{},
 		},
-		resources: map[*Resource]struct{}{
-			engine.resources["/kitchen/dishes/kettle"]: struct{}{},
+		resources: map[string]struct{}{
+			"/kitchen/dishes/kettle": struct{}{},
 		},
 	})
 }
