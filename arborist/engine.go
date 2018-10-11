@@ -360,12 +360,15 @@ func (engine *Engine) updateResourceWithJSON(resourcePath string, resourceJSON *
 	// we load these from the resource we're trying to update.
 	resourceJSON.defaultsFromResource(resource)
 
+	engine.removeResourceRecursively(resource)
+
 	updatedResource, err := engine.readResourceFromJSON(resourceJSON, "")
 	if err != nil {
 		return nil, err
 	}
 
 	*resource = *updatedResource
+	engine.addResource(resource)
 
 	return resource, nil
 }
