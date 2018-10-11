@@ -22,6 +22,7 @@ type S3Credentials struct {
 type AwsClient struct {
 	credentials S3Credentials
 	session     *session.Session
+	bucket      string
 }
 
 func (client *AwsClient) SetS3Credentials(cred S3Credentials) {
@@ -71,6 +72,14 @@ func (client *AwsClient) createNewSession() error {
 	client.session = sess
 
 	return err
+}
+
+func (client *AwsClient) GetBucketName() string {
+	return client.bucket
+}
+
+func (client *AwsClient) SetBucketName(name string) {
+	client.bucket = name
 }
 
 // UploadObjectToS3 adds an object file to s3 bucket

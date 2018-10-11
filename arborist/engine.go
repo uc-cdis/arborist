@@ -12,6 +12,9 @@ import (
 	"fmt"
 )
 
+const ConfigFile string = "./credentials.json"
+const LocalTempFile string = "./tmpData.json"
+
 type Engine struct {
 	rootResource *Resource
 	roles        map[string]*Role
@@ -674,6 +677,9 @@ func (engine *Engine) UploadModelToS3(cfgPath string, bucket string, key string)
 
 	//Initialize AWS client and pass the config file
 	awsClient := AwsClient{}
+	if cfgPath == "" {
+		cfgPath = ConfigFile
+	}
 	err = awsClient.LoadCredentialFromConfigFile(cfgPath)
 	if err != nil {
 		fmt.Println("ERROR: Can not load aws credentials")
@@ -685,14 +691,18 @@ func (engine *Engine) UploadModelToS3(cfgPath string, bucket string, key string)
 }
 
 // DownloadModelFromS3 download data model from s3
-func (engine *Engine) DownloadModelFromS3(cfgPath string, bucket string, modelName string, toPath string) error {
+func (engine *Engine) downloadObjectFromS3(cfgPath string, bucket string, modelName string, path string) error {
 
 	// Initialize AWS client and pass the config file
 	awsClient := AwsClient{}
+	if cfgPath == "" {
+		cfgPath = ConfigFile
+	}
+
 	awsClient.LoadCredentialFromConfigFile(cfgPath)
 
 	// Perform download object from s3
-	return awsClient.DownloadObjectFromS3(bucket, modelName, toPath)
+	return awsClient.DownloadObjectFromS3(bucket, modelName, path)
 }
 
 // getRootResource get the root resource
@@ -705,14 +715,15 @@ func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 	return nil
 }
 
-// LoadDataModelFromJSONFile load data model from local json file
-func (engine *Engine) LoadDataModelFromJSONFile(pathFile string) (*Engine, error) {
-	// Read the input file
-	bytes, err := ReadFile(pathFile)
+// SyncDataModelFromS3 syncs data model from S3
+func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelName string) (*Engine, error) {
+	err := engine.downloadObjectFromS3("", bucket, modelName, LocalTempFile)
 	if err != nil {
-		fmt.Println("WARNING: no model data found!!!")
 		return nil, err
 	}
+
+	// Read the temp file
+	bytes, err := ReadFile(LocalTempFile)
 
 	// Initialize an engine to keep the model data
 	engineJSON := EngineJSON{}

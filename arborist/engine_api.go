@@ -858,3 +858,61 @@ func (engine *Engine) HandleEngineSerialize() *Response {
 		Code:  http.StatusOK,
 	}
 }
+
+func (engine *Engine) HandlePostModelToS3(jsonBytes []byte) *Response {
+	data, err := GetValueFromKeys(jsonBytes, []string{"modelName"})
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	modelName := data.(string)
+
+	data, err = GetValueFromKeys(jsonBytes, []string{"bucket"})
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	bucket := data.(string)
+
+	engine.UploadModelToS3("", bucket, modelName)
+
+	return &Response{
+		Code: http.StatusOK,
+	}
+}
+
+func (engine *Engine) HandleSyncModelFromS3(jsonBytes []byte) *Response {
+	data, err := GetValueFromKeys(jsonBytes, []string{"modelName"})
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	modelName := data.(string)
+
+	data, err = GetValueFromKeys(jsonBytes, []string{"bucket"})
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+	bucket := data.(string)
+
+	_, err = engine.SyncDataModelFromS3("", bucket, modelName)
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
+
+	return &Response{
+		Code: http.StatusOK,
+	}
+}

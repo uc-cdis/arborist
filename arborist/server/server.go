@@ -34,6 +34,7 @@ type EndpointInformation struct {
 	PolicyBaseURL   string `json:"policy_base_url"`
 	ResourceBaseURL string `json:"resource_base_url"`
 	RoleBaseURL     string `json:"role_base_url"`
+	ModelBaseURL    string `json:"model_base_url"`
 }
 
 // fullURLs returns a copy of the endpoint information with the base URL
@@ -46,6 +47,7 @@ func fullURLs(baseURL string) EndpointInformation {
 		PolicyBaseURL:   fmt.Sprintf("%s%s", baseURL, ENDPOINTS.PolicyBaseURL),
 		ResourceBaseURL: fmt.Sprintf("%s%s", baseURL, ENDPOINTS.ResourceBaseURL),
 		RoleBaseURL:     fmt.Sprintf("%s%s", baseURL, ENDPOINTS.RoleBaseURL),
+		ModelBaseURL:    fmt.Sprintf("%s%s", baseURL, ENDPOINTS.ModelBaseURL),
 	}
 }
 
@@ -60,4 +62,5 @@ var ENDPOINTS EndpointInformation = EndpointInformation{
 	PolicyBaseURL:   "/policy/",
 	ResourceBaseURL: "/resource/",
 	RoleBaseURL:     "/role/",
+	ModelBaseURL:    "/model/",
 }
