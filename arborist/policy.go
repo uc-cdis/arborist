@@ -1,7 +1,5 @@
 package arborist
 
-import ()
-
 // Represent a policy in the RBAC model. A Policy connects a set of Roles to a
 // set of Resources, granting all the permissions from all the roles over all
 // of the encapsulated resources.
@@ -9,7 +7,7 @@ type Policy struct {
 	id          string
 	description string
 	roles       map[*Role]struct{}
-	resources   map[*Resource]struct{}
+	resources   map[string]struct{}
 }
 
 // appendFrom takes a second policy and adds all the contents of the given
@@ -37,7 +35,7 @@ func (policy *Policy) appendFrom(updated *Policy) {
 }
 
 func (policy *Policy) allows(action *Action, constraints Constraints, resource *Resource) bool {
-	if _, exists := policy.resources[resource]; !exists {
+	if _, exists := policy.resources[resource.path]; !exists {
 		return false
 	}
 
