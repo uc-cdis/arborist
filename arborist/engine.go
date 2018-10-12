@@ -716,10 +716,10 @@ func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 }
 
 // SyncDataModelFromS3 syncs data model from S3
-func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelName string) (*Engine, error) {
+func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelName string) error {
 	err := engine.downloadObjectFromS3("", bucket, modelName, LocalTempFile)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Read the temp file
@@ -731,7 +731,7 @@ func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelNa
 	// Unmarshal the JSON data
 	err = json.Unmarshal(bytes, &engineJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	resourceJsons := engineJSON.Resources
 	roleJsons := engineJSON.Roles
@@ -740,26 +740,39 @@ func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelNa
 	// Get root resource
 	resourceRoot := engine.getRootResource(resourceJsons)
 	if resourceRoot == nil {
-		return nil, errors.New("ERROR: Can not get the root resource from JSON data")
+		return errors.New("ERROR: Can not get the root resource from JSON data")
 	}
 
-	// Create new authentication engine
-	newEngine := makeEngine()
+	// Remove all resources
+	engine.removeResourceRecursively(engine.resources["/"])
+	engine.rootResource = nil
+
+	// Remove all roles
+	for _, role := range engine.roles {
+		engine.removeRole(role)
+	}
+
+	// Remove all policies
+	for policyID := range engine.policies {
+		engine.removePolicy(policyID)
+	}
 
 	// Add resources, roles and policies to the engine
-	newEngine.addResourceFromJSON(resourceRoot, "")
+	engine.addResourceFromJSON(resourceRoot, "")
+	engine.rootResource = engine.resources["/"]
+
 	for i := 0; i < len(roleJsons); i++ {
-		_, err = newEngine.addRoleFromJSON(&roleJsons[i])
+		_, err = engine.addRoleFromJSON(&roleJsons[i])
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 	for i := 0; i < len(policyJsons); i++ {
-		_, err = newEngine.createPolicyFromJSON(&policyJsons[i])
+		_, err = engine.createPolicyFromJSON(&policyJsons[i])
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return newEngine, nil
+	return nil
 }

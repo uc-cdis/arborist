@@ -859,6 +859,7 @@ func (engine *Engine) HandleEngineSerialize() *Response {
 	}
 }
 
+// HandlePostModelToS3 posts data model to S3
 func (engine *Engine) HandlePostModelToS3(jsonBytes []byte) *Response {
 	data, err := GetValueFromKeys(jsonBytes, []string{"modelName"})
 	if err != nil {
@@ -878,13 +879,21 @@ func (engine *Engine) HandlePostModelToS3(jsonBytes []byte) *Response {
 	}
 	bucket := data.(string)
 
-	engine.UploadModelToS3("", bucket, modelName)
+	err = engine.UploadModelToS3("", bucket, modelName)
+
+	if err != nil {
+		return &Response{
+			InternalError: err,
+			Code:          http.StatusInternalServerError,
+		}
+	}
 
 	return &Response{
 		Code: http.StatusOK,
 	}
 }
 
+// HandleSyncModelFromS3 syncs data model from S3
 func (engine *Engine) HandleSyncModelFromS3(jsonBytes []byte) *Response {
 	data, err := GetValueFromKeys(jsonBytes, []string{"modelName"})
 	if err != nil {
@@ -904,7 +913,7 @@ func (engine *Engine) HandleSyncModelFromS3(jsonBytes []byte) *Response {
 	}
 	bucket := data.(string)
 
-	_, err = engine.SyncDataModelFromS3("", bucket, modelName)
+	err = engine.SyncDataModelFromS3("", bucket, modelName)
 	if err != nil {
 		return &Response{
 			InternalError: err,
