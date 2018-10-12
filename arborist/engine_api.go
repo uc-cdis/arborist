@@ -503,6 +503,13 @@ func (engine *Engine) HandleAddSubresource(parentPath string, bytes []byte) *Res
 	}
 	subresource, err := engine.addResourceFromJSON(&resourceJSON, parentPath)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
+
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
@@ -532,6 +539,12 @@ func (engine *Engine) HandleResourceUpdate(resourcePath string, bytes []byte) *R
 	}
 	updatedResource, err := engine.updateResourceWithJSON(resourcePath, &resourceJSON)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
@@ -597,9 +610,15 @@ func (engine *Engine) HandleListRoleIDs() *Response {
 func (engine *Engine) HandleRoleRead(roleID string) *Response {
 	roleJSON, err := engine.getRoleJSON(roleID)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
-			Code:          http.StatusNotFound,
+			Code:          http.StatusBadRequest,
 		}
 	}
 	bytes, err := json.Marshal(roleJSON)
@@ -629,6 +648,12 @@ func (engine *Engine) HandleRoleCreate(bytes []byte) *Response {
 	}
 	role, err := engine.addRoleFromJSON(&roleJSON)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
@@ -672,6 +697,12 @@ func (engine *Engine) HandleRolesCreate(bytes []byte) *Response {
 	for _, roleJSON := range rolesJSON.Roles {
 		role, err := engine.addRoleFromJSON(&roleJSON)
 		if err != nil {
+			if httpErr, ok := err.(*httpError); ok {
+				return &Response{
+					ExternalError: err,
+					Code:          httpErr.Code,
+				}
+			}
 			return &Response{
 				ExternalError: err,
 				Code:          http.StatusBadRequest,
@@ -710,6 +741,12 @@ func (engine *Engine) HandleRoleUpdate(roleID string, bytes []byte) *Response {
 	}
 	updatedRole, err := engine.updateRoleWithJSON(roleID, &roleJSON)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
@@ -751,6 +788,12 @@ func (engine *Engine) HandleRolePatch(roleID string, bytes []byte) *Response {
 
 	updatedRole, err := engine.appendRoleWithJSON(roleID, &roleJSON)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
