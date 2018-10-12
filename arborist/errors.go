@@ -1,24 +1,33 @@
 package arborist
 
 import (
-	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
+type httpError struct {
+	msg  string
+	Code int
+}
+
+func (e *httpError) Error() string {
+	return e.msg
+}
+
 func nameError(name string, purpose string, reason string) error {
 	msg := fmt.Sprintf("invalid name %s for %s: %s", name, purpose, reason)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusBadRequest}
 }
 
 func notExist(entity string, idType string, id string) error {
 	msg := fmt.Sprintf("%s with %s `%s` does not exist", entity, idType, id)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusNotFound}
 }
 
 func alreadyExists(entity string, idType string, id string) error {
 	msg := fmt.Sprintf("%s with %s %s already exists", entity, idType, id)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusConflict}
 }
 
 func noDelete(entity string, idType string, identifier string, reason string) error {
@@ -29,12 +38,12 @@ func noDelete(entity string, idType string, identifier string, reason string) er
 		identifier,
 		reason,
 	)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusBadRequest}
 }
 
 func missingRequiredField(entity string, field string) error {
 	msg := fmt.Sprintf("input %s is missing required field `%s`", entity, field)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusBadRequest}
 }
 
 func missingRequiredFields(entity string, fields []string) error {
@@ -50,7 +59,7 @@ func missingRequiredFields(entity string, fields []string) error {
 		entity,
 		requiredFields,
 	)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusBadRequest}
 }
 
 func containsUnexpectedFields(entity string, fields []string) error {
@@ -66,5 +75,5 @@ func containsUnexpectedFields(entity string, fields []string) error {
 		entity,
 		requiredFields,
 	)
-	return errors.New(msg)
+	return &httpError{msg, http.StatusBadRequest}
 }
