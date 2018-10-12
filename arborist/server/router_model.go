@@ -14,7 +14,7 @@ import (
 	"github.com/uc-cdis/arborist/arborist"
 )
 
-func handleSyncModel(engine *arborist.Engine) http.Handler {
+func handleForceUpdateModel(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -22,7 +22,7 @@ func handleSyncModel(engine *arborist.Engine) http.Handler {
 			return
 		}
 
-		response := engine.HandleSyncModelFromS3(body)
+		response := engine.HandleForceUpdateModelFromS3(body)
 
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
@@ -32,7 +32,7 @@ func handleSyncModel(engine *arborist.Engine) http.Handler {
 	})
 }
 
-func handlePostModelToS3(engine *arborist.Engine) http.Handler {
+func handleUploadModelToS3(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -55,6 +55,6 @@ func handlePostModelToS3(engine *arborist.Engine) http.Handler {
 // using the prefix `/model`.
 func (server *Server) syncModelRouter(mainRouter *mux.Router) {
 	modelRouter := mainRouter.PathPrefix("/model").Subrouter()
-	modelRouter.Handle("/", handleSyncModel(server.Engine)).Methods("PUT")
-	modelRouter.Handle("/", handlePostModelToS3(server.Engine)).Methods("POST")
+	modelRouter.Handle("/", handleForceUpdateModel(server.Engine)).Methods("PUT")
+	modelRouter.Handle("/", handleUploadModelToS3(server.Engine)).Methods("POST")
 }

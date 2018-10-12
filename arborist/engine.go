@@ -690,7 +690,7 @@ func (engine *Engine) UploadModelToS3(cfgPath string, bucket string, key string)
 	return awsClient.UploadObjectToS3(bytes, bucket, key)
 }
 
-// DownloadModelFromS3 download data model from s3
+// downloadObjectFromS3 download an object from s3
 func (engine *Engine) downloadObjectFromS3(cfgPath string, bucket string, modelName string, path string) error {
 
 	// Initialize AWS client and pass the config file
@@ -715,8 +715,8 @@ func (engine *Engine) getRootResource(resources []ResourceJSON) *ResourceJSON {
 	return nil
 }
 
-// SyncDataModelFromS3 syncs data model from S3
-func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelName string) error {
+// ForceUpdateDataModelFromS3 forces to update data model from S3
+func (engine *Engine) ForceUpdateDataModelFromS3(cfgPath string, bucket string, modelName string) error {
 	err := engine.downloadObjectFromS3("", bucket, modelName, LocalTempFile)
 	if err != nil {
 		return err
@@ -747,17 +747,18 @@ func (engine *Engine) SyncDataModelFromS3(cfgPath string, bucket string, modelNa
 	engine.removeResourceRecursively(engine.resources["/"])
 	engine.rootResource = nil
 
-	// Remove all roles
-	for _, role := range engine.roles {
-		engine.removeRole(role)
-	}
-
 	// Remove all policies
 	for policyID := range engine.policies {
 		engine.removePolicy(policyID)
 	}
 
+	// Remove all roles
+	for _, role := range engine.roles {
+		engine.removeRole(role)
+	}
+
 	// Add resources, roles and policies to the engine
+
 	engine.addResourceFromJSON(resourceRoot, "")
 	engine.rootResource = engine.resources["/"]
 
