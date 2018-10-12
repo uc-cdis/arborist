@@ -222,20 +222,17 @@ func (engine *Engine) HandlePolicyCreate(bytes []byte) *Response {
 	}
 	policy, err := engine.createPolicyFromJSON(&policyJSON)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
-			Code:          http.StatusConflict,
+			Code:          http.StatusBadRequest,
 		}
 	}
-
-	if _, exists := engine.policies[policy.id]; exists {
-		err := alreadyExists("policy", "id", policy.id)
-		return &Response{
-			ExternalError: err,
-			Code:          http.StatusConflict,
-		}
-	}
-	engine.policies[policy.id] = policy
 
 	content := struct {
 		Created PolicyJSON `json:"created"`
@@ -459,6 +456,12 @@ func (engine *Engine) HandleResourceCreate(bytes []byte) *Response {
 	}
 	resource, err := engine.addResourceFromJSON(&resourceJSON, "")
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			return &Response{
+				ExternalError: err,
+				Code:          httpErr.Code,
+			}
+		}
 		return &Response{
 			ExternalError: err,
 			Code:          http.StatusBadRequest,
