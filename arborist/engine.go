@@ -8,6 +8,7 @@ package arborist
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -704,6 +705,16 @@ func (engine *Engine) downloadObjectFromS3(cfgPath string, bucket string, modelN
 	return awsClient.DownloadObjectFromS3(bucket, modelName, path)
 }
 
+// getRootResource get the root resource
+func getRootResource(resources []ResourceJSON) *ResourceJSON {
+	for _, resource := range resources {
+		if resource.Path == "/" {
+			return &resource
+		}
+	}
+	return nil
+}
+
 // ForceUpdateDataModelFromS3 forces to update data model from S3, the function
 // returns nil if success, otherwise error
 //
@@ -729,7 +740,10 @@ func (engine *Engine) ForceUpdateDataModelFromS3(cfgPath string, bucket string, 
 	policyJsons := engineJSON.Policies
 
 	// Get root resource
-	resourceRoot := engine.rootResource.toJSON()
+	resourceRoot := getRootResource(resourceJsons)
+	if resourceRoot == nil {
+		return errors.New("ERROR: Can not get the root resource from JSON data")
+	}
 
 	// Remove all resources
 	engine.removeResourceRecursively(engine.resources["/"])
