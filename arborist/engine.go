@@ -12,7 +12,7 @@ import (
 	"fmt"
 )
 
-const ConfigFile string = "./credentials.json"
+const ConfigFile string = "/credentials.json"
 const LocalTempFile string = "./tmpData.json"
 
 type Engine struct {
