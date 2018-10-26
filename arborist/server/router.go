@@ -15,7 +15,7 @@ func (server *Server) MakeRouter() *mux.Router {
 	server.addResourceRouter(router)
 	server.addRoleRouter(router)
 	server.addPolicyRouter(router)
-	server.syncModelRouter(router)
+	server.addModelRouter(router)
 
 	return router
 }

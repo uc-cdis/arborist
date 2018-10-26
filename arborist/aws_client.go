@@ -25,10 +25,6 @@ type AwsClient struct {
 	bucket      string
 }
 
-func (client *AwsClient) SetS3Credentials(cred S3Credentials) {
-	client.credentials = cred
-}
-
 // LoadCredentialFromConfigFile loads AWS credentials from the config file
 func (client *AwsClient) LoadCredentialFromConfigFile(path string) error {
 	// Read data file
@@ -72,14 +68,6 @@ func (client *AwsClient) createNewSession() error {
 	client.session = sess
 
 	return err
-}
-
-func (client *AwsClient) GetBucketName() string {
-	return client.bucket
-}
-
-func (client *AwsClient) SetBucketName(name string) {
-	client.bucket = name
 }
 
 // UploadObjectToS3 adds an object file to s3 bucket

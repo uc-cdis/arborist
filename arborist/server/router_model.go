@@ -51,9 +51,9 @@ func handleUploadModelToS3(engine *arborist.Engine) http.Handler {
 	})
 }
 
-// syncModelRouter attaches the handlers defined in this file to a main router,
+// addModelRouter attaches the handlers defined in this file to a main router,
 // using the prefix `/model`.
-func (server *Server) syncModelRouter(mainRouter *mux.Router) {
+func (server *Server) addModelRouter(mainRouter *mux.Router) {
 	modelRouter := mainRouter.PathPrefix("/model").Subrouter()
 	modelRouter.Handle("/", handleForceUpdateModel(server.Engine)).Methods("PUT")
 	modelRouter.Handle("/", handleUploadModelToS3(server.Engine)).Methods("POST")

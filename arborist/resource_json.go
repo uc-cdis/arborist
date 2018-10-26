@@ -59,8 +59,6 @@ func (resourceJSON *ResourceJSON) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	//resourceJSON.Path = ""
-
 	if resourceJSON.Subresources == nil {
 		resourceJSON.Subresources = []ResourceJSON{}
 	}
