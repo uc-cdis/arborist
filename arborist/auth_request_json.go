@@ -14,7 +14,8 @@ type AuthRequestJSON_User struct {
 	// The Policies field is optional, and if the request provides a token
 	// this gets filled in by the first stage of handling by the engine, using
 	// the Token field.
-	Policies []string `json:"policies,omitempty"`
+	Policies  []string `json:"policies,omitempty"`
+	Audiences []string `json:"aud,omitempty"`
 }
 
 type AuthRequestJSON_Request struct {

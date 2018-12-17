@@ -16,73 +16,75 @@ import (
 // tokenReader extracts the `context.user.policies` field from a token. This
 // function is used for passing to `arborist.Engine.HandleAuthRequestBytes` so
 // that arborist can get the policies out of a JWT.
-func (server *Server) tokenReader(token string) ([]string, error) {
-	missingRequiredField := func(field string) error {
-		msg := fmt.Sprintf(
-			"failed to decode token: missing required field `%s`",
-			field,
-		)
-		server.Log.Error(msg)
-		return errors.New(msg)
-	}
-	fieldTypeError := func(field string) error {
-		msg := fmt.Sprintf(
-			"failed to decode token: field `%s` has wrong type",
-			field,
-		)
-		server.Log.Error(msg)
-		return errors.New(msg)
-	}
+func (server *Server) makeTokenReader(audiences []string) func(string) ([]string, error) {
+	return func(token string) ([]string, error) {
+		missingRequiredField := func(field string) error {
+			msg := fmt.Sprintf(
+				"failed to decode token: missing required field `%s`",
+				field,
+			)
+			server.Log.Error(msg)
+			return errors.New(msg)
+		}
+		fieldTypeError := func(field string) error {
+			msg := fmt.Sprintf(
+				"failed to decode token: field `%s` has wrong type",
+				field,
+			)
+			server.Log.Error(msg)
+			return errors.New(msg)
+		}
 
-	server.Log.Info("decoding token: %s", token)
-	claims, err := server.JWTApp.Decode(token)
-	if err != nil {
-		server.Log.Error("error decoding token: %s", err.Error())
-		return nil, err
-	}
-	expected := &authutils.Expected{
-		Audiences: []string{"openid"},
-	}
-	err = expected.Validate(claims)
-	if err != nil {
-		server.Log.Error("error decoding token: %s", err.Error())
-		return nil, err
-	}
+		server.Log.Info("decoding token: %s", token)
+		claims, err := server.JWTApp.Decode(token)
+		if err != nil {
+			server.Log.Error("error decoding token: %s", err.Error())
+			return nil, err
+		}
+		expected := &authutils.Expected{
+			Audiences: audiences,
+		}
+		err = expected.Validate(claims)
+		if err != nil {
+			server.Log.Error("error decoding token: %s", err.Error())
+			return nil, err
+		}
 
-	contextInterface, exists := (*claims)["context"]
-	if !exists {
-		return nil, missingRequiredField("context")
-	}
-	context, casted := contextInterface.(map[string]interface{})
-	if !casted {
-		return nil, fieldTypeError("context")
-	}
-	userInterface, exists := context["user"]
-	if !exists {
-		return nil, missingRequiredField("user")
-	}
-	user, casted := userInterface.(map[string]interface{})
-	if !casted {
-		return nil, fieldTypeError("user")
-	}
-	policiesInterface, exists := user["policies"]
-	if !exists {
-		return nil, missingRequiredField("policies")
-	}
-	// policiesInterface should really be a []string
-	policiesInterfaceSlice, casted := policiesInterface.([]interface{})
-	if !casted {
-		return nil, fieldTypeError("policies")
-	}
-	policies := make([]string, len(policiesInterfaceSlice))
-	for i, policyInterface := range policiesInterfaceSlice {
-		policyString, casted := policyInterface.(string)
+		contextInterface, exists := (*claims)["context"]
+		if !exists {
+			return nil, missingRequiredField("context")
+		}
+		context, casted := contextInterface.(map[string]interface{})
+		if !casted {
+			return nil, fieldTypeError("context")
+		}
+		userInterface, exists := context["user"]
+		if !exists {
+			return nil, missingRequiredField("user")
+		}
+		user, casted := userInterface.(map[string]interface{})
+		if !casted {
+			return nil, fieldTypeError("user")
+		}
+		policiesInterface, exists := user["policies"]
+		if !exists {
+			return nil, missingRequiredField("policies")
+		}
+		// policiesInterface should really be a []string
+		policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 		if !casted {
 			return nil, fieldTypeError("policies")
 		}
-		policies[i] = policyString
+		policies := make([]string, len(policiesInterfaceSlice))
+		for i, policyInterface := range policiesInterfaceSlice {
+			policyString, casted := policyInterface.(string)
+			if !casted {
+				return nil, fieldTypeError("policies")
+			}
+			policies[i] = policyString
+		}
+		return policies, nil
 	}
-	return policies, nil
 }
 
 // handleAuth handles `POST` `/auth`.
@@ -97,7 +99,7 @@ func (server *Server) handleAuthRequest(engine *arborist.Engine) http.Handler {
 			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
-		response := engine.HandleAuthRequestBytes(body, server.tokenReader)
+		response := engine.HandleAuthRequestBytes(body, server.makeTokenReader)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -137,7 +139,9 @@ func (server *Server) handleListResourceAuth() http.Handler {
 			return
 		}
 		encodedToken := requestFields.User.Token
-		policies, err := server.tokenReader(encodedToken)
+		aud := []string{"openid"}
+		tokenReader := server.makeTokenReader(aud)
+		policies, err := tokenReader(encodedToken)
 		if err != nil {
 			newErrorJSON(err.Error(), http.StatusUnauthorized).
 				write(w, wantPrettyJSON(r))
