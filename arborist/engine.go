@@ -8,6 +8,8 @@ package arborist
 
 import (
 	"fmt"
+	"log"
+	"os"
 )
 
 type Engine struct {
@@ -16,17 +18,21 @@ type Engine struct {
 	resources    map[string]*Resource
 	permissions  map[string]*Permission
 	policies     map[string]*Policy
+	log          *log.Logger
 }
 
 // makeEngine just does the necessary allocations (i.e. maps) to return a
 // functioning Engine structure, and skips the rest of the setup such as adding
 // a root resource node. Should use only for NewAuthEngine and tests.
 func makeEngine() *Engine {
+	logger_flags := log.Ldate | log.Ltime | log.Llongfile
+	logger := log.New(os.Stdout, "", logger_flags)
 	return &Engine{
 		roles:       make(map[string]*Role),
 		resources:   make(map[string]*Resource),
 		permissions: make(map[string]*Permission),
 		policies:    make(map[string]*Policy),
+		log:         logger,
 	}
 }
 
@@ -649,7 +655,12 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 	for _, policyID := range policyIDs {
 		policy, exists := engine.policies[policyID]
 		if !exists {
-			return nil, notExist("policy", "id", policyID)
+			// just skip and warn if not recognized
+			engine.log.Printf(
+				"WARNING: unrecognized policy in auth resources request: %s",
+				policyID,
+			)
+			continue
 		}
 		for resourcePath := range policy.resources {
 			done := make(chan struct{})

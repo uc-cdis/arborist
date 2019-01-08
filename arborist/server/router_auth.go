@@ -35,7 +35,7 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 			return errors.New(msg)
 		}
 
-		server.Log.Info("decoding token: %s", token)
+		server.Log.Debug("decoding token: %s", token)
 		claims, err := server.JWTApp.Decode(token)
 		if err != nil {
 			server.Log.Error("error decoding token: %s", err.Error())
@@ -96,12 +96,14 @@ func (server *Server) handleAuthRequest(engine *arborist.Engine) http.Handler {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			msg := fmt.Sprintf("failed to read request body; encountered error: %s", err)
+			server.Log.Info(msg)
 			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		response := engine.HandleAuthRequestBytes(body, server.makeTokenReader)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
+			server.Log.Error(err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -114,6 +116,7 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			msg := fmt.Sprintf("failed to read request body; encountered error: %s", err)
+			server.Log.Info(msg)
 			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
@@ -134,7 +137,8 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		}{}
 		err = json.Unmarshal(body, &requestFields)
 		if err != nil {
-			msg := "incorrect format in request body"
+			msg := fmt.Sprintf("incorrect format in request body: %s", err.Error())
+			server.Log.Info(msg)
 			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
 			return
 		}
@@ -143,13 +147,28 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		tokenReader := server.makeTokenReader(aud)
 		policies, err := tokenReader(encodedToken)
 		if err != nil {
+			server.Log.Error(err.Error())
 			newErrorJSON(err.Error(), http.StatusUnauthorized).
 				write(w, wantPrettyJSON(r))
 			return
 		}
 		response := server.Engine.HandleListAuthorizedResources(policies)
+		if response.ExternalError != nil {
+			server.Log.Info(
+				"error in request to list authorized resources: %s",
+				response.ExternalError.Error(),
+			)
+		}
+		if response.InternalError != nil {
+			msg := fmt.Sprintf(
+				"arborist failed to list authorized resources: %s",
+				response.InternalError.Error(),
+			)
+			server.Log.Error(msg)
+		}
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
+			server.Log.Error(err.Error())
 			newErrorJSON(err.Error(), http.StatusBadRequest).
 				write(w, wantPrettyJSON(r))
 			return
