@@ -15,4 +15,4 @@ FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /go/src/github.com/uc-cdis/arborist/bin/arborist /arborist
 
-ENTRYPOINT ["/arborist"]
+ENTRYPOINT ["/arborist", "--logtostderr=1"]

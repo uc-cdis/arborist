@@ -24,6 +24,8 @@ package arborist
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/golang/glog"
 )
 
 type Response struct {
@@ -232,7 +234,7 @@ func (engine *Engine) HandlePolicyCreate(bytes []byte) *Response {
 	}
 	policy, err := engine.createPolicyFromJSON(&policyJSON)
 	if err != nil {
-		engine.log.Printf("ERROR: could not create policy; %s", err.Error())
+		glog.Errorf("could not create policy; %s", err.Error())
 		if httpErr, ok := err.(*httpError); ok {
 			return &Response{
 				ExternalError: err,

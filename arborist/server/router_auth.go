@@ -13,9 +13,10 @@ import (
 	"github.com/uc-cdis/go-authutils/authutils"
 )
 
-// tokenReader extracts the `context.user.policies` field from a token. This
-// function is used for passing to `arborist.Engine.HandleAuthRequestBytes` so
-// that arborist can get the policies out of a JWT.
+// makeTokenReader sets up a function which is used to extract the
+// `context.user.policies` field from a token. This function is used for passing
+// to `arborist.Engine.HandleAuthRequestBytes` so that arborist can get the
+// policies out of a JWT.
 func (server *Server) makeTokenReader(audiences []string) func(string) ([]string, error) {
 	return func(token string) ([]string, error) {
 		missingRequiredField := func(field string) error {
