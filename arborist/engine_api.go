@@ -24,6 +24,8 @@ package arborist
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/golang/glog"
 )
 
 type Response struct {
@@ -147,10 +149,10 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 // extract a list of policies.
 func (engine *Engine) HandleAuthRequestBytes(
 	bytes []byte,
-	tokenReader func(string) ([]string, error),
+	makeTokenReader func([]string) func(string) ([]string, error),
 ) *Response {
-	var authRequestJSON *AuthRequestJSON
-	err := json.Unmarshal(bytes, authRequestJSON)
+	var authRequestJSON AuthRequestJSON
+	err := json.Unmarshal(bytes, &authRequestJSON)
 	if err != nil {
 		response := &Response{
 			ExternalError: err,
@@ -158,6 +160,16 @@ func (engine *Engine) HandleAuthRequestBytes(
 		}
 		return response
 	}
+
+	var aud []string
+	if authRequestJSON.User.Audiences == nil {
+		aud = []string{"openid"}
+	} else {
+		aud = make([]string, len(authRequestJSON.User.Audiences))
+		copy(aud, authRequestJSON.User.Audiences)
+	}
+	tokenReader := makeTokenReader(aud)
+
 	// Get the policies from the token using the tokenReader.
 	if authRequestJSON.User.Policies == nil {
 		authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
@@ -169,7 +181,7 @@ func (engine *Engine) HandleAuthRequestBytes(
 			return response
 		}
 	}
-	authRequest, err := engine.readAuthRequestFromJSON(authRequestJSON)
+	authRequest, err := engine.readAuthRequestFromJSON(&authRequestJSON)
 	if err != nil {
 		response := &Response{
 			ExternalError: err,
@@ -222,6 +234,7 @@ func (engine *Engine) HandlePolicyCreate(bytes []byte) *Response {
 	}
 	policy, err := engine.createPolicyFromJSON(&policyJSON)
 	if err != nil {
+		glog.Errorf("could not create policy; %s", err.Error())
 		if httpErr, ok := err.(*httpError); ok {
 			return &Response{
 				ExternalError: err,

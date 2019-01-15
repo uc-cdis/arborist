@@ -8,6 +8,8 @@ package arborist
 
 import (
 	"fmt"
+
+	"github.com/golang/glog"
 )
 
 type Engine struct {
@@ -649,7 +651,12 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 	for _, policyID := range policyIDs {
 		policy, exists := engine.policies[policyID]
 		if !exists {
-			return nil, notExist("policy", "id", policyID)
+			// just skip and warn if not recognized
+			glog.Warningf(
+				"unrecognized policy in auth resources request: %s",
+				policyID,
+			)
+			continue
 		}
 		for resourcePath := range policy.resources {
 			done := make(chan struct{})

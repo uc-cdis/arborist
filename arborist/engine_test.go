@@ -257,16 +257,4 @@ func TestListAuthedResources(t *testing.T) {
 		expected := []string{"/kitchen/dishes/kettle"}
 		check(resources, expected)
 	})
-
-	t.Run("error", func(t *testing.T) {
-		_, err := engine.listAuthedResources([]string{"not in the engine"})
-		if err == nil {
-			t.Error("no error from listing resources for missing policy")
-		}
-
-		_, err = engine.listAuthedResources([]string{"boil_water", "not in the engine"})
-		if err == nil {
-			t.Error("no error from listing resources for missing policy")
-		}
-	})
 }

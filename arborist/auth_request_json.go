@@ -14,7 +14,34 @@ type AuthRequestJSON_User struct {
 	// The Policies field is optional, and if the request provides a token
 	// this gets filled in by the first stage of handling by the engine, using
 	// the Token field.
-	Policies []string `json:"policies,omitempty"`
+	Policies  []string `json:"policies,omitempty"`
+	Audiences []string `json:"aud,omitempty"`
+}
+
+func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"policies": struct{}{},
+		"aud":      struct{}{},
+	}
+	err = validateJSON("auth request", requestJSON, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the AuthRequestJSON to.
+	type loader AuthRequestJSON_User
+	err = json.Unmarshal(data, (*loader)(requestJSON))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type AuthRequestJSON_Request struct {
