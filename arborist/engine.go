@@ -7,6 +7,7 @@
 package arborist
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/golang/glog"
@@ -322,19 +323,21 @@ func (engine *Engine) addResourceFromJSON(resourceJSON *ResourceJSON, parentPath
 func (engine *Engine) addResource(resource *Resource) (*Resource, error) {
 	// Check that none of the paths for this resource or its subresources exist
 	// yet in the engine.
-	done := make(chan struct{})
-	for r := range resource.traverse(done) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	for r := range resource.traverse(ctx) {
 		if _, exists := engine.resources[r.path]; exists {
-			done <- struct{}{}
+			cancelFunc()
 			return nil, alreadyExists("resource", "path", r.path)
 		}
 	}
+	cancelFunc()
 
 	// Add all the paths for this resource and its subresources to the engine.
-	done = make(chan struct{})
-	for r := range resource.traverse(done) {
+	ctx, cancelFunc = context.WithCancel(context.Background())
+	for r := range resource.traverse(ctx) {
 		engine.resources[r.path] = r
 	}
+	cancelFunc()
 
 	// The resource is not yet attached underneath the parent, so do that.
 	engine.resources[resource.path] = resource
@@ -659,10 +662,11 @@ func (engine *Engine) listAuthedResources(policyIDs []string) ([]*Resource, erro
 			continue
 		}
 		for resourcePath := range policy.resources {
-			done := make(chan struct{})
-			for r := range engine.resources[resourcePath].traverse(done) {
+			ctx, cancelFunc := context.WithCancel(context.Background())
+			for r := range engine.resources[resourcePath].traverse(ctx) {
 				resources = append(resources, r)
 			}
+			cancelFunc()
 		}
 	}
 	return resources, nil
