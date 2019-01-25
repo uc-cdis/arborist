@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"sort"
 	"testing"
 )
@@ -31,12 +32,12 @@ func TestTraverse(t *testing.T) {
 	resource("e", "", node_1, nil)
 	resource("f", "", node_1, nil)
 
-	done := make(chan struct{})
-	defer close(done)
 	result := []string{}
-	for resource := range root.traverse(done) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	for resource := range root.traverse(ctx) {
 		result = append(result, resource.name)
 	}
+	cancelFunc()
 	// The traversal order is not guaranteed to be exactly BFS because of the
 	// channels implementation, so sort the results to check all the nodes are
 	// visited.

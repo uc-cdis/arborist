@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"strings"
 	"unicode/utf8"
 )
@@ -158,7 +159,7 @@ func (resource *Resource) equals(other *Resource) bool {
 // the output and return early.
 //
 // NOTE that the traversal order is not guaranteed to be anything in particular.
-func (resource *Resource) traverse(done chan struct{}) <-chan *Resource {
+func (resource *Resource) traverse(ctx context.Context) <-chan *Resource {
 	result := make(chan *Resource)
 
 	go func() {
@@ -169,7 +170,7 @@ func (resource *Resource) traverse(done chan struct{}) <-chan *Resource {
 			head, queue = queue[0], queue[1:]
 			select {
 			case result <- head:
-			case <-done:
+			case <-ctx.Done():
 				return
 			}
 			for subnode := range head.subresources {
