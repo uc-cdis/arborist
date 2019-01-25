@@ -32,8 +32,6 @@ func TestTraverse(t *testing.T) {
 	resource("e", "", node_1, nil)
 	resource("f", "", node_1, nil)
 
-	done := make(chan struct{})
-	defer close(done)
 	result := []string{}
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	for resource := range root.traverse(ctx) {
