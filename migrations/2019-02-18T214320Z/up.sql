@@ -1,5 +1,6 @@
 CREATE TABLE db_version (
-    version integer PRIMARY KEY
+    version integer PRIMARY KEY,
+    date_migrated timestamp with time zone DEFAULT now()
 );
 
 INSERT INTO db_version VALUES (0);
@@ -14,6 +15,7 @@ CREATE TABLE resource (
     id serial PRIMARY KEY,
     -- name is NOT unique
     name text NOT NULL,
+    description text,
     -- resource path should always start with 'root'; don't allow anything which
     -- would use some other structure.
     path ltree UNIQUE NOT NULL CONSTRAINT path_starts_at_root CHECK (path ~ 'root.*')
@@ -30,31 +32,32 @@ CREATE OR REPLACE FUNCTION resource_has_parent() RETURNS TRIGGER LANGUAGE plpgsq
 $$
 DECLARE parent integer;
 BEGIN
-    parent := (SELECT COUNT(*) FROM resource WHERE path = lca(NEW.path, NEW.path));
+    parent := (SELECT COUNT(*) FROM resource WHERE path = subpath(NEW.path, 0, -1));
     IF (parent = 0) THEN
-        RAISE EXCEPTION 'Parent resource does not exist; cannot create resource with path %', NEW.path;
+        RAISE EXCEPTION 'Parent resource % does not exist; cannot create resource with path %', subpath(NEW.path, 0, -1), NEW.path;
     END IF;
     RETURN NEW;
 END;
 $$;
 
 -- Add the trigger to check that resources have valid parents.
-CREATE TRIGGER resource_has_parent_check
-    BEFORE INSERT OR UPDATE ON resource
+CREATE CONSTRAINT TRIGGER resource_has_parent_check
+    AFTER INSERT OR UPDATE ON resource
+    DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE PROCEDURE resource_has_parent();
 
 -- Define a trigger function which fills in the resource name from the path.
 CREATE OR REPLACE FUNCTION resource_path() RETURNS TRIGGER LANGUAGE plpgsql AS
 $$
 BEGIN
-    NEW.name = (regexp_matches(ltree2text(NEW.path), '\.?(\w+)$'))[1];
+    NEW.name = (ltree2text(subpath(NEW.path, -1)));
     RETURN NEW;
 END;
 $$;
 
 -- Add the trigger to fill in resource name from the path automatically.
 CREATE TRIGGER resource_path_compute_name
-    BEFORE INSERT ON resource
+    BEFORE INSERT OR UPDATE ON resource
     FOR EACH ROW EXECUTE PROCEDURE resource_path();
 
 -- Define a trigger function which recursively deletes the entire resource
@@ -75,16 +78,28 @@ CREATE TRIGGER resource_path_delete_children
     BEFORE DELETE ON resource
     FOR EACH ROW EXECUTE PROCEDURE resource_recursive_delete();
 
+CREATE OR REPLACE FUNCTION resource_recursive_update() RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+    UPDATE resource SET path = subpath(path, 0, nlevel(OLD.path)-1) || subpath(NEW.PATH, -1) || subpath(path, nlevel(OLD.path)) WHERE (path <@ OLD.path AND path != OLD.path);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER resource_path_update_children
+    AFTER UPDATE ON resource
+    FOR EACH ROW EXECUTE PROCEDURE resource_recursive_update();
+
 CREATE TABLE role (
     id serial PRIMARY KEY,
-    name text NOT NULL,
+    name text UNIQUE NOT NULL,
     description text
 );
 
 CREATE TABLE permission (
     id serial PRIMARY KEY,
     role_id integer NOT NULL REFERENCES role(id),
-    name text NOT NULL,
+    name text UNIQUE NOT NULL,
     service text,
     method text,
     description text
@@ -92,7 +107,7 @@ CREATE TABLE permission (
 
 CREATE TABLE policy (
     id serial PRIMARY KEY,
-    name text NOT NULL,
+    name text UNIQUE NOT NULL,
     description text
 );
 
@@ -110,7 +125,7 @@ CREATE TABLE policy_resource (
 
 CREATE TABLE usr (
     id serial PRIMARY KEY,
-    name text NOT NULL,
+    name text UNIQUE NOT NULL,
     email text NOT NULL
 );
 
@@ -122,7 +137,7 @@ CREATE TABLE usr_policy (
 
 CREATE TABLE grp (
     id serial PRIMARY KEY,
-    name text NOT NULL
+    name text UNIQUE NOT NULL
 );
 
 CREATE TABLE usr_grp (
