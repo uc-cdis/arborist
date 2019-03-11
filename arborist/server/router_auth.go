@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -39,7 +40,7 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 		server.Log.Debug("decoding token: %s", token)
 		claims, err := server.JWTApp.Decode(token)
 		if err != nil {
-			server.Log.Error("error decoding token: %s", err.Error())
+			server.Log.Info("error decoding token: %s", err.Error())
 			return nil, err
 		}
 		expected := &authutils.Expected{
@@ -47,7 +48,7 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 		}
 		err = expected.Validate(claims)
 		if err != nil {
-			server.Log.Error("error decoding token: %s", err.Error())
+			server.Log.Info("error decoding token: %s", err.Error())
 			return nil, err
 		}
 
@@ -88,7 +89,46 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 	}
 }
 
-// handleAuth handles `POST` `/auth`.
+func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resourcePathQS, ok := r.URL.Query()["resource"]
+		if !ok {
+			msg := "auth proxy request missing `resource` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		resourcePath := resourcePathQS[0]
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			msg := "auth proxy request missing auth header"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		aud := []string{"openid"}
+		tokenReader := server.makeTokenReader(aud)
+		policies, err := tokenReader(userJWT)
+		if err != nil {
+			msg := "invalid JWT header in auth proxy request"
+			server.Log.Info(msg)
+			// 401
+			newErrorJSON(msg, http.StatusUnauthorized).write(w, wantPrettyJSON(r))
+			return
+		}
+		// may return 200 or 403
+		response := engine.HandleAuthProxy(policies, resourcePath)
+		err = response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			server.Log.Error(err.Error())
+			newErrorJSON(err.Error(), http.StatusInternalServerError).write(w, wantPrettyJSON(r))
+			return
+		}
+	})
+}
+
+// handleAuth handles `POST` `/auth/request`.
 //
 // Issue an authorization decision.
 func (server *Server) handleAuthRequest(engine *arborist.Engine) http.Handler {
@@ -179,6 +219,7 @@ func (server *Server) handleListResourceAuth() http.Handler {
 
 func (server *Server) addAuthRouter(mainRouter *mux.Router) {
 	authRouter := mainRouter.PathPrefix("/auth").Subrouter()
+	authRouter.Handle("/proxy", server.handleAuthProxy(server.Engine)).Methods("GET")
 	authRouter.Handle("/request", server.handleAuthRequest(server.Engine)).Methods("POST")
 	authRouter.Handle("/resources", server.handleListResourceAuth()).Methods("POST")
 }

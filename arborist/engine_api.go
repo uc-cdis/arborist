@@ -23,6 +23,7 @@ package arborist
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -111,6 +112,29 @@ func (response *Response) Prettify() *Response {
 }
 
 // Handlers for auth requests
+
+func (engine *Engine) HandleAuthProxy(policies []string, path string) *Response {
+	resources, err := engine.listAuthedResources(policies)
+	if err != nil {
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	authed := false
+	for _, resource := range resources {
+		if resource.path == path {
+			authed = true
+			break
+		}
+	}
+	if authed {
+		return &Response{Bytes: []byte{}, Code: http.StatusOK}
+	} else {
+		err := errors.New("Unauthorized: user does not have access to this resource")
+		return &Response{ExternalError: err, Code: http.StatusForbidden}
+	}
+}
 
 func (engine *Engine) HandleAuthRequest(request *AuthRequest) AuthResponse {
 	return engine.giveAuthResponse(request)
