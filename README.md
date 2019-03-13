@@ -48,12 +48,30 @@ We will start from the lowest-level definitions, and work upwards.
 
 ## Setup
 
+### Building From GitHub
+
+Clone/Build/Install all-in-one command:
+
+```bash
+go get -u github.com/uc-cdis/arborist
+```
+
+The cloned source code can be found under `$GOPATH`, usually `~/go/` if not set.
+In the source folder, you can run `go install` to rebuild the project. The
+executable can be found under `$GOPATH/bin/`, which you may want to add to your
+`$PATH` if not done yet.
+
+
 ### Building From Source
 
 Build the go code with:
 ```bash
 go build -o bin/arborist
 ```
+
+Be aware that the source code must have been
+[cloned correctly](https://github.com/golang/go/wiki/GitHubCodeLayout) into
+`$GOPATH`, see also the previous section.
 
 ### Building and Running a Docker Image
 
