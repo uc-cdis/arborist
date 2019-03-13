@@ -64,7 +64,11 @@ executable can be found under `$GOPATH/bin/`, which you may want to add to your
 
 ### Building From Source
 
-Build the go code with:
+If you have already checked out the repository locally, you can build the
+executable from there directly, which will include any local changes during
+development.
+
+Build the go code with this command, run from the root directory:
 ```bash
 go build -o bin/arborist
 ```
