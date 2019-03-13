@@ -75,7 +75,11 @@ go build -o bin/arborist
 
 Be aware that the source code must have been
 [cloned correctly](https://github.com/golang/go/wiki/GitHubCodeLayout) into
-`$GOPATH`, see also the previous section.
+`$GOPATH`, see also the previous section. `go build` will not work correctly if
+you cloned the repository outside of the location that `go` expects. One option
+to work around this, if you prefer to work with the code elsewhere in the
+filesystem, is to create a symlink from the desired location to wherever the
+repository lives under `$GOPATH`.
 
 ### Building and Running a Docker Image
 
