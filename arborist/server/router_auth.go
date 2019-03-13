@@ -91,6 +91,7 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 
 func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get QS arguments
 		resourcePathQS, ok := r.URL.Query()["resource"]
 		if !ok {
 			msg := "auth proxy request missing `resource` argument"
@@ -99,6 +100,23 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 			return
 		}
 		resourcePath := resourcePathQS[0]
+		serviceQS, ok := r.URL.Query()["service"]
+		if !ok {
+			msg := "auth proxy request missing `service` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		service := serviceQS[0]
+		methodQS, ok := r.URL.Query()["method"]
+		if !ok {
+			msg := "auth proxy request missing `method` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		method := methodQS[0]
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			msg := "auth proxy request missing auth header"
@@ -117,8 +135,9 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 			newErrorJSON(msg, http.StatusUnauthorized).write(w, wantPrettyJSON(r))
 			return
 		}
+
 		// may return 200 or 403
-		response := engine.HandleAuthProxy(policies, resourcePath)
+		response := engine.HandleAuthProxy(policies, resourcePath, service, method)
 		err = response.Write(w, wantPrettyJSON(r))
 		if err != nil {
 			server.Log.Error(err.Error())

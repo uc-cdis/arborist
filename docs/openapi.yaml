@@ -107,6 +107,16 @@ paths:
           schema:
             type: string
           required: true
+        - in: query
+          name: service
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: method
+          schema:
+            type: string
+          required: true
       responses:
         200:
           description: request is authorized
