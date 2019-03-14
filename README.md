@@ -78,3 +78,12 @@ Run all the tests:
 ```bash
 go test ./...
 ```
+
+### Notes on Code
+
+[This page](http://jmoiron.github.io/sqlx/) is a useful overview of `sqlx`
+usage, the package which arborist uses for the database interface.
+
+Be careful with `sql.DB` transactions; namely, be sure to close them if
+returning early because of errors or similar, otherwise the transaction can
+block future operations.

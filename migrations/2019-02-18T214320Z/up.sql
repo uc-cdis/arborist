@@ -97,12 +97,13 @@ CREATE TABLE role (
 );
 
 CREATE TABLE permission (
-    id serial PRIMARY KEY,
-    role_id integer NOT NULL REFERENCES role(id),
-    name text UNIQUE NOT NULL,
-    service text,
-    method text,
-    description text
+    role_id integer NOT NULL REFERENCES role(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    service text NOT NULL,
+    method text NOT NULL,
+    constraints jsonb DEFAULT '{}'::jsonb,
+    description text,
+    PRIMARY KEY(role_id, name)
 );
 
 CREATE TABLE policy (
@@ -124,8 +125,8 @@ CREATE TABLE policy_resource (
 );
 
 CREATE TABLE usr (
-    id serial PRIMARY KEY,
-    name text UNIQUE NOT NULL,
+    id serial PRIMARY KEY, -- arborist only---not fence
+    name text UNIQUE NOT NULL, -- SHARED with fence
     email text NOT NULL
 );
 
