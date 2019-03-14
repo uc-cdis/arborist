@@ -18,8 +18,8 @@ import (
 // `context.user.policies` field from a token. This function is used for passing
 // to `arborist.Engine.HandleAuthRequestBytes` so that arborist can get the
 // policies out of a JWT.
-func (server *Server) makeTokenReader(audiences []string) func(string) ([]string, error) {
-	return func(token string) ([]string, error) {
+func (server *Server) makeTokenReader(audiences []string) func(string) (string, []string, error) {
+	return func(token string) (string, []string, error) {
 		missingRequiredField := func(field string) error {
 			msg := fmt.Sprintf(
 				"failed to decode token: missing required field `%s`",
@@ -41,7 +41,7 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 		claims, err := server.JWTApp.Decode(token)
 		if err != nil {
 			server.Log.Info("error decoding token: %s", err.Error())
-			return nil, err
+			return "", nil, err
 		}
 		expected := &authutils.Expected{
 			Audiences: audiences,
@@ -49,43 +49,51 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 		err = expected.Validate(claims)
 		if err != nil {
 			server.Log.Info("error decoding token: %s", err.Error())
-			return nil, err
+			return "", nil, err
 		}
 
 		contextInterface, exists := (*claims)["context"]
 		if !exists {
-			return nil, missingRequiredField("context")
+			return "", nil, missingRequiredField("context")
 		}
 		context, casted := contextInterface.(map[string]interface{})
 		if !casted {
-			return nil, fieldTypeError("context")
+			return "", nil, fieldTypeError("context")
 		}
 		userInterface, exists := context["user"]
 		if !exists {
-			return nil, missingRequiredField("user")
+			return "", nil, missingRequiredField("user")
 		}
 		user, casted := userInterface.(map[string]interface{})
 		if !casted {
-			return nil, fieldTypeError("user")
+			return "", nil, fieldTypeError("user")
+		}
+		usernameInterface, exists := user["name"]
+		if !exists {
+			return "", nil, missingRequiredField("name")
+		}
+		username, casted := usernameInterface.(string)
+		if !casted {
+			return "", nil, fieldTypeError("name")
 		}
 		policiesInterface, exists := user["policies"]
 		if !exists {
-			return nil, missingRequiredField("policies")
+			return "", nil, missingRequiredField("policies")
 		}
 		// policiesInterface should really be a []string
 		policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 		if !casted {
-			return nil, fieldTypeError("policies")
+			return "", nil, fieldTypeError("policies")
 		}
 		policies := make([]string, len(policiesInterfaceSlice))
 		for i, policyInterface := range policiesInterfaceSlice {
 			policyString, casted := policyInterface.(string)
 			if !casted {
-				return nil, fieldTypeError("policies")
+				return "", nil, fieldTypeError("policies")
 			}
 			policies[i] = policyString
 		}
-		return policies, nil
+		return username, policies, nil
 	}
 }
 
@@ -126,9 +134,10 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 		}
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
+
 		aud := []string{"openid"}
 		tokenReader := server.makeTokenReader(aud)
-		policies, err := tokenReader(userJWT)
+		username, policies, err := tokenReader(userJWT)
 		if err != nil {
 			msg := "invalid JWT header in auth proxy request"
 			server.Log.Info(msg)
@@ -136,6 +145,7 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 			newErrorJSON(msg, http.StatusUnauthorized).write(w, wantPrettyJSON(r))
 			return
 		}
+		w.Header().Set("REMOTE_USER", username)
 
 		// may return 200 or 403
 		response := engine.HandleAuthProxy(policies, resourcePath, service, method)
@@ -206,7 +216,8 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		encodedToken := requestFields.User.Token
 		aud := []string{"openid"}
 		tokenReader := server.makeTokenReader(aud)
-		policies, err := tokenReader(encodedToken)
+		// don't need username
+		_, policies, err := tokenReader(encodedToken)
 		if err != nil {
 			server.Log.Error(err.Error())
 			newErrorJSON(err.Error(), http.StatusUnauthorized).

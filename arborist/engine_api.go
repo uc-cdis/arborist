@@ -211,7 +211,7 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 // extract a list of policies.
 func (engine *Engine) HandleAuthRequestBytes(
 	bytes []byte,
-	makeTokenReader func([]string) func(string) ([]string, error),
+	makeTokenReader func([]string) func(string) (string, []string, error),
 ) *Response {
 	var authRequestJSON AuthRequestJSON
 	err := json.Unmarshal(bytes, &authRequestJSON)
@@ -234,7 +234,8 @@ func (engine *Engine) HandleAuthRequestBytes(
 
 	// Get the policies from the token using the tokenReader.
 	if authRequestJSON.User.Policies == nil {
-		authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
+		// don't need username
+		_, authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
 		if err != nil {
 			response := &Response{
 				ExternalError: err,
