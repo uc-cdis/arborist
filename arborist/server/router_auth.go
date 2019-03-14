@@ -125,6 +125,7 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 			return
 		}
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		aud := []string{"openid"}
 		tokenReader := server.makeTokenReader(aud)
 		policies, err := tokenReader(userJWT)
