@@ -23,6 +23,8 @@ package arborist
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -112,6 +114,66 @@ func (response *Response) Prettify() *Response {
 
 // Handlers for auth requests
 
+func (engine *Engine) HandleAuthProxy(policyIDs []string, resourcePath string, service string, method string) *Response {
+	policies := make(map[*Policy]struct{}, len(policyIDs))
+	for i := range policyIDs {
+		p, exists := engine.policies[policyIDs[i]]
+		policies[p] = struct{}{}
+		if !exists {
+			err := fmt.Errorf("policy does not exist: %s", policyIDs[i])
+			return &Response{
+				ExternalError: err,
+				Code:          http.StatusBadRequest,
+			}
+		}
+	}
+	resource, exists := engine.resources[resourcePath]
+	if !exists {
+		err := fmt.Errorf("resource does not exist: %s", resourcePath)
+		return &Response{
+			ExternalError: err,
+			Code:          http.StatusBadRequest,
+		}
+	}
+	action := &Action{Service: service, Method: method}
+	request := &AuthRequest{
+		policies:    policies,
+		resource:    resource,
+		action:      action,
+		constraints: nil,
+	}
+	authResponse := engine.HandleAuthRequest(request)
+	if authResponse.auth {
+		return &Response{Bytes: []byte{}, Code: http.StatusOK}
+	} else {
+		err := errors.New("Unauthorized: user does not have access to this resource")
+		return &Response{ExternalError: err, Code: http.StatusForbidden}
+	}
+
+	/*
+		resources, err := engine.listAuthedResources(policyIDs)
+		if err != nil {
+			return &Response{
+				ExternalError: err,
+				Code:          http.StatusBadRequest,
+			}
+		}
+		authed := false
+		for _, resource := range resources {
+			if resource.path == resourcePath {
+				authed = true
+				break
+			}
+		}
+		if authed {
+			return &Response{Bytes: []byte{}, Code: http.StatusOK}
+		} else {
+			err := errors.New("Unauthorized: user does not have access to this resource")
+			return &Response{ExternalError: err, Code: http.StatusForbidden}
+		}
+	*/
+}
+
 func (engine *Engine) HandleAuthRequest(request *AuthRequest) AuthResponse {
 	return engine.giveAuthResponse(request)
 }
@@ -149,7 +211,7 @@ func (engine *Engine) HandleListAuthorizedResources(policies []string) *Response
 // extract a list of policies.
 func (engine *Engine) HandleAuthRequestBytes(
 	bytes []byte,
-	makeTokenReader func([]string) func(string) ([]string, error),
+	makeTokenReader func([]string) func(string) (string, []string, error),
 ) *Response {
 	var authRequestJSON AuthRequestJSON
 	err := json.Unmarshal(bytes, &authRequestJSON)
@@ -172,7 +234,8 @@ func (engine *Engine) HandleAuthRequestBytes(
 
 	// Get the policies from the token using the tokenReader.
 	if authRequestJSON.User.Policies == nil {
-		authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
+		// don't need username
+		_, authRequestJSON.User.Policies, err = tokenReader(authRequestJSON.User.Token)
 		if err != nil {
 			response := &Response{
 				ExternalError: err,

@@ -85,6 +85,46 @@ paths:
         401:
           description: >-
             Token failed to validate (authentication error)
+  /auth/proxy:
+    get:
+      tags:
+        - auth
+      description: >-
+        The proxy endpoint works differently from the other auth endpoints.
+        Whereas the other endpoints will return a 200 code as long as the
+        request was understood (and allowed), whether or not the auth request
+        should be appproved or denied, this endpoint will return a code and
+        error JSON as if to the end user making the request that is checked,
+        whether or not the request is valid.
+      parameters:
+        - in: header
+          name: Authorization
+          description: user's JWT
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: resource
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: service
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: method
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: request is authorized
+        401:
+          description: authentication failed (the token was invalid)
+        403:
+          description: authorization failed (user denied access)
   /engine/:
     get:
       tags:

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -17,8 +18,8 @@ import (
 // `context.user.policies` field from a token. This function is used for passing
 // to `arborist.Engine.HandleAuthRequestBytes` so that arborist can get the
 // policies out of a JWT.
-func (server *Server) makeTokenReader(audiences []string) func(string) ([]string, error) {
-	return func(token string) ([]string, error) {
+func (server *Server) makeTokenReader(audiences []string) func(string) (string, []string, error) {
+	return func(token string) (string, []string, error) {
 		missingRequiredField := func(field string) error {
 			msg := fmt.Sprintf(
 				"failed to decode token: missing required field `%s`",
@@ -39,56 +40,125 @@ func (server *Server) makeTokenReader(audiences []string) func(string) ([]string
 		server.Log.Debug("decoding token: %s", token)
 		claims, err := server.JWTApp.Decode(token)
 		if err != nil {
-			server.Log.Error("error decoding token: %s", err.Error())
-			return nil, err
+			server.Log.Info("error decoding token: %s", err.Error())
+			return "", nil, err
 		}
 		expected := &authutils.Expected{
 			Audiences: audiences,
 		}
 		err = expected.Validate(claims)
 		if err != nil {
-			server.Log.Error("error decoding token: %s", err.Error())
-			return nil, err
+			server.Log.Info("error decoding token: %s", err.Error())
+			return "", nil, err
 		}
 
 		contextInterface, exists := (*claims)["context"]
 		if !exists {
-			return nil, missingRequiredField("context")
+			return "", nil, missingRequiredField("context")
 		}
 		context, casted := contextInterface.(map[string]interface{})
 		if !casted {
-			return nil, fieldTypeError("context")
+			return "", nil, fieldTypeError("context")
 		}
 		userInterface, exists := context["user"]
 		if !exists {
-			return nil, missingRequiredField("user")
+			return "", nil, missingRequiredField("user")
 		}
 		user, casted := userInterface.(map[string]interface{})
 		if !casted {
-			return nil, fieldTypeError("user")
+			return "", nil, fieldTypeError("user")
+		}
+		usernameInterface, exists := user["name"]
+		if !exists {
+			return "", nil, missingRequiredField("name")
+		}
+		username, casted := usernameInterface.(string)
+		if !casted {
+			return "", nil, fieldTypeError("name")
 		}
 		policiesInterface, exists := user["policies"]
 		if !exists {
-			return nil, missingRequiredField("policies")
+			return "", nil, missingRequiredField("policies")
 		}
 		// policiesInterface should really be a []string
 		policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 		if !casted {
-			return nil, fieldTypeError("policies")
+			return "", nil, fieldTypeError("policies")
 		}
 		policies := make([]string, len(policiesInterfaceSlice))
 		for i, policyInterface := range policiesInterfaceSlice {
 			policyString, casted := policyInterface.(string)
 			if !casted {
-				return nil, fieldTypeError("policies")
+				return "", nil, fieldTypeError("policies")
 			}
 			policies[i] = policyString
 		}
-		return policies, nil
+		return username, policies, nil
 	}
 }
 
-// handleAuth handles `POST` `/auth`.
+func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get QS arguments
+		resourcePathQS, ok := r.URL.Query()["resource"]
+		if !ok {
+			msg := "auth proxy request missing `resource` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		resourcePath := resourcePathQS[0]
+		serviceQS, ok := r.URL.Query()["service"]
+		if !ok {
+			msg := "auth proxy request missing `service` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		service := serviceQS[0]
+		methodQS, ok := r.URL.Query()["method"]
+		if !ok {
+			msg := "auth proxy request missing `method` argument"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		method := methodQS[0]
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			msg := "auth proxy request missing auth header"
+			server.Log.Info(msg)
+			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			return
+		}
+		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		userJWT = strings.TrimPrefix(userJWT, "bearer ")
+
+		aud := []string{"openid"}
+		tokenReader := server.makeTokenReader(aud)
+		username, policies, err := tokenReader(userJWT)
+		if err != nil {
+			msg := "invalid JWT header in auth proxy request"
+			server.Log.Info(msg)
+			// 401
+			newErrorJSON(msg, http.StatusUnauthorized).write(w, wantPrettyJSON(r))
+			return
+		}
+		w.Header().Set("REMOTE_USER", username)
+
+		// may return 200 or 403
+		response := engine.HandleAuthProxy(policies, resourcePath, service, method)
+		err = response.Write(w, wantPrettyJSON(r))
+		if err != nil {
+			server.Log.Error(err.Error())
+			newErrorJSON(err.Error(), http.StatusInternalServerError).write(w, wantPrettyJSON(r))
+			return
+		}
+	})
+}
+
+// handleAuth handles `POST` `/auth/request`.
 //
 // Issue an authorization decision.
 func (server *Server) handleAuthRequest(engine *arborist.Engine) http.Handler {
@@ -146,7 +216,8 @@ func (server *Server) handleListResourceAuth() http.Handler {
 		encodedToken := requestFields.User.Token
 		aud := []string{"openid"}
 		tokenReader := server.makeTokenReader(aud)
-		policies, err := tokenReader(encodedToken)
+		// don't need username
+		_, policies, err := tokenReader(encodedToken)
 		if err != nil {
 			server.Log.Error(err.Error())
 			newErrorJSON(err.Error(), http.StatusUnauthorized).
@@ -179,6 +250,7 @@ func (server *Server) handleListResourceAuth() http.Handler {
 
 func (server *Server) addAuthRouter(mainRouter *mux.Router) {
 	authRouter := mainRouter.PathPrefix("/auth").Subrouter()
+	authRouter.Handle("/proxy", server.handleAuthProxy(server.Engine)).Methods("GET")
 	authRouter.Handle("/request", server.handleAuthRequest(server.Engine)).Methods("POST")
 	authRouter.Handle("/resources", server.handleListResourceAuth()).Methods("POST")
 }
