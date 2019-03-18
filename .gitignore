@@ -17,3 +17,9 @@ _*
 
 # Specific binaries arborist compiles.
 bin/arborist
+
+# goyacc
+y.output
+
+# GoLand
+.idea/

@@ -1,9 +1,11 @@
+GOYACC ?= goyacc
+
 _default: bin/arborist
 
 test: bin/arborist db-test
 	go test -v ./.../
 
-bin/arborist:
+bin/arborist: arborist/*.go
 	go build -o bin/arborist
 
 up: upgrade
@@ -17,3 +19,6 @@ downgrade:
 db-test: $(which psql)
 	-@ psql -c "CREATE DATABASE arborist_test" 2>&1 || true
 	./migrations/latest
+
+arborist/resource_rules.go: arborist/resource_rules.y
+	$(GOYACC) -o arborist/resource_rules.go arborist/resource_rules.y

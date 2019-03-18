@@ -52,7 +52,8 @@ We will start from the lowest-level definitions, and work upwards.
 
 Build the go code with:
 ```bash
-go build -o bin/arborist
+go get golang.org/x/tools/cmd/goyacc
+make
 ```
 
 ### Building and Running a Docker Image
