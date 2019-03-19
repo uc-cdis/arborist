@@ -81,7 +81,7 @@ func (server *Server) MakeRouter() http.Handler {
 
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
-	//router.Handle("/auth/proxy", server.handleAuthRequest).Methods("POST")
+	router.Handle("/auth/proxy", server.handleAuthProxy).Methods("POST")
 	//router.Handle("/auth/request", server.handleAuthRequest).Methods("POST")
 	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
 
@@ -131,6 +131,58 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
+	// Get QS arguments
+	resourcePathQS, ok := r.URL.Query()["resource"]
+	if !ok {
+		msg := "auth proxy request missing `resource` argument"
+		server.logger.Info(msg)
+		errResponse := newErrorResponse(msg, 400, nil)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resourcePath := resourcePathQS[0]
+	serviceQS, ok := r.URL.Query()["service"]
+	if !ok {
+		msg := "auth proxy request missing `service` argument"
+		server.logger.Info(msg)
+		errResponse := newErrorResponse(msg, 400, nil)
+		_ = errResponse.write(w, r)
+		return
+	}
+	service := serviceQS[0]
+	methodQS, ok := r.URL.Query()["method"]
+	if !ok {
+		msg := "auth proxy request missing `method` argument"
+		server.logger.Info(msg)
+		errResponse := newErrorResponse(msg, 400, nil)
+		_ = errResponse.write(w, r)
+		return
+	}
+	method := methodQS[0]
+	// get JWT from auth header and decode it
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		msg := "auth proxy request missing auth header"
+		server.logger.Info(msg)
+		errResponse := newErrorResponse(msg, 400, nil)
+		_ = errResponse.write(w, r)
+		return
+	}
+	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+	userJWT = strings.TrimPrefix(userJWT, "bearer ")
+	aud := []string{"openid"}
+	info, err := server.decodeToken(userJWT, aud)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	// TODO
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {

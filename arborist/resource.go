@@ -108,7 +108,6 @@ func formatDbPath(path string) string {
 // because of internal database failure.
 func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 	path = formatPathForDb(path)
-	fmt.Println(path)
 	resources := []ResourceFromQuery{}
 	stmt := `
 		SELECT
