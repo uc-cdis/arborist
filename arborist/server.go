@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gorilla/handlers"
@@ -74,14 +74,14 @@ func parseResourcePath(r *http.Request) string {
 	return strings.Join([]string{"/", path}, "")
 }
 
-func (server *Server) MakeRouter() http.Handler {
+func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router := mux.NewRouter().StrictSlash(false)
 
 	//router.Handle("/", server.handleRoot).Methods("GET")
 
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
-	router.Handle("/auth/proxy", server.handleAuthProxy).Methods("POST")
+	//router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("POST")
 	//router.Handle("/auth/request", server.handleAuthRequest).Methods("POST")
 	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
 
@@ -101,7 +101,7 @@ func (server *Server) MakeRouter() http.Handler {
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
-	return handlers.CombinedLoggingHandler(os.Stdout, router)
+	return handlers.CombinedLoggingHandler(out, router)
 }
 
 // parseJSON abstracts JSON parsing for handler functions that should
@@ -133,6 +133,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+/*
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	// Get QS arguments
 	resourcePathQS, ok := r.URL.Query()["resource"]
@@ -184,6 +185,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	// TODO
 }
+*/
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	policies, err := listPoliciesFromDb(server.db)

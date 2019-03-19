@@ -57,7 +57,7 @@ func main() {
 	}
 
 	addr := fmt.Sprintf(":%d", *port)
-	router := arboristServer.MakeRouter()
+	router := arboristServer.MakeRouter(os.Stdout)
 	httpLogger := log.New(os.Stdout, "", log.LstdFlags)
 	httpServer := &http.Server{
 		Addr:         addr,
