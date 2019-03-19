@@ -146,3 +146,9 @@ CREATE TABLE usr_grp (
     grp_id integer REFERENCES grp(id) ON DELETE CASCADE,
     PRIMARY KEY(usr_id, grp_id)
 );
+
+CREATE TABLE grp_policy (
+    grp_id integer REFERENCES grp(id) ON DELETE CASCADE,
+    policy_id integer REFERENCES policy(id) ON DELETE CASCADE,
+    PRIMARY KEY(grp_id, policy_id)
+);
