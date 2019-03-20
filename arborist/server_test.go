@@ -280,9 +280,9 @@ func TestServer(t *testing.T) {
 				"id": "bazgo-create",
 				"permissions": [
 					{
-                        "id": "foo",
-                        "action": {"service": "bazgo", "method": "create"}
-                    }
+						"id": "foo",
+						"action": {"service": "bazgo", "method": "create"}
+					}
 				]
 			}`)
 			req = newRequest("POST", "/role", bytes.NewBuffer(body))
@@ -293,10 +293,10 @@ func TestServer(t *testing.T) {
 			// create the policy
 			w = httptest.NewRecorder()
 			body = []byte(`{
-                "id": "bazgo-create-b",
-                "resource_paths": ["/a/b"],
-                "role_ids": ["bazgo-create"]
-            }`)
+				"id": "bazgo-create-b",
+				"resource_paths": ["/a/b"],
+				"role_ids": ["bazgo-create"]
+			}`)
 			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
