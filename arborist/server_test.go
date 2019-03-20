@@ -24,6 +24,9 @@ func TestServer(t *testing.T) {
 	logger := log.New(logBuffer, "", logFlags)
 	jwtApp := authutils.NewJWTApplication("/jwks")
 	dbUrl := os.Getenv("ARBORIST_TEST_DB")
+	if dbUrl == "" {
+		dbUrl = "postgres://postgres@localhost:5432/arborist_test?sslmode=disable"
+	}
 	db, err := sqlx.Open("postgres", dbUrl)
 	if err != nil {
 		t.Fatal(err)

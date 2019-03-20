@@ -1,6 +1,6 @@
 CREATE TABLE db_version (
     version integer PRIMARY KEY,
-    date_migrated timestamp with time zone DEFAULT now()
+    date_migrated timestamp with time zone UNIQUE NOT NULL DEFAULT now()
 );
 
 INSERT INTO db_version VALUES (0);
