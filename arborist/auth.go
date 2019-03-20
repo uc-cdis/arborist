@@ -85,34 +85,27 @@ func authorize(db *sqlx.DB, token *TokenInfo, resource string, service string, m
 		return false, err
 	}
 
-	stmt := `
+	var stmt = `
 SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
-       SELECT array_agg(resource.path) AS allowed
-         FROM usr
-    LEFT JOIN usr_policy
-           ON usr_policy.usr_id = usr.id
-    LEFT JOIN policy_resource
-           ON policy_resource.policy_id = usr_policy.policy_id
-    LEFT JOIN resource
-           ON resource.id = policy_resource.resource_id
-        WHERE usr.name = $1
-          AND EXISTS (
-                     SELECT 1
-                       FROM policy_role
-                  LEFT JOIN permission
-                         ON permission.role_id = policy_role.role_id
-                      WHERE policy_role.policy_id = usr_policy.policy_id
-                        AND permission.service = $2
-                        AND permission.method = $3
-              )
-          AND ($4 OR usr_policy.policy_id IN (
-                  SELECT id
-                    FROM policy
-                   WHERE policy.name = ANY($5)
-              ))
+	SELECT array_agg(resource.path) AS allowed FROM usr
+	LEFT JOIN usr_policy ON usr_policy.usr_id = usr.id
+	LEFT JOIN policy_resource ON policy_resource.policy_id = usr_policy.policy_id
+	LEFT JOIN resource ON resource.id = policy_resource.resource_id
+	WHERE usr.name = $1
+	AND EXISTS (
+		SELECT 1 FROM policy_role
+		LEFT JOIN permission ON permission.role_id = policy_role.role_id
+		WHERE policy_role.policy_id = usr_policy.policy_id
+		AND permission.service = $2
+		AND permission.method = $3
+	) AND (
+		$4 OR usr_policy.policy_id IN (
+			SELECT id FROM policy
+			WHERE policy.name = ANY($5)
+		)
+	)
 ) _, unnest($6::text[]);
 `
-
 	rows, err := db.Query(stmt,
 		token.username,  // $1
 		service,  // $2
