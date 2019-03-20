@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func ParseOrFail(t *testing.T, exp string, vars map[string]interface{}) bool {
-	rv, err := Parse(exp, vars)
+func ParseOrFail(t *testing.T, exp string, vars map[string]bool) bool {
+	rv, err := Run(exp, vars)
 	if err != nil {
 		t.Error(err)
 	}
@@ -24,7 +24,7 @@ func assertEqual(t *testing.T, a interface{}, b interface{}, message string) {
 }
 
 func TestParse(t *testing.T) {
-	vars := map[string]interface{}{
+	vars := map[string]bool{
 		"T": true,
 		"F": false,
 	}

@@ -81,8 +81,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
-	//router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("POST")
-	//router.Handle("/auth/request", server.handleAuthRequest).Methods("POST")
+	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
+	router.Handle("/auth/request", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
 	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
@@ -133,7 +133,6 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-/*
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	// Get QS arguments
 	resourcePathQS, ok := r.URL.Query()["resource"]
@@ -183,9 +182,65 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO
+	w.Header().Set("REMOTE_USER", info.username)
+
+	rv, err := authorize(server.db, info, resourcePath, service, method)
+	if err != nil {
+		msg := fmt.Sprintf("could not authorize: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	if !rv {
+		errResponse := newErrorResponse(
+			"Unauthorized: user does not have access to this resource", 403, nil)
+		_ = errResponse.write(w, r)
+	}
 }
-*/
+
+func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
+	authRequest := &AuthRequest{}
+	err := json.Unmarshal(body, authRequest)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	var aud []string
+	if authRequest.User.Audiences == nil {
+		aud = []string{"openid"}
+	} else {
+		aud = make([]string, len(authRequest.User.Audiences))
+		copy(aud, authRequest.User.Audiences)
+	}
+
+	info, err := server.decodeToken(authRequest.User.Token, aud)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	if authRequest.User.Policies != nil {
+		info.policies = authRequest.User.Policies
+	}
+
+	rv, err := authorize(server.db, info, authRequest.Request.Resource,
+		authRequest.Request.Action.Service, authRequest.Request.Action.Method)
+	if err != nil {
+		msg := fmt.Sprintf("could not authorize: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(AuthResponse{rv}, 200).write(w, r)
+}
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	policies, err := listPoliciesFromDb(server.db)

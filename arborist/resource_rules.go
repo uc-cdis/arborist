@@ -72,7 +72,7 @@ const yyInitialStackSize = 16
 
 type Lexer struct {
 	scanner.Scanner
-	Vars   map[string]interface{}
+	args   map[string]interface{}
 	result Expression
 	error  string
 }
@@ -91,6 +91,7 @@ func (l *Lexer) Lex(lval *yySymType) int {
 	default:
 		if lit != "" && lit != "(" && lit != ")" {
 			tok = VARIABLE
+			l.args[lit] = nil
 		}
 	}
 	lval.token = Token{token: tok, literal: lit}
@@ -101,26 +102,17 @@ func (l *Lexer) Error(e string) {
 	l.error = e
 }
 
-func (l *Lexer) Eval(e Expression) (bool, error) {
+func Eval(e Expression, vars map[string]bool) (bool, error) {
 	switch t := e.(type) {
 	case Variable:
-		if v, ok := l.Vars[t.literal]; ok {
-			switch v.(type) {
-			case bool:
-				if v.(bool) {
-					return true, nil
-				} else {
-					return false, nil
-				}
-			default:
-				return false, errors.New("Parameter type must be boolean")
-			}
+		if v, ok := vars[t.literal]; ok {
+			return v, nil
 		}
 		return false, errors.New("Undefined symbol: " + t.literal)
 	case ParenExpr:
-		return l.Eval(t.SubExpr)
+		return Eval(t.SubExpr, vars)
 	case UnaryExpr:
-		right, err := l.Eval(t.right)
+		right, err := Eval(t.right, vars)
 		if err != nil {
 			return false, err
 		}
@@ -129,11 +121,11 @@ func (l *Lexer) Eval(e Expression) (bool, error) {
 			return !right, nil
 		}
 	case AssocExpr:
-		left, err := l.Eval(t.left)
+		left, err := Eval(t.left, vars)
 		if err != nil {
 			return false, err
 		}
-		right, err := l.Eval(t.right)
+		right, err := Eval(t.right, vars)
 		if err != nil {
 			return false, err
 		}
@@ -147,14 +139,26 @@ func (l *Lexer) Eval(e Expression) (bool, error) {
 	return false, errors.New("Unexpected error")
 }
 
-func Parse(exp string, vars map[string]interface{}) (bool, error) {
+func Parse(exp string) (Expression, []string, error) {
 	l := new(Lexer)
-	l.Vars = vars
+	l.args = make(map[string]interface{})
 	l.Init(strings.NewReader(exp))
 	if yyParse(l) != 0 {
-		return false, errors.New(l.error)
+		return nil, nil, errors.New(l.error)
 	}
-	return l.Eval(l.result)
+	args := make([]string, 0)
+	for arg := range l.args {
+		args = append(args, arg)
+	}
+	return l.result, args, nil
+}
+
+func Run(exp string, vars map[string]bool) (bool, error) {
+	e, _, err := Parse(exp)
+	if err != nil {
+		return false, err
+	}
+	return Eval(e, vars)
 }
 
 func init() {
