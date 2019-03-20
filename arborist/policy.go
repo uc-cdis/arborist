@@ -68,9 +68,13 @@ type PolicyFromQuery struct {
 }
 
 func (policyFromQuery *PolicyFromQuery) standardize() *Policy {
+	paths := make([]string, len(policyFromQuery.ResourcePaths))
+	for i, queryPath := range policyFromQuery.ResourcePaths {
+		paths[i] = formatDbPath(queryPath)
+	}
 	policy := &Policy{
 		Name:          policyFromQuery.Name,
-		ResourcePaths: policyFromQuery.ResourcePaths,
+		ResourcePaths: paths,
 		RoleIDs:       policyFromQuery.RoleIDs,
 	}
 	if policyFromQuery.Description != nil {
@@ -96,11 +100,15 @@ func policyWithName(db *sqlx.DB, name string) (*PolicyFromQuery, error) {
 		GROUP BY policy.id
 		LIMIT 1
 	`
-	policy := PolicyFromQuery{}
-	err := db.Get(&policy, stmt, name)
+	policies := []PolicyFromQuery{}
+	err := db.Select(&policies, stmt, name)
+	if len(policies) == 0 {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
+	policy := policies[0]
 	return &policy, nil
 }
 
@@ -131,7 +139,11 @@ func listPoliciesFromDb(db *sqlx.DB) ([]PolicyFromQuery, error) {
 // returned, resulted from the database operation.
 func (policy *Policy) resources(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
-	resourcesStmt := selectInStmt("resource", "ltree2text(path)", policy.ResourcePaths)
+	queryPaths := make([]string, len(policy.ResourcePaths))
+	for i, path := range policy.ResourcePaths {
+		queryPaths[i] = formatPathForDb(path)
+	}
+	resourcesStmt := selectInStmt("resource", "ltree2text(path)", queryPaths)
 	err := db.Select(&resources, resourcesStmt)
 	if err != nil {
 		return nil, err
@@ -201,7 +213,8 @@ func (policy *Policy) createInDb(db *sqlx.DB) *ErrorResponse {
 	// make sure all resources for new policy exist in DB
 	resourceSet := make(map[string]struct{})
 	for _, resource := range resources {
-		resourceSet[resource.Path] = struct{}{}
+		path := formatDbPath(resource.Path)
+		resourceSet[path] = struct{}{}
 	}
 	missingResources := []string{}
 	for _, path := range policy.ResourcePaths {

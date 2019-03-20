@@ -58,13 +58,20 @@ func TestServer(t *testing.T) {
 		return req
 	}
 
-	// use this for any setup or teardown that should go in all the tests
+	// testSetup should be used for any setup or teardown that should go in all
+	// the tests. Use like this:
+	//
+	//     defer testSetup(t)
+	//
+	// `testSetup(t)` returns the teardown function, which when passed to defer
+	// will run the teardown code at the end of the function.
 	testSetup := func(t *testing.T) func(t *testing.T) {
 		// ADD TEST SETUP HERE
 
 		tearDown := func(t *testing.T) {
 			// ADD TEST TEARDOWN HERE
 
+			// clear the logs currently stored in the buffer
 			logBuffer.Reset()
 		}
 
@@ -73,11 +80,16 @@ func TestServer(t *testing.T) {
 
 	// TODO: reset database before testing
 
+	// NOTE: in general in the test runs at this level, test results depend on
+	// the previous steps within the run, as individual tests create entities
+	// which the next entities need to reference. Don't mess too much with the
+	// order or the content of sub-runs in test runs at this level.
+
 	t.Run("HealthCheck", func(t *testing.T) {
 		defer testSetup(t)
 
-		req := newRequest("GET", "/health", nil)
 		w := httptest.NewRecorder()
+		req := newRequest("GET", "/health", nil)
 		handler.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			httpError(t, w, "health check failed")
@@ -88,9 +100,9 @@ func TestServer(t *testing.T) {
 		defer testSetup(t)
 
 		t.Run("Create", func(t *testing.T) {
+			w := httptest.NewRecorder()
 			body := []byte(`{"path": "/a"}`)
 			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
-			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create resource")
@@ -106,10 +118,10 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("CreateSubresource", func(t *testing.T) {
+			w := httptest.NewRecorder()
 			body := []byte(`{"name": "b"}`)
 			// try to create under the resource created with the previous test
 			req := newRequest("POST", "/resource/a", bytes.NewBuffer(body))
-			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create resource")
@@ -124,8 +136,8 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("ListSubresources", func(t *testing.T) {
-			req := newRequest("GET", "/resource/a", nil)
 			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource/a", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				httpError(t, w, "couldn't read resource")
@@ -146,8 +158,8 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("Delete", func(t *testing.T) {
-			req := newRequest("DELETE", "/resource/a", nil)
 			w := httptest.NewRecorder()
+			req := newRequest("DELETE", "/resource/a", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't delete resource")
@@ -155,8 +167,8 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("CheckDeleted", func(t *testing.T) {
-			req := newRequest("GET", "/resource/a", nil)
 			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource/a", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
 				httpError(t, w, "deleted resource still present")
@@ -164,8 +176,8 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("CheckDeletedSubresource", func(t *testing.T) {
-			req := newRequest("GET", "/resource/a/b", nil)
 			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource/a/b", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
 				httpError(t, w, "deleted subresource still present")
@@ -174,7 +186,10 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("Role", func(t *testing.T) {
+		defer testSetup(t)
+
 		t.Run("Create", func(t *testing.T) {
+			w := httptest.NewRecorder()
 			body := []byte(`{
 				"id": "foo",
 				"permissions": [
@@ -182,7 +197,6 @@ func TestServer(t *testing.T) {
 				]
 			}`)
 			req := newRequest("POST", "/role", bytes.NewBuffer(body))
-			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create role")
@@ -198,8 +212,8 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("Read", func(t *testing.T) {
-			req := newRequest("GET", "/role/foo", nil)
 			w := httptest.NewRecorder()
+			req := newRequest("GET", "/role/foo", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				httpError(t, w, "couldn't create role")
@@ -213,6 +227,110 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, "foo", result.Name, msg)
+		})
+
+		t.Run("Delete", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("DELETE", "/role/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't delete role")
+			}
+		})
+
+		t.Run("CheckDeleted", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/role/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "couldn't create role")
+			}
+		})
+	})
+
+	t.Run("Policy", func(t *testing.T) {
+		defer testSetup(t)
+
+		t.Run("Create", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			// set up some resources to work with
+			body := []byte(`{"path": "/a"}`)
+			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			w = httptest.NewRecorder()
+			body = []byte(`{"path": "/a/b"}`)
+			req = newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			w = httptest.NewRecorder()
+			body = []byte(`{"path": "/a/b/c"}`)
+			req = newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			// set up roles
+			w = httptest.NewRecorder()
+			body = []byte(`{
+				"id": "bazgo-create",
+				"permissions": [
+					{
+                        "id": "foo",
+                        "action": {"service": "bazgo", "method": "create"}
+                    }
+				]
+			}`)
+			req = newRequest("POST", "/role", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create role")
+			}
+			// create the policy
+			w = httptest.NewRecorder()
+			body = []byte(`{
+                "id": "bazgo-create-b",
+                "resource_paths": ["/a/b"],
+                "role_ids": ["bazgo-create"]
+            }`)
+			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create policy")
+			}
+			result := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+		})
+
+		t.Run("Read", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/policy/bazgo-create-b", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "policy not found")
+			}
+			result := struct {
+				Name      string   `json:"id"`
+				Resources []string `json:"resource_paths"`
+				Roles     []string `json:"role_ids"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from GET policy")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, "bazgo-create-b", result.Name, msg)
+			assert.Equal(t, []string{"/a/b"}, result.Resources, msg)
+			assert.Equal(t, []string{"bazgo-create"}, result.Roles, msg)
 		})
 	})
 }
