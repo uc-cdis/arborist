@@ -63,7 +63,7 @@ package for convenience):
 result := struct {
     A string `json:"a"`
     B int    `json:"b"`
-}
+}{}
 // Try to read response bytes into result JSON.
 err := json.Unmarshal(w.Body.Bytes(), &result)
 if err != nil {
