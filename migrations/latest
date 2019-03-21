@@ -12,7 +12,7 @@ for m in ./migrations/*/; do
     printf '%-30s %s\n' "applying migration:" "$migration_version"
     script="${m}up.sql"
     if [[ ! -f $script ]]; then
-        echo "missing up-migration script $script"
+        echo "missing up migration script $script"
         exit 1
     fi
     script_output="$(psql -f $script 2>&1)"

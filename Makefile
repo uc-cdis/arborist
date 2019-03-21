@@ -8,14 +8,11 @@ bin/arborist:
 
 up: upgrade
 upgrade:
-	psql
+	./migrations/up
 
 down: downgrade
 downgrade:
-	psql
-
-revision:
-	REV = migrations/`date -u +"%Y-%m-%dT%H:%M:%SZ"`
+	./migrations/down
 
 db-test: $(which psql)
 	-@ psql -c "CREATE DATABASE arborist_test" 2>&1 || true

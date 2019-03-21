@@ -12,6 +12,23 @@ Go's SQL package handles the connection pool implicitly, though the size of the
 pool is configurable. See [here](http://jmoiron.github.io/sqlx/#connectionPool)
 for a bit more detail.
 
+#### Migration Scripts
+
+Reference previous `migrations` for examples on how to write migration scripts
+correctly. The crucial points are
+
+- Create a subdirectory in `migrations` named in the format
+  `{YYYY}-{MM}-{DD}T{HH}{MM}{SS}Z_{name}`, which is the ISO date format
+  followed optionally by a human-readable name describing the migration.
+- This subdirectory must contain an `up.sql` and a `down.sql` which apply and
+  revert the migration, respectively.
+- The `up.sql` script must *update* the singular row of `db_version` to
+  increment the integer version ID, and change the `version` text column to
+  reflect the exact folder name.
+
+Test a migration by applying `up.sql` and `down.sql` sequentially to ensure
+both work as expected.
+
 ### Testing
 
 For testing an HTTP server, we use the `httptest` module to "record" requests
