@@ -6,6 +6,7 @@ DROP TABLE resource;
 DROP TABLE role;
 DROP TABLE usr_grp;
 DROP TABLE usr_policy;
+DROP TABLE grp_policy;
 DROP TABLE policy;
 DROP TABLE usr;
 DROP TABLE grp;

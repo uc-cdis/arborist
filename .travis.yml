@@ -9,5 +9,12 @@ git:
 
 sudo: false
 
+addons:
+  postgresql: "9.5"
+
+install:
+  - psql -U postgres -c "CREATE DATABASE arborist_test"
+  - PGHOST=localhost PGPORT=5432 PGDATABASE=arborist_test PGUSER=postgres ./migrations/latest
+
 script:
   - go test -v ./...

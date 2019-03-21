@@ -1,9 +1,9 @@
 CREATE TABLE db_version (
-    version integer PRIMARY KEY,
-    date_migrated timestamp with time zone DEFAULT now()
+    id integer PRIMARY KEY,
+    version text NOT NULL
 );
 
-INSERT INTO db_version VALUES (0);
+INSERT INTO db_version(id, version) VALUES (0, '2019-02-18T214320Z_init');
 
 -- Use the ltree extension for handling tree operations. This allows us to do
 -- pretty powerful operations on the resource hierarchy without having to go to
@@ -145,4 +145,10 @@ CREATE TABLE usr_grp (
     usr_id integer REFERENCES usr(id) ON DELETE CASCADE,
     grp_id integer REFERENCES grp(id) ON DELETE CASCADE,
     PRIMARY KEY(usr_id, grp_id)
+);
+
+CREATE TABLE grp_policy (
+    grp_id integer REFERENCES grp(id) ON DELETE CASCADE,
+    policy_id integer REFERENCES policy(id) ON DELETE CASCADE,
+    PRIMARY KEY(grp_id, policy_id)
 );

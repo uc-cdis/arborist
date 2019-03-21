@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gorilla/handlers"
@@ -74,14 +74,14 @@ func parseResourcePath(r *http.Request) string {
 	return strings.Join([]string{"/", path}, "")
 }
 
-func (server *Server) MakeRouter() http.Handler {
+func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router := mux.NewRouter().StrictSlash(false)
 
 	//router.Handle("/", server.handleRoot).Methods("GET")
 
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
-	router.Handle("/auth/proxy", server.handleAuthProxy).Methods("POST")
+	//router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("POST")
 	//router.Handle("/auth/request", server.handleAuthRequest).Methods("POST")
 	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
 
@@ -101,7 +101,7 @@ func (server *Server) MakeRouter() http.Handler {
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
-	return handlers.CombinedLoggingHandler(os.Stdout, router)
+	return handlers.CombinedLoggingHandler(out, router)
 }
 
 // parseJSON abstracts JSON parsing for handler functions that should
@@ -133,6 +133,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+/*
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	// Get QS arguments
 	resourcePathQS, ok := r.URL.Query()["resource"]
@@ -184,6 +185,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	// TODO
 }
+*/
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	policies, err := listPoliciesFromDb(server.db)
@@ -194,7 +196,7 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(policies, 200).write(w, r)
+	_ = jsonResponseFrom(policies, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -228,6 +230,13 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["policyID"]
 	policyFromQuery, err := policyWithName(server.db, name)
+	if policyFromQuery == nil {
+		msg := fmt.Sprintf("no policy found with id: %s", name)
+		errResponse := newErrorResponse(msg, 404, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
 	if err != nil {
 		msg := fmt.Sprintf("policy query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -236,7 +245,7 @@ func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policy := policyFromQuery.standardize()
-	_ = jsonResponseFrom(policy, 200).write(w, r)
+	_ = jsonResponseFrom(policy, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +257,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(nil, 204).write(w, r)
+	_ = jsonResponseFrom(nil, http.StatusCreated).write(w, r)
 }
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +273,7 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(resources, 200).write(w, r)
+	_ = jsonResponseFrom(resources, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -356,7 +365,7 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	resource := resourceFromQuery.standardize()
-	_ = jsonResponseFrom(resource, 200).write(w, r)
+	_ = jsonResponseFrom(resource, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
@@ -368,7 +377,7 @@ func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Reques
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(nil, 204).write(w, r)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +393,7 @@ func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
 	for _, roleFromQuery := range rolesFromQuery {
 		roles = append(roles, roleFromQuery.standardize())
 	}
-	_ = jsonResponseFrom(roles, 200).write(w, r)
+	_ = jsonResponseFrom(roles, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -418,6 +427,13 @@ func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, b
 func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["roleID"]
 	roleFromQuery, err := roleWithName(server.db, name)
+	if roleFromQuery == nil {
+		msg := fmt.Sprintf("no role found with id: %s", name)
+		errResponse := newErrorResponse(msg, 404, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
 	if err != nil {
 		msg := fmt.Sprintf("role query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -426,7 +442,7 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := roleFromQuery.standardize()
-	_ = jsonResponseFrom(role, 200).write(w, r)
+	_ = jsonResponseFrom(role, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
@@ -438,5 +454,5 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(nil, 201).write(w, r)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }

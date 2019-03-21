@@ -95,11 +95,15 @@ func roleWithName(db *sqlx.DB, name string) (*RoleFromQuery, error) {
 		GROUP BY role.id
 		LIMIT 1
 	`
-	role := RoleFromQuery{}
-	err := db.Get(&role, stmt, name)
+	roles := []RoleFromQuery{}
+	err := db.Select(&roles, stmt, name)
+	if len(roles) == 0 {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
+	role := roles[0]
 	return &role, nil
 }
 
