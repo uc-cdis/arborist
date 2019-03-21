@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ type Server struct {
 	db     *sqlx.DB
 	jwtApp *authutils.JWTApplication
 	logger *LogHandler
+	authQuery *sql.Stmt
 }
 
 func NewServer() *Server {
@@ -52,6 +54,11 @@ func (server *Server) Init() (*Server, error) {
 	if server.logger == nil {
 		return nil, errors.New("arborist server initialized without logger")
 	}
+	stmt, err := server.db.Prepare(AUTH_QUERY)
+	if err != nil {
+		return nil, err
+	}
+	server.authQuery = stmt
 
 	return server, nil
 }
@@ -184,7 +191,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("REMOTE_USER", info.username)
 
-	rv, err := authorize(server.db, info, resourcePath, service, method)
+	rv, err := authorize(server, info, resourcePath, service, method)
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -230,7 +237,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		info.policies = authRequest.User.Policies
 	}
 
-	rv, err := authorize(server.db, info, authRequest.Request.Resource,
+	rv, err := authorize(server, info, authRequest.Request.Resource,
 		authRequest.Request.Action.Service, authRequest.Request.Action.Method)
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())

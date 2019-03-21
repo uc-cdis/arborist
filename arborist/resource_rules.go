@@ -8,9 +8,10 @@ import __yyfmt__ "fmt"
 //line arborist/resource_rules.y:2
 
 import (
+	"bufio"
 	"errors"
 	"strings"
-	"text/scanner"
+	"unicode/utf8"
 )
 
 type Expression interface{}
@@ -39,7 +40,7 @@ type UnaryExpr struct {
 	right    Expression
 }
 
-//line arborist/resource_rules.y:37
+//line arborist/resource_rules.y:38
 type yySymType struct {
 	yys   int
 	token Token
@@ -49,7 +50,9 @@ type yySymType struct {
 const NOT = 57346
 const AND = 57347
 const OR = 57348
-const VARIABLE = 57349
+const RESOURCE = 57349
+const LPAREN = 57350
+const RPAREN = 57351
 
 var yyToknames = [...]string{
 	"$end",
@@ -58,9 +61,9 @@ var yyToknames = [...]string{
 	"NOT",
 	"AND",
 	"OR",
-	"VARIABLE",
-	"'('",
-	"')'",
+	"RESOURCE",
+	"LPAREN",
+	"RPAREN",
 }
 var yyStatenames = [...]string{}
 
@@ -68,19 +71,108 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line arborist/resource_rules.y:75
+//line arborist/resource_rules.y:76
+
+func isSpace(r rune) bool {
+	if r <= '\u00FF' {
+		// Obvious ASCII ones: \t through \r plus space. Plus two Latin-1 oddballs.
+		switch r {
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			return true
+		case '\u0085', '\u00A0':
+			return true
+		}
+		return false
+	}
+	// High-valued ones.
+	if '\u2000' <= r && r <= '\u200a' {
+		return true
+	}
+	switch r {
+	case '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000':
+		return true
+	}
+	return false
+}
+
+func isParenthesis(r rune) bool {
+	switch r {
+	case '(', ')':
+		return true
+	}
+	return false
+}
+
+func isQuote(r rune) bool {
+	switch r {
+	case '"', '\'':
+		return true
+	}
+	return false
+}
+
+func scanToken(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	// Skip leading spaces.
+	start := 0
+	for width := 0; start < len(data); start += width {
+		var r rune
+		r, width = utf8.DecodeRune(data[start:])
+		if !isSpace(r) {
+			break
+		}
+	}
+	if start < len(data) {
+		sr, width := utf8.DecodeRune(data[start:])
+		if isParenthesis(sr) {
+			return start + width, data[start : start+width], nil
+		}
+		if isQuote(sr) {
+			start += width
+			// Scan until closing quote, marking end of word.
+			for width, i := 0, start; i < len(data); i += width {
+				var r rune
+				r, width = utf8.DecodeRune(data[i:])
+				if r == sr {
+					return i + width, data[start:i], nil
+				}
+			}
+			return 0, nil, errors.New("mismatching quotes")
+		}
+	}
+
+	// Scan until space, marking end of word.
+	for width, i := 0, start; i < len(data); i += width {
+		var r rune
+		r, width = utf8.DecodeRune(data[i:])
+		if isSpace(r) || isParenthesis(r) || isQuote(r) {
+			return i, data[start:i], nil
+		}
+	}
+	// If we're at EOF, we have a final, non-empty, non-terminated word. Return it.
+	if atEOF && len(data) > start {
+		return len(data), data[start:], nil
+	}
+	// Request more data.
+	return start, nil, nil
+}
 
 type Lexer struct {
-	scanner.Scanner
-	args   map[string]interface{}
-	result Expression
-	error  string
+	scanner *bufio.Scanner
+	args    map[string]interface{}
+	result  Expression
+	error   string
 }
 
 func (l *Lexer) Lex(lval *yySymType) int {
-	token := l.Scan()
-	lit := l.TokenText()
-	tok := int(token)
+	if !l.scanner.Scan() {
+		err := l.scanner.Err()
+		if err != nil {
+			l.error = err.Error()
+		}
+		return -1
+	}
+	lit := l.scanner.Text()
+	tok := RESOURCE
 	switch lit {
 	case "not":
 		tok = NOT
@@ -88,11 +180,12 @@ func (l *Lexer) Lex(lval *yySymType) int {
 		tok = AND
 	case "or":
 		tok = OR
+	case "(":
+		tok = LPAREN
+	case ")":
+		tok = RPAREN
 	default:
-		if lit != "" && lit != "(" && lit != ")" {
-			tok = VARIABLE
-			l.args[lit] = nil
-		}
+		l.args[lit] = nil
 	}
 	lval.token = Token{token: tok, literal: lit}
 	return tok
@@ -121,29 +214,37 @@ func Eval(e Expression, vars map[string]bool) (bool, error) {
 			return !right, nil
 		}
 	case AssocExpr:
-		left, err := Eval(t.left, vars)
-		if err != nil {
-			return false, err
-		}
-		right, err := Eval(t.right, vars)
-		if err != nil {
-			return false, err
-		}
 		switch t.operator {
 		case "||":
-			return left || right, nil
+			left, err := Eval(t.left, vars)
+			if err != nil {
+				return false, err
+			}
+			if left {
+				return true, nil
+			}
+			return Eval(t.right, vars)
 		case "&&":
-			return left && right, nil
+			left, err := Eval(t.left, vars)
+			if err != nil {
+				return false, err
+			}
+			if !left {
+				return false, nil
+			}
+			return Eval(t.right, vars)
 		}
 	}
 	return false, errors.New("Unexpected error")
 }
 
 func Parse(exp string) (Expression, []string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(exp))
+	scanner.Split(scanToken)
 	l := new(Lexer)
 	l.args = make(map[string]interface{})
-	l.Init(strings.NewReader(exp))
-	if yyParse(l) != 0 {
+	l.scanner = scanner
+	if yyParse(l) != 0 || l.error != "" {
 		return nil, nil, errors.New(l.error)
 	}
 	args := make([]string, 0)
@@ -210,15 +311,11 @@ var yyDef = [...]int{
 }
 var yyTok1 = [...]int{
 
-	1, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	8, 9,
+	1,
 }
 var yyTok2 = [...]int{
 
-	2, 3, 4, 5, 6, 7,
+	2, 3, 4, 5, 6, 7, 8, 9,
 }
 var yyTok3 = [...]int{
 	0,
@@ -563,38 +660,38 @@ yydefault:
 
 	case 1:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line arborist/resource_rules.y:50
+//line arborist/resource_rules.y:51
 		{
 			yyVAL.expr = yyDollar[1].expr
 			yylex.(*Lexer).result = yyVAL.expr
 		}
 	case 2:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line arborist/resource_rules.y:56
+//line arborist/resource_rules.y:57
 		{
 			yyVAL.expr = Variable{literal: yyDollar[1].token.literal}
 		}
 	case 3:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line arborist/resource_rules.y:60
+//line arborist/resource_rules.y:61
 		{
 			yyVAL.expr = UnaryExpr{operator: "!", right: yyDollar[2].expr}
 		}
 	case 4:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line arborist/resource_rules.y:64
+//line arborist/resource_rules.y:65
 		{
 			yyVAL.expr = AssocExpr{left: yyDollar[1].expr, operator: "&&", right: yyDollar[3].expr}
 		}
 	case 5:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line arborist/resource_rules.y:68
+//line arborist/resource_rules.y:69
 		{
 			yyVAL.expr = ParenExpr{SubExpr: yyDollar[2].expr}
 		}
 	case 6:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line arborist/resource_rules.y:72
+//line arborist/resource_rules.y:73
 		{
 			yyVAL.expr = AssocExpr{left: yyDollar[1].expr, operator: "||", right: yyDollar[3].expr}
 		}
