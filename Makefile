@@ -21,4 +21,5 @@ db-test: $(which psql)
 	./migrations/latest
 
 arborist/resource_rules.go: arborist/resource_rules.y
+	which $(GOYACC) || go get golang.org/x/tools/cmd/goyacc
 	$(GOYACC) -o arborist/resource_rules.go arborist/resource_rules.y

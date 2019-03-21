@@ -1,7 +1,6 @@
 package arborist
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +21,7 @@ type Server struct {
 	db     *sqlx.DB
 	jwtApp *authutils.JWTApplication
 	logger *LogHandler
-	authQuery *sql.Stmt
+	stmts *CachedStmts
 }
 
 func NewServer() *Server {
@@ -41,6 +40,7 @@ func (server *Server) WithJWTApp(jwtApp *authutils.JWTApplication) *Server {
 
 func (server *Server) WithDB(db *sqlx.DB) *Server {
 	server.db = db
+	server.stmts = NewCachedStmts(db)
 	return server
 }
 
@@ -54,11 +54,6 @@ func (server *Server) Init() (*Server, error) {
 	if server.logger == nil {
 		return nil, errors.New("arborist server initialized without logger")
 	}
-	stmt, err := server.db.Prepare(AUTH_QUERY)
-	if err != nil {
-		return nil, err
-	}
-	server.authQuery = stmt
 
 	return server, nil
 }
@@ -191,7 +186,14 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("REMOTE_USER", info.username)
 
-	rv, err := authorize(server, info, resourcePath, service, method)
+	rv, err := authorize(&AuthRequest{
+		info.username,
+		info.policies,
+		resourcePath,
+		service,
+		method,
+		server.stmts,
+	})
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -199,7 +201,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 		return
 	}
-	if !rv {
+	if !rv.Auth {
 		errResponse := newErrorResponse(
 			"Unauthorized: user does not have access to this resource", 403, nil)
 		_ = errResponse.write(w, r)
@@ -207,7 +209,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
-	authRequest := &AuthRequest{}
+	authRequest := &AuthRequestJSON{}
 	err := json.Unmarshal(body, authRequest)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
@@ -233,12 +235,19 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	request := &AuthRequest {
+		info.username,
+		info.policies,
+		authRequest.Request.Resource,
+		authRequest.Request.Action.Service,
+		authRequest.Request.Action.Method,
+		server.stmts,
+	}
 	if authRequest.User.Policies != nil {
-		info.policies = authRequest.User.Policies
+		request.Policies = authRequest.User.Policies
 	}
 
-	rv, err := authorize(server, info, authRequest.Request.Resource,
-		authRequest.Request.Action.Service, authRequest.Request.Action.Method)
+	rv, err := authorize(request)
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -246,7 +255,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		_ = response.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(AuthResponse{rv}, 200).write(w, r)
+	_ = jsonResponseFrom(rv, 200).write(w, r)
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
