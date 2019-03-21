@@ -1,9 +1,9 @@
 CREATE TABLE db_version (
-    version integer PRIMARY KEY,
-    date_migrated timestamp with time zone UNIQUE NOT NULL DEFAULT now()
+    id integer PRIMARY KEY,
+    version text NOT NULL
 );
 
-INSERT INTO db_version VALUES (0);
+INSERT INTO db_version(id, version) VALUES (0, '2019-02-18T214320Z_init');
 
 -- Use the ltree extension for handling tree operations. This allows us to do
 -- pretty powerful operations on the resource hierarchy without having to go to

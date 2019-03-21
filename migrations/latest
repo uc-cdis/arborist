@@ -1,15 +1,15 @@
 #!/bin/bash
 
-current_version="$(psql -A -t -d testing -c "select to_char(date_migrated at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24MISSZ') from db_version")"
-printf '%-25s %s\n' "current datase version:" "$current_version"
+current_version="$(./migrations/current-version)"
+printf '%-30s %s\n' "current datase version:" "$current_version"
 
 for m in ./migrations/*/; do
     migration_version="$(basename $m)"
-    if [[ "$migration_version" < "$current_version" ]]; then
-        printf '%-25s %s\n' "up to date, skipping:" "$migration_version"
+    if [[ ! "$migration_version" > "$current_version" ]]; then
+        printf '%-30s %s\n' "up to date, skipping:" "$migration_version"
         continue
     fi
-    printf '%-25s %s\n' "applying migration:" "$migration_version"
+    printf '%-30s %s\n' "applying migration:" "$migration_version"
     script="${m}up.sql"
     if [[ ! -f $script ]]; then
         echo "missing up-migration script $script"
@@ -23,4 +23,4 @@ for m in ./migrations/*/; do
     fi
 done
 
-echo "done migrating, database is up to date"
+printf '%-30s %s\n' "done. database at version: " "$(./migrations/current-version)"

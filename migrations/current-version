@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# $PGDATABASE should be set
+VERSION="$(psql -A -t -c "select version from db_version" 2>&1)"
+VERSION_STATUS="$?"
+if [ $VERSION_STATUS -ne 0 ]; then
+    VERSION="0000-00-00T000000Z"
+fi
+echo $VERSION
