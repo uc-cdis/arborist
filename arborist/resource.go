@@ -95,10 +95,18 @@ func (resourceFromQuery *ResourceFromQuery) standardize() *Resource {
 	return resource
 }
 
+// formatPathForDb takes a path from a resource in the database and transforms
+// it to the front-end version of the resource path. Inverse of `formatDbPath`.
+//
+//     formatDbPath("/a/b/c") == "root.a.b.c"
 func formatPathForDb(path string) string {
 	return "root" + strings.Replace(path, "/", ".", -1)
 }
 
+// formatDbPath takes a path from a resource in the database and transforms it
+// to the front-end version of the resource path. Inverse of `formatPathForDb`.
+//
+//     formatDbPath("root.a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
 	return strings.Replace(strings.TrimPrefix(path, "root"), ".", "/", -1)
 }
