@@ -17,7 +17,7 @@ downgrade:
 	./migrations/down
 
 db-test: $(which psql)
-	-@ psql -c "CREATE DATABASE arborist_test" 2>&1 || true
+	psql -c "CREATE DATABASE arborist_test" || true
 	./migrations/latest
 
 arborist/resource_rules.go: arborist/resource_rules.y

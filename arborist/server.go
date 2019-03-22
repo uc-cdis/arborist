@@ -21,7 +21,7 @@ type Server struct {
 	db     *sqlx.DB
 	jwtApp *authutils.JWTApplication
 	logger *LogHandler
-	stmts *CachedStmts
+	stmts  *CachedStmts
 }
 
 func NewServer() *Server {
@@ -102,6 +102,11 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role", http.HandlerFunc(parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
+
+	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
+	router.Handle("/user", http.HandlerFunc(parseJSON(server.handleUserCreate))).Methods("POST")
+	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
+	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 
 	return handlers.CombinedLoggingHandler(out, router)
 }
@@ -235,7 +240,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	request := &AuthRequest {
+	request := &AuthRequest{
 		info.username,
 		info.policies,
 		authRequest.Request.Resource,
@@ -520,6 +525,88 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["roleID"]
 	role := &Role{Name: name}
 	errResponse := role.deleteInDb(server.db)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
+	usersFromQuery, err := listUsersFromDb(server.db)
+	if err != nil {
+		msg := fmt.Sprintf("users query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	users := []User{}
+	for _, userFromQuery := range usersFromQuery {
+		users = append(users, userFromQuery.standardize())
+	}
+	result := struct {
+		Users []User `json:"users"`
+	}{
+		Users: users,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	user := &User{}
+	err := json.Unmarshal(body, user)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
+		server.logger.Info("tried to create role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := user.createInDb(server.db)
+	if errResponse != nil {
+		if errResponse.Error.Code >= 500 {
+			server.logger.Error(errResponse.Error.Message)
+		} else {
+			server.logger.Info(errResponse.Error.Message)
+		}
+		_ = errResponse.write(w, r)
+		return
+	}
+	created := struct {
+		Created *User `json:"created"`
+	}{
+		Created: user,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
+}
+
+func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["username"]
+	userFromQuery, err := userWithName(server.db, name)
+	if userFromQuery == nil {
+		msg := fmt.Sprintf("no user found with username: %s", name)
+		errResponse := newErrorResponse(msg, 404, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	if err != nil {
+		msg := fmt.Sprintf("role query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	user := userFromQuery.standardize()
+	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["username"]
+	user := User{Name: name}
+	errResponse := user.deleteInDb(server.db)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
