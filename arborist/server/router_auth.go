@@ -129,7 +129,7 @@ func (server *Server) handleAuthProxy(engine *arborist.Engine) http.Handler {
 		if authHeader == "" {
 			msg := "auth proxy request missing auth header"
 			server.Log.Info(msg)
-			newErrorJSON(msg, http.StatusBadRequest).write(w, wantPrettyJSON(r))
+			newErrorJSON(msg, http.StatusUnauthorized).write(w, wantPrettyJSON(r))
 			return
 		}
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")

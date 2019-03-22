@@ -39,8 +39,8 @@ func (errJSON ErrorJSON) write(w http.ResponseWriter, prettyJSON bool) error {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(bytes)
 	w.WriteHeader(errJSON.Error.Code)
+	w.Write(bytes)
 	return nil
 }
 
@@ -55,6 +55,6 @@ func writeJSONReadError(w http.ResponseWriter, err error) {
 		panic(err)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(bytes)
 	w.WriteHeader(http.StatusBadRequest)
+	w.Write(bytes)
 }
