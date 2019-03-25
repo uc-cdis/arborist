@@ -61,6 +61,56 @@ func TestServer(t *testing.T) {
 		return req
 	}
 
+	createUser := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/user", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			httpError(t, w, "couldn't create user")
+		}
+		result := struct {
+			_ interface{} `json:"created"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from user creation")
+		}
+	}
+
+	createResource := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			httpError(t, w, "couldn't create resource")
+		}
+	}
+
+	createRole := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/role", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			httpError(t, w, "couldn't create role")
+		}
+	}
+
+	createPolicy := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/policy", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			httpError(t, w, "couldn't create policy")
+		}
+		result := struct {
+			_ interface{} `json:"created"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from policy creation")
+		}
+	}
+
 	// testSetup should be used for any setup or teardown that should go in all
 	// the tests. Use like this:
 	//
@@ -348,6 +398,9 @@ func TestServer(t *testing.T) {
 	t.Run("User", func(t *testing.T) {
 		tearDown := testSetup(t)
 
+		username := "foo"
+		userEmail := "foo@planx.net"
+
 		t.Run("ListEmpty", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/user", nil)
@@ -368,10 +421,14 @@ func TestServer(t *testing.T) {
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			body := []byte(`{
-				"name": "foo",
-				"email": "foo@planx.net"
-			}`)
+			body := []byte(fmt.Sprintf(
+				`{
+					"name": "%s",
+					"email": "%s"
+				}`,
+				username,
+				userEmail,
+			))
 			req := newRequest("POST", "/user", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
@@ -388,22 +445,131 @@ func TestServer(t *testing.T) {
 
 		t.Run("Read", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			req := newRequest("GET", "/user/foo", nil)
+			url := fmt.Sprintf("/user/%s", username)
+			req := newRequest("GET", url, nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				httpError(t, w, "couldn't read user")
 			}
 			result := struct {
-				Name  string `json:"name"`
-				Email string `json:"email"`
+				Name     string   `json:"name"`
+				Email    string   `json:"email"`
+				Policies []string `json:"policies"`
+				Groups   []string `json:"groups"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
 				httpError(t, w, "couldn't read response from user read")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, "foo", result.Name, msg)
-			assert.Equal(t, "foo@planx.net", result.Email, msg)
+			assert.Equal(t, username, result.Name, msg)
+			assert.Equal(t, userEmail, result.Email, msg)
+			assert.Equal(t, []string{}, result.Policies, msg)
+			assert.Equal(t, []string{}, result.Groups, msg)
+		})
+
+		resourcePath := "/example"
+		resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath))
+		serviceName := "zxcv"
+		roleName := "hjkl"
+		permissionName := "qwer"
+		policyName := "asdf"
+		roleBody := []byte(fmt.Sprintf(
+			`{
+				"id": "%s",
+				"permissions": [
+					{"id": "%s", "action": {"service": "%s", "method": "%s"}}
+				]
+			}`,
+			roleName,
+			permissionName,
+			serviceName,
+			permissionName,
+		))
+		policyBody := []byte(fmt.Sprintf(
+			`{
+				"id": "%s",
+				"resource_paths": ["%s"],
+				"role_ids": ["%s"]
+			}`,
+			policyName,
+			resourcePath,
+			roleName,
+		))
+
+		t.Run("GrantPolicy", func(t *testing.T) {
+			// do some preliminary setup so we have a policy to work with
+			createResource(t, resourceBody)
+			createRole(t, roleBody)
+			createPolicy(t, policyBody)
+
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/policy", username)
+			req := newRequest(
+				"POST",
+				url,
+				bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
+			)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't grant policy to user")
+			}
+			// look up user again and check that policy is there
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/user/%s", username)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read user")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Email    string   `json:"email"`
+				Policies []string `json:"policies"`
+				Groups   []string `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user read")
+			}
+			msg := fmt.Sprintf(
+				"didn't grant policy correctly; got response body: %s",
+				w.Body.String(),
+			)
+			assert.Equal(t, []string{policyName}, result.Policies, msg)
+		})
+
+		t.Run("RevokePolicy", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't revoke policy")
+			}
+			// look up user again and check that policy is gone
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/user/%s", username)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read user")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Email    string   `json:"email"`
+				Policies []string `json:"policies"`
+				Groups   []string `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user read")
+			}
+			msg := fmt.Sprintf(
+				"didn't revoke policy correctly; got response body: %s",
+				w.Body.String(),
+			)
+			assert.NotContains(t, result.Policies, policyName, msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {
@@ -421,6 +587,164 @@ func TestServer(t *testing.T) {
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
 				httpError(t, w, "user was not actually deleted")
+			}
+		})
+
+		tearDown(t)
+	})
+
+	t.Run("Group", func(t *testing.T) {
+		tearDown := testSetup(t)
+
+		t.Run("ListEmpty", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/group", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list groups")
+			}
+			result := struct {
+				Groups []interface{} `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from groups list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, []interface{}{}, result.Groups, msg)
+		})
+
+		testGroupName := "test-group"
+		testGroupUser1 := "test-group-user-1"
+		testGroupUser2 := "test-group-user-2"
+		testGroupUser3 := "test-group-user-3"
+		testGroupUsers := []string{
+			testGroupUser1,
+			testGroupUser2,
+			testGroupUser3,
+		}
+
+		t.Run("Create", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
+			req := newRequest("POST", "/group", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create group")
+			}
+			result := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group creation")
+			}
+		})
+
+		t.Run("Read", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", fmt.Sprintf("/group/%s", testGroupName), nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Users    []string `json:"users"`
+				Policies []string `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, testGroupName, result.Name, msg)
+			assert.Equal(t, []string{}, result.Users, msg)
+			assert.Equal(t, []string{}, result.Policies, msg)
+		})
+
+		t.Run("AddUsers", func(t *testing.T) {
+			for _, testUsername := range testGroupUsers {
+				createUser(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
+				w := httptest.NewRecorder()
+				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
+				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testUsername))
+				req := newRequest("POST", groupUserURL, bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't add user to group")
+				}
+			}
+		})
+
+		t.Run("CheckUsersAdded", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", fmt.Sprintf("/group/%s", testGroupName), nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Users    []string `json:"users"`
+				Policies []string `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, testGroupUsers, result.Users, msg)
+		})
+
+		userToRemove := testGroupUser1
+
+		t.Run("RemoveUser", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s/user/%s", testGroupName, userToRemove)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't remove user from group")
+			}
+			// look up group again and check that user is gone
+			url = fmt.Sprintf("/group/%s", testGroupName)
+			w = httptest.NewRecorder()
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Users    []string `json:"users"`
+				Policies []string `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			msg := fmt.Sprintf("didn't remove user; got response body: %s", w.Body.String())
+			assert.NotContains(t, result.Users, userToRemove, msg)
+		})
+
+		t.Run("Delete", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s", testGroupName)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't delete group")
+			}
+		})
+
+		t.Run("CheckDeleted", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s", testGroupName)
+			req := newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "group was not actually deleted")
 			}
 		})
 
