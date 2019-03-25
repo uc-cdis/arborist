@@ -85,7 +85,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
-	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
+	router.Handle("/auth/resources", http.HandlerFunc(parseJSON(server.handleListAuthResources))).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyCreate))).Methods("POST")
@@ -270,6 +270,62 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	_ = jsonResponseFrom(rv, 200).write(w, r)
+}
+
+func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Request, body []byte) {
+	authRequest := struct {
+		User struct {
+			Token     string   `json:"token"`
+			Policies  []string `json:"policies,omitempty"`
+			Audiences []string `json:"aud,omitempty"`
+		} `json:"user"`
+	}{}
+	err := json.Unmarshal(body, &authRequest)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	var aud []string
+	if authRequest.User.Audiences == nil {
+		aud = []string{"openid"}
+	} else {
+		aud = make([]string, len(authRequest.User.Audiences))
+		copy(aud, authRequest.User.Audiences)
+	}
+
+	info, err := server.decodeToken(authRequest.User.Token, aud)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	request := &AuthRequest{
+		Username: info.username,
+		Policies: info.policies,
+	}
+	if authRequest.User.Policies != nil {
+		request.Policies = authRequest.User.Policies
+	}
+
+	resourcesFromQuery, err := authorizedResources(server.db, request)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	resources := []*Resource{}
+	for _, resourceFromQuery := range resourcesFromQuery {
+		resources = append(resources, resourceFromQuery.standardize())
+	}
+
+	_ = jsonResponseFrom(resources, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
