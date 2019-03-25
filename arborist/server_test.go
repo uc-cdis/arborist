@@ -64,7 +64,9 @@ func TestServer(t *testing.T) {
 	// testSetup should be used for any setup or teardown that should go in all
 	// the tests. Use like this:
 	//
-	//     defer testSetup(t)
+	//     tearDown := testSetup(t)
+	//     ...
+	//     tearDown(t)
 	//
 	// `testSetup(t)` returns the teardown function, which when passed to defer
 	// will run the teardown code at the end of the function.
@@ -89,7 +91,7 @@ func TestServer(t *testing.T) {
 	// order or the content of sub-runs in test runs at this level.
 
 	t.Run("HealthCheck", func(t *testing.T) {
-		defer testSetup(t)
+		tearDown := testSetup(t)
 
 		w := httptest.NewRecorder()
 		req := newRequest("GET", "/health", nil)
@@ -97,6 +99,8 @@ func TestServer(t *testing.T) {
 		if w.Code != http.StatusOK {
 			httpError(t, w, "health check failed")
 		}
+
+		tearDown(t)
 	})
 
 	t.Run("Resource", func(t *testing.T) {
@@ -189,7 +193,7 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("Role", func(t *testing.T) {
-		defer testSetup(t)
+		tearDown := testSetup(t)
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -246,13 +250,15 @@ func TestServer(t *testing.T) {
 			req := newRequest("GET", "/role/foo", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
-				httpError(t, w, "couldn't create role")
+				httpError(t, w, "role was not actually deleted")
 			}
 		})
+
+		tearDown(t)
 	})
 
 	t.Run("Policy", func(t *testing.T) {
-		defer testSetup(t)
+		tearDown := testSetup(t)
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -335,5 +341,89 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, []string{"/a/b"}, result.Resources, msg)
 			assert.Equal(t, []string{"bazgo-create"}, result.Roles, msg)
 		})
+
+		tearDown(t)
+	})
+
+	t.Run("User", func(t *testing.T) {
+		tearDown := testSetup(t)
+
+		t.Run("ListEmpty", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/user", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list users")
+			}
+			result := struct {
+				Users interface{} `json:"users"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from users list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, []interface{}{}, result.Users, msg)
+		})
+
+		t.Run("Create", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"name": "foo",
+				"email": "foo@planx.net"
+			}`)
+			req := newRequest("POST", "/user", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create user")
+			}
+			result := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user creation")
+			}
+		})
+
+		t.Run("Read", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/user/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read user")
+			}
+			result := struct {
+				Name  string `json:"name"`
+				Email string `json:"email"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user read")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, "foo", result.Name, msg)
+			assert.Equal(t, "foo@planx.net", result.Email, msg)
+		})
+
+		t.Run("Delete", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("DELETE", "/user/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't delete user")
+			}
+		})
+
+		t.Run("CheckDeleted", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/user/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "user was not actually deleted")
+			}
+		})
+
+		tearDown(t)
 	})
 }

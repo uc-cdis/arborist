@@ -75,7 +75,7 @@ $$;
 
 -- Add the trigger to recursively delete subresources before a resource delete.
 CREATE TRIGGER resource_path_delete_children
-    BEFORE DELETE ON resource
+    AFTER DELETE ON resource
     FOR EACH ROW EXECUTE PROCEDURE resource_recursive_delete();
 
 CREATE OR REPLACE FUNCTION resource_recursive_update() RETURNS TRIGGER LANGUAGE plpgsql AS
@@ -127,7 +127,7 @@ CREATE TABLE policy_resource (
 CREATE TABLE usr (
     id serial PRIMARY KEY, -- arborist only---not fence
     name text UNIQUE NOT NULL, -- SHARED with fence
-    email text NOT NULL
+    email text
 );
 
 CREATE TABLE usr_policy (
