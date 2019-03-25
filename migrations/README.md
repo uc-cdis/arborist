@@ -1,6 +1,10 @@
 See `DEVELOP.md` in the root folder for instructions on making new migration
 scripts.
 
+*NOTE*: once a migration script is merged into master it should be treated as
+read-only. Do not alter previous migration scripts, only append new ones as
+necessary.
+
 ### Utility Scripts
 
 For all migration scripts it is assumed that the necessary postgres variables
@@ -10,7 +14,7 @@ are already set, for example with environment variables, like this:
 PGHOST=localhost PGPORT=5432 PGDATABASE=arborist_test PGUSER=postgres ./migrations/latest
 ```
 
-f you get any errors from postgres about not finding or connecting to the
+If you get any errors from postgres about not finding or connecting to the
 database, then that is probably your problem.
 
 #### `migrations/latest`
