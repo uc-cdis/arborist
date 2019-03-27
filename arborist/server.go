@@ -119,6 +119,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupDelete)).Methods("DELETE")
 	router.Handle("/group/{groupName}/user", http.HandlerFunc(parseJSON(server.handleGroupAddUser))).Methods("POST")
 	router.Handle("/group/{groupName}/user/{username}", http.HandlerFunc(server.handleGroupRemoveUser)).Methods("DELETE")
+	router.Handle("/group/{groupName}/policy", http.HandlerFunc(parseJSON(server.handleGroupGrantPolicy))).Methods("POST")
+	router.Handle("/group/{groupName}/policy/{policyName}", http.HandlerFunc(server.handleGroupRevokePolicy)).Methods("DELETE")
 
 	return handlers.CombinedLoggingHandler(out, router)
 }
@@ -836,6 +838,40 @@ func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Reque
 	groupName := mux.Vars(r)["groupName"]
 	username := mux.Vars(r)["username"]
 	errResponse := removeUserFromGroup(server.db, username, groupName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	groupName := mux.Vars(r)["groupName"]
+	requestPolicy := struct {
+		PolicyName string `json:"policy"`
+	}{}
+	err := json.Unmarshal(body, &requestPolicy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to group %s but input was invalid: %s", groupName, msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	groupName := mux.Vars(r)["groupName"]
+	policyName := mux.Vars(r)["policyName"]
+	errResponse := revokeGroupPolicy(server.db, groupName, policyName)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
