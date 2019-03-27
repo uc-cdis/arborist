@@ -2,6 +2,8 @@ package arborist_test
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,20 +11,122 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/square/go-jose.v2"
+	"gopkg.in/square/go-jose.v2/jwt"
 
 	"github.com/uc-cdis/arborist/arborist"
-	"github.com/uc-cdis/go-authutils/authutils"
 )
+
+// For testing we use a mock JWT decoder which will always just return all the
+// claims without trying to make HTTP calls or validating the token. The test
+// server is set up using this mock JWT app to skip validation.
+type mockJWTApp struct {
+}
+
+// Decode lets us use this mock JWT decoder for testing. It does zero validation
+// of any tokens it receives, and just returns the decoded claims.
+func (jwtApp *mockJWTApp) Decode(token string) (*map[string]interface{}, error) {
+	decodedToken, err := jwt.ParseSigned(token)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]interface{})
+	err = decodedToken.UnsafeClaimsWithoutVerification(&result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// TestJWT is a utility for making fake JWTs suitable for testing.
+//
+// Example:
+//
+//     token := TestJWT{username: username}
+//     body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+//     req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+//
+type TestJWT struct {
+	username string
+	policies []string
+}
+
+// Encode takes the information in the TestJWT and creates a string of an
+// encoded JWT containing some basic claims, and whatever information was
+// provided in the TestJWT.
+//
+// To generate a signed JWT, we make up a random RSA key to sign the token ...
+// and then throw away the key, because the server's mock JWT app (see above)
+// doesn't care about the validation anyways.
+func (testJWT *TestJWT) Encode() string {
+	// Make a new, random RSA key just to sign this JWT.
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		panic(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, nil)
+	if err != nil {
+		panic(err)
+	}
+	var payload []byte
+	if testJWT.policies == nil || len(testJWT.policies) == 0 {
+		payload = []byte(fmt.Sprintf(
+			`{
+				"aud": ["openid"],
+				"exp": %d,
+				"sub": "0",
+				"context": {
+					"user": {
+						"name": "%s"
+					}
+				}
+			}`,
+			time.Now().Unix()+10000,
+			testJWT.username,
+		))
+	} else {
+		policies := fmt.Sprintf(`["%s"]`, strings.Join(testJWT.policies, `", "`))
+		payload = []byte(fmt.Sprintf(
+			`{
+				"aud": ["openid"],
+				"exp": %d,
+				"sub": "0",
+				"context": {
+					"user": {
+						"name": "%s",
+						"policies": %s
+					}
+				}
+			}`,
+			time.Now().Unix()+10000,
+			testJWT.username,
+			policies,
+		))
+	}
+	jws, err := signer.Sign(payload)
+	if err != nil {
+		panic(err)
+	}
+	result, err := jws.CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
+	return result
+}
 
 func TestServer(t *testing.T) {
 	logBuffer := bytes.NewBuffer([]byte{})
 	logFlags := log.Ldate | log.Ltime | log.Llongfile
 	logger := log.New(logBuffer, "", logFlags)
-	jwtApp := authutils.NewJWTApplication("/jwks")
+
+	jwtApp := &mockJWTApp{}
+
 	dbUrl := os.Getenv("ARBORIST_TEST_DB")
 	if dbUrl == "" {
 		dbUrl = "postgres://postgres@localhost:5432/arborist_test?sslmode=disable"
@@ -41,6 +145,43 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := server.MakeRouter(logBuffer)
+
+	// some test data to work with
+	resourcePath := "/example"
+	resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath))
+	serviceName := "zxcv"
+	roleName := "hjkl"
+	permissionName := "qwer"
+	policyName := "asdf"
+	roleBody := []byte(fmt.Sprintf(
+		`{
+			"id": "%s",
+			"permissions": [
+				{"id": "%s", "action": {"service": "%s", "method": "%s"}}
+			]
+		}`,
+		roleName,
+		permissionName,
+		serviceName,
+		permissionName,
+	))
+	policyBody := []byte(fmt.Sprintf(
+		`{
+			"id": "%s",
+			"resource_paths": ["%s"],
+			"role_ids": ["%s"]
+		}`,
+		policyName,
+		resourcePath,
+		roleName,
+	))
+	username := "wasd"
+	userBody := []byte(fmt.Sprintf(
+		`{
+			"name": "%s"
+		}`,
+		username,
+	))
 
 	// httpError is a utility function which writes some useful output after an error.
 	httpError := func(t *testing.T, w *httptest.ResponseRecorder, msg string) {
@@ -69,7 +210,9 @@ func TestServer(t *testing.T) {
 			httpError(t, w, "couldn't create user")
 		}
 		result := struct {
-			_ interface{} `json:"created"`
+			Created struct {
+				Name string `json:"name"`
+			} `json:"created"`
 		}{}
 		err = json.Unmarshal(w.Body.Bytes(), &result)
 		if err != nil {
@@ -83,6 +226,15 @@ func TestServer(t *testing.T) {
 		handler.ServeHTTP(w, req)
 		if w.Code != http.StatusCreated {
 			httpError(t, w, "couldn't create resource")
+		}
+		result := struct {
+			Created struct {
+				Path string `json:"path"`
+			} `json:"created"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from resource creation")
 		}
 	}
 
@@ -111,6 +263,35 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	grantUserPolicy := func(t *testing.T, username string, policyName string) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/user/%s/policy", username)
+		req := newRequest(
+			"POST",
+			url,
+			bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
+		)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			httpError(t, w, "couldn't grant policy to user")
+		}
+	}
+
+	deleteEverything := func() {
+		_ = db.MustExec("DELETE FROM policy_role")
+		_ = db.MustExec("DELETE FROM policy_resource")
+		_ = db.MustExec("DELETE FROM permission")
+		_ = db.MustExec("DELETE FROM resource WHERE (name != 'root')")
+		_ = db.MustExec("DELETE FROM role")
+		_ = db.MustExec("DELETE FROM usr_grp")
+		_ = db.MustExec("DELETE FROM usr_policy")
+		_ = db.MustExec("DELETE FROM grp_policy")
+		_ = db.MustExec("DELETE FROM policy")
+		_ = db.MustExec("DELETE FROM usr")
+		_ = db.MustExec("DELETE FROM grp")
+		_ = db.MustExec("DELETE FROM usr")
+	}
+
 	// testSetup should be used for any setup or teardown that should go in all
 	// the tests. Use like this:
 	//
@@ -126,6 +307,9 @@ func TestServer(t *testing.T) {
 		tearDown := func(t *testing.T) {
 			// ADD TEST TEARDOWN HERE
 
+			// wipe the database
+			deleteEverything()
+
 			// clear the logs currently stored in the buffer
 			logBuffer.Reset()
 		}
@@ -133,12 +317,12 @@ func TestServer(t *testing.T) {
 		return tearDown
 	}
 
-	// TODO: reset database before testing
-
-	// NOTE: in general in the test runs at this level, test results depend on
-	// the previous steps within the run, as individual tests create entities
-	// which the next entities need to reference. Don't mess too much with the
-	// order or the content of sub-runs in test runs at this level.
+	// NOTE:
+	//   - Every `t.Run` at this level should be completely isolated from the
+	//     others, and clean up after itself.
+	//   - Within the `t.Run` calls at this level, it's OK to have sequential
+	//     tests that depend on results from the previous ones within that run.
+	//     However, be careful not to shoot yourself in the foot.
 
 	t.Run("HealthCheck", func(t *testing.T) {
 		tearDown := testSetup(t)
@@ -154,7 +338,7 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("Resource", func(t *testing.T) {
-		defer testSetup(t)
+		tearDown := testSetup(t)
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -240,6 +424,8 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "deleted subresource still present")
 			}
 		})
+
+		tearDown(t)
 	})
 
 	t.Run("Role", func(t *testing.T) {
@@ -419,6 +605,15 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, []interface{}{}, result.Users, msg)
 		})
 
+		t.Run("NotFound", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/user/nonexistent", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "didn't get 404 for nonexistent group")
+			}
+		})
+
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			body := []byte(fmt.Sprintf(
@@ -468,41 +663,12 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, []string{}, result.Groups, msg)
 		})
 
-		resourcePath := "/example"
-		resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath))
-		serviceName := "zxcv"
-		roleName := "hjkl"
-		permissionName := "qwer"
-		policyName := "asdf"
-		roleBody := []byte(fmt.Sprintf(
-			`{
-				"id": "%s",
-				"permissions": [
-					{"id": "%s", "action": {"service": "%s", "method": "%s"}}
-				]
-			}`,
-			roleName,
-			permissionName,
-			serviceName,
-			permissionName,
-		))
-		policyBody := []byte(fmt.Sprintf(
-			`{
-				"id": "%s",
-				"resource_paths": ["%s"],
-				"role_ids": ["%s"]
-			}`,
-			policyName,
-			resourcePath,
-			roleName,
-		))
+		// do some preliminary setup so we have a policy to work with
+		createResource(t, resourceBody)
+		createRole(t, roleBody)
+		createPolicy(t, policyBody)
 
 		t.Run("GrantPolicy", func(t *testing.T) {
-			// do some preliminary setup so we have a policy to work with
-			createResource(t, resourceBody)
-			createRole(t, roleBody)
-			createPolicy(t, policyBody)
-
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/user/%s/policy", username)
 			req := newRequest(
@@ -537,6 +703,34 @@ func TestServer(t *testing.T) {
 				w.Body.String(),
 			)
 			assert.Equal(t, []string{policyName}, result.Policies, msg)
+
+			t.Run("PolicyNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/user/%s/policy", username)
+				req := newRequest(
+					"POST",
+					url,
+					bytes.NewBuffer([]byte(`{"policy": "nonexistent"}`)),
+				)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "didn't get 404 for nonexistent policy")
+				}
+			})
+
+			t.Run("UserNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := "/user/nonexistent/policy"
+				req := newRequest(
+					"POST",
+					url,
+					bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
+				)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "didn't get 404 for nonexistent user")
+				}
+			})
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
@@ -612,6 +806,15 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, []interface{}{}, result.Groups, msg)
+		})
+
+		t.Run("NotFound", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/group/nonexistent", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "didn't get 404 for nonexistent group")
+			}
 		})
 
 		testGroupName := "test-group"
@@ -728,6 +931,73 @@ func TestServer(t *testing.T) {
 			assert.NotContains(t, result.Users, userToRemove, msg)
 		})
 
+		t.Run("GrantPolicy", func(t *testing.T) {
+			// TODO: add group policy endpoint, enable test
+			t.SkipNow()
+
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s/policy", testGroupName)
+			req := newRequest(
+				"POST",
+				url,
+				bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
+			)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't grant policy to group")
+			}
+			// look up user again and check that policy is there
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/group/%s", testGroupName)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Users    []string `json:"users"`
+				Policies []string `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			msg := fmt.Sprintf(
+				"didn't grant policy correctly; got response body: %s",
+				w.Body.String(),
+			)
+			assert.Equal(t, []string{policyName}, result.Policies, msg)
+
+			t.Run("PolicyNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/group/%s/policy", username)
+				req := newRequest(
+					"POST",
+					url,
+					bytes.NewBuffer([]byte(`{"policy": "nonexistent"}`)),
+				)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "didn't get 404 for nonexistent policy")
+				}
+			})
+
+			t.Run("GroupNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := "/group/nonexistent/policy"
+				req := newRequest(
+					"POST",
+					url,
+					bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
+				)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "didn't get 404 for nonexistent user")
+				}
+			})
+		})
+
 		t.Run("Delete", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/group/%s", testGroupName)
@@ -746,6 +1016,62 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusNotFound {
 				httpError(t, w, "group was not actually deleted")
 			}
+		})
+
+		tearDown(t)
+	})
+
+	t.Run("Auth", func(t *testing.T) {
+		tearDown := testSetup(t)
+
+		t.Run("Resources", func(t *testing.T) {
+			t.Run("Empty", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				token := TestJWT{username: username}
+				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+				req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth resources request failed")
+				}
+				// in this case, since the user has zero access yet, should be empty
+				result := struct {
+					Resources []string `json:"resources"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth resources")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, []string{}, result.Resources, msg)
+			})
+
+			t.Run("Granted", func(t *testing.T) {
+				createResource(t, resourceBody)
+				createRole(t, roleBody)
+				createPolicy(t, policyBody)
+				createUser(t, userBody)
+				grantUserPolicy(t, username, policyName)
+
+				w := httptest.NewRecorder()
+				token := TestJWT{username: username}
+				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+				req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth resources request failed")
+				}
+				// in this case, since the user has zero access yet, should be empty
+				result := struct {
+					Resources []string `json:"resources"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth resources")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+			})
 		})
 
 		tearDown(t)

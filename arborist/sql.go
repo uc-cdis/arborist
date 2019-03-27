@@ -45,6 +45,6 @@ func selectInStmt(table string, col string, values []string) string {
 		stmt_values += fmt.Sprintf("('%s'), ", value)
 	}
 	stmt_values = strings.TrimRight(stmt_values, ", ")
-	stmt := fmt.Sprintf("SELECT %s.* FROM %s INNER JOIN (VALUES %s) values(v) on %s = v", table, table, stmt_values, col)
+	stmt := fmt.Sprintf("SELECT %s.* FROM %s INNER JOIN (VALUES %s) values(v) ON %s = v", table, table, stmt_values, col)
 	return stmt
 }

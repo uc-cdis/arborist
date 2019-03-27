@@ -14,12 +14,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/uc-cdis/go-authutils/authutils"
 )
+
+type JWTDecoder interface {
+	Decode(string) (*map[string]interface{}, error)
+}
 
 type Server struct {
 	db     *sqlx.DB
-	jwtApp *authutils.JWTApplication
+	jwtApp JWTDecoder
 	logger *LogHandler
 	stmts  *CachedStmts
 }
@@ -33,7 +36,7 @@ func (server *Server) WithLogger(logger *log.Logger) *Server {
 	return server
 }
 
-func (server *Server) WithJWTApp(jwtApp *authutils.JWTApplication) *Server {
+func (server *Server) WithJWTApp(jwtApp JWTDecoder) *Server {
 	server.jwtApp = jwtApp
 	return server
 }
@@ -325,7 +328,18 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		resources = append(resources, resourceFromQuery.standardize())
 	}
 
-	_ = jsonResponseFrom(resources, http.StatusOK).write(w, r)
+	resourcePaths := make([]string, len(resources))
+	for i := range resources {
+		resourcePaths[i] = resources[i].Path
+	}
+
+	response := struct {
+		Resources []string `json:"resources"`
+	}{
+		Resources: resourcePaths,
+	}
+
+	_ = jsonResponseFrom(response, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {

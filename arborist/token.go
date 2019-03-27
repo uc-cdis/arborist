@@ -62,21 +62,22 @@ func (server *Server) decodeToken(token string, aud []string) (*TokenInfo, error
 		return nil, fieldTypeError("name")
 	}
 	policiesInterface, exists := user["policies"]
-	if !exists {
-		return nil, missingRequiredField("policies")
-	}
-	// policiesInterface should really be a []string
-	policiesInterfaceSlice, casted := policiesInterface.([]interface{})
-	if !casted {
-		return nil, fieldTypeError("policies")
-	}
-	policies := make([]string, len(policiesInterfaceSlice))
-	for i, policyInterface := range policiesInterfaceSlice {
-		policyString, casted := policyInterface.(string)
+	var policies []string = nil
+	// it's ok if there's no policies in the token; we'll just look up the username
+	if exists {
+		// policiesInterface should really be a []string, so cast all the elements
+		policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 		if !casted {
 			return nil, fieldTypeError("policies")
 		}
-		policies[i] = policyString
+		policies := make([]string, len(policiesInterfaceSlice))
+		for i, policyInterface := range policiesInterfaceSlice {
+			policyString, casted := policyInterface.(string)
+			if !casted {
+				return nil, fieldTypeError("policies")
+			}
+			policies[i] = policyString
+		}
 	}
 	info := TokenInfo{
 		username: username,
