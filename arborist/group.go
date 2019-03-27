@@ -122,18 +122,18 @@ func (group *Group) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantGroupPolicy(db *sqlx.DB, groupname string, policyName string) *ErrorResponse {
+func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorResponse {
 	stmt := `
 		INSERT INTO grp_policy(grp_id, policy_id)
 		VALUES ((SELECT id FROM grp WHERE name = $1), (SELECT id FROM policy WHERE name = $2))
 	`
-	_, err := db.Exec(stmt, groupname, policyName)
+	_, err := db.Exec(stmt, groupName, policyName)
 	if err != nil {
-		group, err := groupWithName(db, groupname)
+		group, err := groupWithName(db, groupName)
 		if group == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to group: group does not exist: %s",
-				groupname,
+				groupName,
 			)
 			return newErrorResponse(msg, 404, nil)
 		}
@@ -154,6 +154,20 @@ func grantGroupPolicy(db *sqlx.DB, groupname string, policyName string) *ErrorRe
 			return newErrorResponse(msg, 500, &err)
 		}
 		// at this point, we assume the group already has this policy. this is fine.
+	}
+	return nil
+}
+
+func revokeGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorResponse {
+	stmt := `
+		DELETE FROM grp_policy
+		WHERE grp_id = (SELECT id FROM grp WHERE name = $1)
+		AND policy_id = (SELECT id FROM policy WHERE name = $2)
+	`
+	_, err := db.Exec(stmt, groupName, policyName)
+	if err != nil {
+		msg := "revoke policy query failed"
+		return newErrorResponse(msg, 500, &err)
 	}
 	return nil
 }

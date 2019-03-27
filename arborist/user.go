@@ -177,32 +177,8 @@ func revokeUserPolicy(db *sqlx.DB, username, policyName string) *ErrorResponse {
 	`
 	_, err := db.Exec(stmt, username, policyName)
 	if err != nil {
-		fmt.Println(err)
-		user, err := userWithName(db, username)
-		if user == nil {
-			msg := fmt.Sprintf(
-				"failed to remove user from group: user does not exist: %s",
-				username,
-			)
-			return newErrorResponse(msg, 404, nil)
-		}
-		if err != nil {
-			msg := "user query failed"
-			return newErrorResponse(msg, 500, &err)
-		}
-		policy, err := policyWithName(db, policyName)
-		if policy == nil {
-			msg := fmt.Sprintf(
-				"failed to revoke policy: policy does not exist: %s",
-				policyName,
-			)
-			return newErrorResponse(msg, 404, nil)
-		}
-		if err != nil {
-			msg := "policy query failed"
-			return newErrorResponse(msg, 500, &err)
-		}
-		// at this point, we assume the user is already not in the policy. this is fine
+		msg := "revoke policy query failed"
+		return newErrorResponse(msg, 500, &err)
 	}
 	return nil
 }
@@ -251,32 +227,8 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorR
 	`
 	_, err := db.Exec(stmt, username, groupName)
 	if err != nil {
-		fmt.Println(err)
-		user, err := userWithName(db, username)
-		if user == nil {
-			msg := fmt.Sprintf(
-				"failed to remove user from group: user does not exist: %s",
-				username,
-			)
-			return newErrorResponse(msg, 404, nil)
-		}
-		if err != nil {
-			msg := "user query failed"
-			return newErrorResponse(msg, 500, &err)
-		}
-		group, err := groupWithName(db, groupName)
-		if group == nil {
-			msg := fmt.Sprintf(
-				"failed to remove user from group: group does not exist: %s",
-				groupName,
-			)
-			return newErrorResponse(msg, 404, nil)
-		}
-		if err != nil {
-			msg := "group query failed"
-			return newErrorResponse(msg, 500, &err)
-		}
-		// at this point, we assume the user is already not in the group. this is fine
+		msg := "remove user from group query failed"
+		return newErrorResponse(msg, 500, &err)
 	}
 	return nil
 }
