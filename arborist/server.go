@@ -14,12 +14,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/uc-cdis/go-authutils/authutils"
 )
+
+type JWTDecoder interface {
+	Decode(string) (*map[string]interface{}, error)
+}
 
 type Server struct {
 	db     *sqlx.DB
-	jwtApp *authutils.JWTApplication
+	jwtApp JWTDecoder
 	logger *LogHandler
 	stmts  *CachedStmts
 }
@@ -33,7 +36,7 @@ func (server *Server) WithLogger(logger *log.Logger) *Server {
 	return server
 }
 
-func (server *Server) WithJWTApp(jwtApp *authutils.JWTApplication) *Server {
+func (server *Server) WithJWTApp(jwtApp JWTDecoder) *Server {
 	server.jwtApp = jwtApp
 	return server
 }
@@ -85,7 +88,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
-	//router.Handle("/auth/resources", server.handleListAuthResources).Methods("POST")
+	router.Handle("/auth/resources", http.HandlerFunc(parseJSON(server.handleListAuthResources))).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyCreate))).Methods("POST")
@@ -107,6 +110,17 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user", http.HandlerFunc(parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
+	router.Handle("/user/{username}/policy", http.HandlerFunc(parseJSON(server.handleUserGrantPolicy))).Methods("POST")
+	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
+
+	router.Handle("/group", http.HandlerFunc(server.handleGroupList)).Methods("GET")
+	router.Handle("/group", http.HandlerFunc(parseJSON(server.handleGroupCreate))).Methods("POST")
+	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupRead)).Methods("GET")
+	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupDelete)).Methods("DELETE")
+	router.Handle("/group/{groupName}/user", http.HandlerFunc(parseJSON(server.handleGroupAddUser))).Methods("POST")
+	router.Handle("/group/{groupName}/user/{username}", http.HandlerFunc(server.handleGroupRemoveUser)).Methods("DELETE")
+	router.Handle("/group/{groupName}/policy", http.HandlerFunc(parseJSON(server.handleGroupGrantPolicy))).Methods("POST")
+	router.Handle("/group/{groupName}/policy/{policyName}", http.HandlerFunc(server.handleGroupRevokePolicy)).Methods("DELETE")
 
 	return handlers.CombinedLoggingHandler(out, router)
 }
@@ -261,6 +275,73 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	_ = jsonResponseFrom(rv, 200).write(w, r)
+}
+
+func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Request, body []byte) {
+	authRequest := struct {
+		User struct {
+			Token     string   `json:"token"`
+			Policies  []string `json:"policies,omitempty"`
+			Audiences []string `json:"aud,omitempty"`
+		} `json:"user"`
+	}{}
+	err := json.Unmarshal(body, &authRequest)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	var aud []string
+	if authRequest.User.Audiences == nil {
+		aud = []string{"openid"}
+	} else {
+		aud = make([]string, len(authRequest.User.Audiences))
+		copy(aud, authRequest.User.Audiences)
+	}
+
+	info, err := server.decodeToken(authRequest.User.Token, aud)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	request := &AuthRequest{
+		Username: info.username,
+		Policies: info.policies,
+	}
+	if authRequest.User.Policies != nil {
+		request.Policies = authRequest.User.Policies
+	}
+
+	resourcesFromQuery, err := authorizedResources(server.db, request)
+	if err != nil {
+		server.logger.Info(err.Error())
+		errResponse := newErrorResponse(err.Error(), 401, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	resources := []*Resource{}
+	for _, resourceFromQuery := range resourcesFromQuery {
+		resources = append(resources, resourceFromQuery.standardize())
+	}
+
+	resourcePaths := make([]string, len(resources))
+	for i := range resources {
+		resourcePaths[i] = resources[i].Path
+	}
+
+	response := struct {
+		Resources []string `json:"resources"`
+	}{
+		Resources: resourcePaths,
+	}
+
+	_ = jsonResponseFrom(response, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
@@ -558,8 +639,8 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 	user := &User{}
 	err := json.Unmarshal(body, user)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
-		server.logger.Info("tried to create role but input was invalid: %s", msg)
+		msg := fmt.Sprintf("could not parse user from JSON: %s", err.Error())
+		server.logger.Info("tried to create user but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
 		return
@@ -593,7 +674,7 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		msg := fmt.Sprintf("role query failed: %s", err.Error())
+		msg := fmt.Sprintf("user query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
 		server.logger.Error(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
@@ -607,6 +688,190 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["username"]
 	user := User{Name: name}
 	errResponse := user.deleteInDb(server.db)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	username := mux.Vars(r)["username"]
+	requestPolicy := struct {
+		PolicyName string `json:"policy"`
+	}{}
+	err := json.Unmarshal(body, &requestPolicy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	username := mux.Vars(r)["username"]
+	policyName := mux.Vars(r)["policyName"]
+	errResponse := revokeUserPolicy(server.db, username, policyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupList(w http.ResponseWriter, r *http.Request) {
+	groupsFromQuery, err := listGroupsFromDb(server.db)
+	if err != nil {
+		msg := fmt.Sprintf("groups query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	groups := []Group{}
+	for _, groupFromQuery := range groupsFromQuery {
+		groups = append(groups, groupFromQuery.standardize())
+	}
+	result := struct {
+		Groups []Group `json:"groups"`
+	}{
+		Groups: groups,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	group := &Group{}
+	err := json.Unmarshal(body, group)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse group from JSON: %s", err.Error())
+		server.logger.Info("tried to create group but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := group.createInDb(server.db)
+	if errResponse != nil {
+		if errResponse.Error.Code >= 500 {
+			server.logger.Error(errResponse.Error.Message)
+		} else {
+			server.logger.Info(errResponse.Error.Message)
+		}
+		_ = errResponse.write(w, r)
+		return
+	}
+	created := struct {
+		Created *Group `json:"created"`
+	}{
+		Created: group,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
+}
+
+func (server *Server) handleGroupRead(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["groupName"]
+	groupFromQuery, err := groupWithName(server.db, name)
+	if groupFromQuery == nil {
+		msg := fmt.Sprintf("no group found with name: %s", name)
+		errResponse := newErrorResponse(msg, 404, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	if err != nil {
+		msg := fmt.Sprintf("group query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	group := groupFromQuery.standardize()
+	_ = jsonResponseFrom(group, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) {
+	groupName := mux.Vars(r)["groupName"]
+	group := Group{Name: groupName}
+	errResponse := group.deleteInDb(server.db)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request, body []byte) {
+	groupName := mux.Vars(r)["groupName"]
+	requestUser := struct {
+		Username string `json:"username"`
+	}{}
+	err := json.Unmarshal(body, &requestUser)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse username in JSON: %s", err.Error())
+		server.logger.Info("tried to add user to group but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := addUserToGroup(server.db, requestUser.Username, groupName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Request) {
+	groupName := mux.Vars(r)["groupName"]
+	username := mux.Vars(r)["username"]
+	errResponse := removeUserFromGroup(server.db, username, groupName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	groupName := mux.Vars(r)["groupName"]
+	requestPolicy := struct {
+		PolicyName string `json:"policy"`
+	}{}
+	err := json.Unmarshal(body, &requestPolicy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to group %s but input was invalid: %s", groupName, msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleGroupRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	groupName := mux.Vars(r)["groupName"]
+	policyName := mux.Vars(r)["policyName"]
+	errResponse := revokeGroupPolicy(server.db, groupName, policyName)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)

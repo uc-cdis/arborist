@@ -123,9 +123,14 @@ func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 			parent.name,
 			parent.path,
 			parent.description,
-			array_remove(array_agg(DISTINCT child.path), NULL) AS subresources
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
 		FROM resource AS parent
-		LEFT JOIN resource AS child ON child.path ~ (CAST ((ltree2text(parent.path) || '.*{1}') AS lquery))
 		WHERE parent.path = text2ltree(CAST ($1 AS TEXT))
 		GROUP BY parent.id
 		LIMIT 1
@@ -148,9 +153,14 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 			parent.name,
 			parent.path,
 			parent.description,
-			array_remove(array_agg(DISTINCT child.path), NULL) AS subresources
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
 		FROM resource AS parent
-		LEFT JOIN resource AS child ON child.path ~ (CAST ((ltree2text(parent.path) || '.*{1}') AS lquery))
 		WHERE parent.name != 'root'
 		GROUP BY parent.id
 	`

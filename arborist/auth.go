@@ -2,6 +2,10 @@ package arborist
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 )
 
@@ -84,9 +88,9 @@ type AuthRequest struct {
 	Username string
 	Policies []string
 	Resource string
-	Service string
-	Method string
-	stmts *CachedStmts
+	Service  string
+	Method   string
+	stmts    *CachedStmts
 }
 
 type AuthResponse struct {
@@ -133,12 +137,12 @@ SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
 	)
 ) _, unnest($6::text[]);
 `,
-		request.Username,  // $1
-		request.Service,  // $2
-		request.Method,  // $3
-		len(request.Policies) == 0,  // $4
-		pq.Array(request.Policies),  // $5
-		pq.Array(resources),  // $6
+		request.Username,           // $1
+		request.Service,            // $2
+		request.Method,             // $3
+		len(request.Policies) == 0, // $4
+		pq.Array(request.Policies), // $5
+		pq.Array(resources),        // $6
 	)
 	if err != nil {
 		return nil, err
@@ -154,7 +158,7 @@ SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
 			return nil, err
 		}
 		vars[args[i]] = result
-		i ++
+		i++
 	}
 
 	// evaluate the result
@@ -163,4 +167,72 @@ SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
 		return nil, err
 	}
 	return &AuthResponse{rv}, nil
+}
+
+func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, error) {
+	// if policies are specified in the request, we can use those (simplest query).
+	if request.Policies != nil && len(request.Policies) > 0 {
+		values := ""
+		for _, policy := range request.Policies {
+			values += fmt.Sprintf("('%s'), ", policy)
+		}
+		values = strings.TrimRight(values, ", ")
+		selectPolicyWhereName := fmt.Sprintf(
+			"SELECT id FROM policy INNER JOIN (VALUES %s) values(v) ON name = v",
+			values,
+		)
+		stmt := fmt.Sprintf(
+			`
+			SELECT
+				resource.id,
+				resource.name,
+				resource.description,
+				resource.path,
+				array(
+					SELECT child.path
+					FROM resource AS child
+					WHERE child.path ~ (
+						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+					)
+				) AS subresources
+			FROM resource
+			LEFT JOIN policy_resource ON resource.id = policy_resource.resource_id
+			LEFT JOIN usr_policy ON usr_policy.policy_id = policy_resource.policy_id
+			WHERE (policy_resource.policy_id IN (%s))
+			`,
+			selectPolicyWhereName,
+		)
+		resources := []ResourceFromQuery{}
+		err := db.Select(&resources, stmt)
+		if err != nil {
+			return nil, err
+		}
+		return resources, nil
+	}
+	// no policies specified, use username.
+	stmt := `
+		SELECT
+			resource.id,
+			resource.name,
+			resource.description,
+			resource.path,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM usr
+		LEFT JOIN usr_policy ON usr.id = usr_policy.usr_id
+		LEFT JOIN policy_resource ON policy_resource.policy_id = usr_policy.policy_id
+		LEFT JOIN resource ON resource.id = policy_resource.resource_id
+		WHERE usr.name = $1
+	`
+	resources := []ResourceFromQuery{}
+	err := db.Select(&resources, stmt, request.Username)
+	if err != nil {
+		return nil, err
+	}
+	return resources, nil
 }
