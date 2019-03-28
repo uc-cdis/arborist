@@ -25,21 +25,22 @@ func main() {
 		jwkEndpointEnv,
 		"endpoint from which the application can fetch a JWKS",
 	)
-	var dbUrl *string = flag.String(
-		"db",
-		"",
-		"URL to connect to database: `postgresql://user:password@netloc:port/dbname`",
-	)
+	var dbUrl string
+	dbUrlFlag := flag.Flag{
+		Name: "db",
+		Usage: "URL to connect to database; can also be specified through the postgres\n" +
+			"environment variables. If using the commandline argument, add\n" +
+			"`?sslmode=disable`",
+		DefValue: "",
+	}
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
 		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
-	if *dbUrl == "" {
-		panic("no database URL provided")
-	}
+	// if database URL is not provided it can use environment variables
 
-	db, err := sqlx.Open("postgres", *dbUrl)
+	db, err := sqlx.Open("postgres", dbUrl)
 	if err != nil {
 		panic(err)
 	}

@@ -85,21 +85,19 @@ paths:
         401:
           description: >-
             Token failed to validate (authentication error)
-  /engine/:
+  /health:
     get:
       tags:
-        - engine
+        - health
       description: >-
-        Return the entire model which arborist has in memory, serialized into
-        JSON.
+        Check that the arborist instance is healthy and the database is
+        available.
       responses:
         200:
-          description: arborist engine
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Engine'
-  /resource/:
+          description: Healthy
+        500:
+          description: Unhealthy (database ping failed)
+  /resource:
     get:
       tags:
         - resource
@@ -224,7 +222,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
-  /role/:
+  /role:
     get:
       tags:
         - role
@@ -368,7 +366,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
-  /policy/:
+  /policy:
     get:
       tags:
         - policy
@@ -520,6 +518,223 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
+  /user:
+    get:
+      tags:
+        - user
+      description: >-
+        List all the users registered in arborist.
+      responses:
+        200:
+          description: list of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersList'
+    post:
+      tags:
+        - user
+      description: >-
+        Create a new user
+      responses:
+        201:
+          description: created user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/User'
+  /user/{username}:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    get:
+      tags:
+        - user
+      description: >-
+        Read the information for a specific user.
+      responses:
+        200:
+          description: user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        404:
+          description: user not found
+    delete:
+      tags:
+        - user
+      description: >-
+        Delete this user from the database.
+      responses:
+        204:
+          description: user successfully deleted
+        404:
+          description: user not found
+  /user/{username}/policy:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    post:
+      tags:
+        - user
+      description: >-
+        Grant an additional policy to a user. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: user not found, or policy not found
+  /user/{username}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - user
+      description: >-
+        Revoke this policy from this user, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: user not found
+  /group:
+    get:
+      tags:
+        - group
+      description: >-
+        List all the groups registered in arborist.
+      responses:
+        200:
+          description: list of groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  example: 'group'
+    post:
+      tags:
+        - group
+      description: >-
+        Create a new group
+      responses:
+        201:
+          description: created group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Group'
+  /group/{groupName}:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+    get:
+      tags:
+        - group
+      description: >-
+        Read the information for a specific group.
+      responses:
+        200:
+          description: group information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        404:
+          description: group not found
+    delete:
+      tags:
+        - group
+      description: >-
+        Delete this group from the database.
+      responses:
+        204:
+          description: group successfully deleted
+        404:
+          description: group not found
+  /group/{groupName}/policy:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+    post:
+      tags:
+        - group
+      description: >-
+        Grant an additional policy to a group. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: group not found, or policy not found
+  /group/{groupName}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - group
+      description: >-
+        Revoke this policy from this group, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: group not found
 components:
   schemas:
     AuthRequestBody:
@@ -714,24 +929,46 @@ components:
           items:
             type: string
           example: ["/programs/DEV/projects/test"]
-    Engine:
+    User:
       type: object
       properties:
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Permission'
-        roles:
-          type: array
-          items:
-            $ref: '#/components/schemas/Role'
-        resources:
-          type: array
-          items:
-            $ref: '#/components/schemas/Resource'
-        timestamp:
+        name:
           type: string
-          description: >-
-            the timestamp in ISO 8601 format for when this information was
-            generated
-          example: '2019-01-23T19:01:28Z'
+          example: 'username'
+        email:
+          type: string
+          example: 'user@example.net'
+        groups:
+          type: array
+          items:
+            type: string
+            example: 'group'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'
+    UsersList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: string
+            example: 'username'
+    Group:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 'example_group'
+        users:
+          type: array
+          items:
+            type: string
+            example: 'username'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'
