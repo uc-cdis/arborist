@@ -128,8 +128,11 @@ func TestServer(t *testing.T) {
 	jwtApp := &mockJWTApp{}
 
 	dbUrl := os.Getenv("ARBORIST_TEST_DB")
+	// if dbUrl is empty, should default to postgres environment
 	if dbUrl == "" {
-		dbUrl = "postgres://postgres@localhost:5432/arborist_test?sslmode=disable"
+		fmt.Print("using postgres environment variables for test database\n")
+	} else {
+		fmt.Printf("using %s for test database\n", dbUrl)
 	}
 	db, err := sqlx.Open("postgres", dbUrl)
 	if err != nil {

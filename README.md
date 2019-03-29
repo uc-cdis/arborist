@@ -33,10 +33,12 @@ You will need these:
 ```bash
 go get -u github.com/uc-cdis/arborist
 make
-psql
 export PGDATABASE=arborist_test PGUSER=username PGHOST=localhost PGPORT=5432 PGSSLMODE=disable
 # export any other PG variables as necessary
+createdb
 ./migrations/latest
+# example command to run the server (see also `--help`):
+./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/well-known/.jwks
 ```
 
 ### Building From GitHub

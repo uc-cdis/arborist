@@ -9,8 +9,6 @@ info:
 tags:
   - name: auth
     description: make requests to determine authorization
-  - name: engine
-    description: render the global state for everything currently stored in arborist
   - name: resource
     description: manage resources registered in the engine
   - name: role

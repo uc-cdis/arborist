@@ -12,9 +12,16 @@ sudo: false
 addons:
   postgresql: "9.5"
 
+env:
+  global:
+    - PGHOST=localhost
+    - PGPORT=5432
+    - PGUSER=postgres
+    - PGDATABASE=arborist_test
+
 install:
-  - psql -U postgres -c "CREATE DATABASE arborist_test"
-  - PGHOST=localhost PGPORT=5432 PGDATABASE=arborist_test PGUSER=postgres ./migrations/latest
+  - createdb
+  - ./migrations/latest
 
 script:
   - go test -v ./...
