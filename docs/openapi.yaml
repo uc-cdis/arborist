@@ -10,9 +10,9 @@ tags:
   - name: auth
     description: make requests to determine authorization
   - name: resource
-    description: manage resources registered in the engine
+    description: manage resources in the arborist database
   - name: role
-    description: manage roles registered in the engine
+    description: manage roles in the arborist database
   - name: policy
     description: manage policies to grant authorization
 paths:
@@ -125,10 +125,9 @@ paths:
         schema:
           type: string
         description: >-
-          The full path for a resource registered in the engine, which includes
-          slashes. For example, if a resource was created which has the path
-          `/a/b/c`, then the endpoint `/resource/a/b/c` can now be used to access
-          this resource.
+          The full path for a resource, which includes slashes. For example, if
+          a resource was created which has the path `/a/b/c`, then the endpoint
+          `/resource/a/b/c` can now be used to access this resource.
     get:
       tags:
         - resource
