@@ -28,16 +28,17 @@ func main() {
 	var dbUrl *string = flag.String(
 		"db",
 		"",
-		"URL to connect to database: `postgresql://user:password@netloc:port/dbname`",
+		"URL to connect to database: postgresql://user:password@netloc:port/dbname\n"+
+			"can also be specified through the postgres\n"+
+			"environment variables. If using the commandline argument, add\n"+
+			"?sslmode=disable",
 	)
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
 		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
-	if *dbUrl == "" {
-		panic("no database URL provided")
-	}
+	// if database URL is not provided it can use environment variables
 
 	db, err := sqlx.Open("postgres", *dbUrl)
 	if err != nil {

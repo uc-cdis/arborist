@@ -21,6 +21,58 @@ microservices needing to check user authorization to operate on a resource can
 statelessly verify the user's authorization, making a request to arborist with
 the user's JWT and receiving a response for the authorization decision.
 
+## Setup
+
+### Quickstart
+
+You will need these:
+
+- [Go](https://golang.org/dl/)
+- [PostgreSQL](https://www.postgresql.org/download/)
+
+```bash
+go get -u github.com/uc-cdis/arborist
+make
+export PGDATABASE=arborist_test PGUSER=username PGHOST=localhost PGPORT=5432 PGSSLMODE=disable
+# export any other PG variables as necessary
+createdb
+./migrations/latest
+# example command to run the server (see also `--help`):
+./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/well-known/.jwks
+```
+
+### Building From GitHub
+
+Clone/Build/Install all-in-one command:
+
+```bash
+go get -u github.com/uc-cdis/arborist
+```
+
+The cloned source code can be found under `$GOPATH`, usually `~/go/` if not set.
+In the source folder, you can run `go install` to rebuild the project. The
+executable can be found under `$GOPATH/bin/`, which you may want to add to your
+`$PATH` if not done yet.
+
+### Building From Source
+
+If you have already checked out the repository locally, you can build the
+executable from there directly, which will include any local changes during
+development.
+
+Running `make` will build the code:
+```bash
+make
+```
+
+Be aware that the source code must have been
+[cloned correctly](https://github.com/golang/go/wiki/GitHubCodeLayout) into
+`$GOPATH`, see also the previous section. `go build` will not work correctly if
+you cloned the repository outside of the location that `go` expects. One option
+to work around this, if you prefer to work with the code elsewhere in the
+filesystem, is to create a symlink from the desired location to wherever the
+repository lives under `$GOPATH`.
+
 ## Overview, Terminology, and Definitions
 
 We will start from the lowest-level definitions, and work upwards.
@@ -46,34 +98,7 @@ We will start from the lowest-level definitions, and work upwards.
   for example, an entire project in a data commons, like
   `/projects/project-abc`.
 
-## Setup
-
-### Building From Source
-
-Build the go code with:
-```bash
-go get golang.org/x/tools/cmd/goyacc
-make
-```
-
-### Building and Running a Docker Image
-
-Build the docker image for arborist:
-```bash
-# Run from root directory
-docker build -t arborist .
-```
-
-Run the docker image:
-```bash
-docker run -p 8080:8080 arborist --port 8080
-```
-(This command exposes arborist on port 8080 in the docker image, and maps port
-8080 from the docker image onto 8080 on the host machine.)
-
 ## Development
-
-For more details for developers, see `DEVELOP.md`.
 
 ### Tests
 
