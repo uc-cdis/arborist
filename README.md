@@ -31,12 +31,29 @@ You will need these:
 - [PostgreSQL](https://www.postgresql.org/download/)
 
 ```bash
+# clone it
 go get -u github.com/uc-cdis/arborist
+
+# cd into wherever arborist is cloned (this is the default)
+cd ~/go/src/github.com/uc-cdis/arborist
+
+# build the code
 make
-export PGDATABASE=arborist_test PGUSER=username PGHOST=localhost PGPORT=5432 PGSSLMODE=disable
-# export any other PG variables as necessary
+
+# set up database; use whatever values for database name etc. you like
+export \
+    PGDATABASE=arborist_test \
+    PGUSER=username \
+    PGPASSWORD=password \
+    PGHOST=localhost \
+    PGPORT=5432 \
+    PGSSLMODE=disable
+# export any other PG variables as necessary. `PGSSLMODE=disable` is required, though.
+# create the database for the first time
 createdb
+# bring the database schema up to the latest version
 ./migrations/latest
+
 # example command to run the server (see also `--help`):
 ./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/well-known/.jwks
 ```
