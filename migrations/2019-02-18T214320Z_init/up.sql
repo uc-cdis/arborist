@@ -106,6 +106,8 @@ CREATE TABLE permission (
     PRIMARY KEY(role_id, name)
 );
 
+CREATE INDEX permission_idx ON permission USING btree(role_id, service, method);
+
 CREATE TABLE policy (
     id serial PRIMARY KEY,
     name text UNIQUE NOT NULL,

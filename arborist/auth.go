@@ -117,24 +117,32 @@ func authorize(request *AuthRequest) (*AuthResponse, error) {
 	// run authorization query
 	rows, err := request.stmts.Query(
 		`
-SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
-	SELECT array_agg(resource.path) AS allowed FROM usr
-	LEFT JOIN usr_policy ON usr_policy.usr_id = usr.id
-	LEFT JOIN policy_resource ON policy_resource.policy_id = usr_policy.policy_id
-	LEFT JOIN resource ON resource.id = policy_resource.resource_id
-	WHERE usr.name = $1
-	AND EXISTS (
-		SELECT 1 FROM policy_role
-		LEFT JOIN permission ON permission.role_id = policy_role.role_id
-		WHERE policy_role.policy_id = usr_policy.policy_id
-		AND permission.service = $2
-		AND permission.method = $3
-	) AND (
-		$4 OR usr_policy.policy_id IN (
-			SELECT id FROM policy
-			WHERE policy.name = ANY($5)
+SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
+	SELECT (
+		SELECT array_agg(resource.path) AS allowed FROM (
+				SELECT policy_id FROM usr_policy
+				WHERE usr_id = usr.id
+			UNION
+				SELECT policy_id FROM usr_grp
+				JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+				WHERE usr_id = usr.id
+		) AS policies
+		JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		JOIN resource ON resource.id = policy_resource.resource_id
+		WHERE EXISTS (
+			SELECT 1 FROM policy_role
+			JOIN permission ON permission.role_id = policy_role.role_id
+			WHERE policy_role.policy_id = policies.policy_id
+			AND permission.service = $2
+			AND permission.method = $3
+		) AND (
+			$4 OR policies.policy_id IN (
+				SELECT id FROM policy
+				WHERE policy.name = ANY($5)
+			)
 		)
-	)
+	) FROM usr
+	WHERE usr.name = $1
 ) _, unnest($6::text[]);
 `,
 		request.Username,           // $1
@@ -159,6 +167,10 @@ SELECT coalesce(text2ltree("unnest") @> allowed, FALSE) FROM (
 		}
 		vars[args[i]] = result
 		i++
+	}
+	if i != len(args) {
+		// user not found (i = 0)
+		return &AuthResponse{false}, nil
 	}
 
 	// evaluate the result
