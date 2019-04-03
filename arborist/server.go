@@ -111,6 +111,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(parseJSON(server.handleUserGrantPolicy))).Methods("POST")
+	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 
 	router.Handle("/group", http.HandlerFunc(server.handleGroupList)).Methods("GET")
@@ -710,6 +711,17 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
+	username := mux.Vars(r)["username"]
+	errResponse := revokeUserPolicyAll(server.db, username)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
