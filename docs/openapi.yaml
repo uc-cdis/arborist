@@ -598,6 +598,14 @@ paths:
           description: successfully granted additional policy
         404:
           description: user not found, or policy not found
+    delete:
+      tags:
+        - user
+      description: >-
+        Revoke all policies for this user.
+      responses:
+        204:
+          description: successfully revoked policies
   /user/{username}/policy/{policyName}:
     parameters:
       - in: path
