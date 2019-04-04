@@ -169,13 +169,26 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorResp
 	return nil
 }
 
-func revokeUserPolicy(db *sqlx.DB, username, policyName string) *ErrorResponse {
+func revokeUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 		AND policy_id = (SELECT id FROM policy WHERE name = $2)
 	`
 	_, err := db.Exec(stmt, username, policyName)
+	if err != nil {
+		msg := "revoke policy query failed"
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
+}
+
+func revokeUserPolicyAll(db *sqlx.DB, username string) *ErrorResponse {
+	stmt := `
+		DELETE FROM usr_policy
+		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
+	`
+	_, err := db.Exec(stmt, username)
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)
