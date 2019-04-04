@@ -418,7 +418,7 @@ paths:
         description: The ID for a policy registered in arborist.
     get:
       tags:
-        - role
+        - policy
       description: >-
         Output the information for a specific policy.
       responses:

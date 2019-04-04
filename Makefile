@@ -3,7 +3,7 @@ GOYACC ?= goyacc
 _default: bin/arborist
 
 test: bin/arborist db-test
-	go test -v ./.../
+	go test -v ./arborist/
 
 bin/arborist: arborist/*.go
 	go build -o bin/arborist
