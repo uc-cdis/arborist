@@ -24,4 +24,4 @@ install:
   - ./migrations/latest
 
 script:
-  - go test -v ./...
+  - go test -v ./arborist/
