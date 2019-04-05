@@ -189,7 +189,10 @@ func TestServer(t *testing.T) {
 	// httpError is a utility function which writes some useful output after an error.
 	httpError := func(t *testing.T, w *httptest.ResponseRecorder, msg string) {
 		t.Errorf("%s; got status %d, response: %s", msg, w.Code, w.Body.String())
+		fmt.Println("test errored, dumping logs")
+		fmt.Println("logs start")
 		_, err = logBuffer.WriteTo(os.Stdout)
+		fmt.Println("logs end")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,7 +208,7 @@ func TestServer(t *testing.T) {
 		return req
 	}
 
-	createUser := func(t *testing.T, body []byte) {
+	createUserBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/user", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -223,7 +226,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createResource := func(t *testing.T, body []byte) {
+	createResourceBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -241,7 +244,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createRole := func(t *testing.T, body []byte) {
+	createRoleBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/role", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -250,7 +253,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createPolicy := func(t *testing.T, body []byte) {
+	createPolicyBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/policy", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -667,9 +670,9 @@ func TestServer(t *testing.T) {
 		})
 
 		// do some preliminary setup so we have a policy to work with
-		createResource(t, resourceBody)
-		createRole(t, roleBody)
-		createPolicy(t, policyBody)
+		createResourceBytes(t, resourceBody)
+		createRoleBytes(t, roleBody)
+		createPolicyBytes(t, policyBody)
 
 		t.Run("GrantPolicy", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -871,7 +874,7 @@ func TestServer(t *testing.T) {
 
 		t.Run("AddUsers", func(t *testing.T) {
 			for _, testUsername := range testGroupUsers {
-				createUser(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
+				createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
 				w := httptest.NewRecorder()
 				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testUsername))
@@ -1027,7 +1030,114 @@ func TestServer(t *testing.T) {
 	t.Run("Auth", func(t *testing.T) {
 		tearDown := testSetup(t)
 
+		t.Run("Request", func(t *testing.T) {
+			createResourceBytes(t, []byte(`{"path": "/example"}`))
+			createResourceBytes(t, []byte(`{"path": "/example/a"}`))
+			createResourceBytes(t, []byte(`{"path": "/example/b"}`))
+			createRoleBytes(
+				t,
+				[]byte(`{
+					"id": "foo",
+					"permissions": [
+						{"id": "test", "action": {"service": "test", "method": "foo"}}
+					]
+				}`),
+			)
+			createRoleBytes(
+				t,
+				[]byte(`{
+					"id": "bar",
+					"permissions": [
+						{"id": "test", "action": {"service": "test", "method": "bar"}}
+					]
+				}`),
+			)
+			createPolicyBytes(
+				t,
+				[]byte(`{
+					"id": "example-policy-foo",
+					"resource_paths": ["/example/a"],
+					"role_ids": ["foo"]
+				}`),
+			)
+			createPolicyBytes(
+				t,
+				[]byte(`{
+					"id": "example-policy-bar",
+					"resource_paths": ["/example/b"],
+					"role_ids": ["bar"]
+				}`),
+			)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, "example-policy-foo")
+
+			w := httptest.NewRecorder()
+			token := TestJWT{username: username}
+			body := []byte(fmt.Sprintf(
+				`{
+					"user": {"token": "%s"},
+					"request": {
+						"resource": "/example/a",
+						"action": {
+							"service": "test",
+							"method": "foo"
+						}
+					}
+				}`,
+				token.Encode(),
+			))
+			req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "auth request failed")
+			}
+			// request should succeed, user has authorization
+			result := struct {
+				Auth bool `json:"auth"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from auth request")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, true, result.Auth, msg)
+
+			// test for authorization rejected
+			w = httptest.NewRecorder()
+			token = TestJWT{username: username}
+			body = []byte(fmt.Sprintf(
+				`{
+					"user": {"token": "%s"},
+					"request": {
+						"resource": "/example/b",
+						"action": {
+							"service": "test",
+							"method": "foo"
+						}
+					}
+				}`,
+				token.Encode(),
+			))
+			req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "auth request failed")
+			}
+			// request should fail
+			result = struct {
+				Auth bool `json:"auth"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from auth request")
+			}
+			msg = fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, false, result.Auth, msg)
+		})
+
 		t.Run("Resources", func(t *testing.T) {
+			deleteEverything()
+
 			t.Run("Empty", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				token := TestJWT{username: username}
@@ -1050,10 +1160,10 @@ func TestServer(t *testing.T) {
 			})
 
 			t.Run("Granted", func(t *testing.T) {
-				createResource(t, resourceBody)
-				createRole(t, roleBody)
-				createPolicy(t, policyBody)
-				createUser(t, userBody)
+				createResourceBytes(t, resourceBody)
+				createRoleBytes(t, roleBody)
+				createPolicyBytes(t, policyBody)
+				createUserBytes(t, userBody)
 				grantUserPolicy(t, username, policyName)
 
 				w := httptest.NewRecorder()
@@ -1079,4 +1189,6 @@ func TestServer(t *testing.T) {
 
 		tearDown(t)
 	})
+
+	deleteEverything()
 }
