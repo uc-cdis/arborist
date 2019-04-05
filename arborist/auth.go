@@ -105,6 +105,9 @@ func authorize(request *AuthRequest) (*AuthResponse, error) {
 	// parse the resource string
 	exp, args, err := Parse(request.Resource)
 	if err != nil {
+		// TODO (rudyardrichter, 2019-04-05): this can return some pretty
+		// unintelligible errors from the yacc code. so far callers are OK to
+		// validate inputs, but could do better to return more readable errors
 		return nil, err
 	}
 
