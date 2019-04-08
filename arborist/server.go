@@ -80,7 +80,7 @@ func parseResourcePath(r *http.Request) string {
 }
 
 func (server *Server) MakeRouter(out io.Writer) http.Handler {
-	router := mux.NewRouter().StrictSlash(false)
+	router := mux.NewRouter().StrictSlash(true)
 
 	//router.Handle("/", server.handleRoot).Methods("GET")
 
@@ -123,6 +123,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/group/{groupName}/policy", http.HandlerFunc(parseJSON(server.handleGroupGrantPolicy))).Methods("POST")
 	router.Handle("/group/{groupName}/policy/{policyName}", http.HandlerFunc(server.handleGroupRevokePolicy)).Methods("DELETE")
 
+	router.NotFoundHandler = http.HandlerFunc(handleNotFound)
+
 	return handlers.CombinedLoggingHandler(out, router)
 }
 
@@ -153,6 +155,24 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func handleNotFound(w http.ResponseWriter, r *http.Request) {
+	response := struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		} `json:"error"`
+	}{
+		Error: struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		}{
+			Message: "not found",
+			Code:    404,
+		},
+	}
+	_ = jsonResponseFrom(response, 404).write(w, r)
 }
 
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
