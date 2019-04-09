@@ -379,6 +379,45 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("CreateWithSubresources", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"name": "x",
+				"subresources": [
+					{
+						"name": "y",
+						"subresources": [{"name": "z"}]
+					}
+				]
+			}`)
+			// try to create under the resource created with the previous test
+			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			expected := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &expected)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			// now check that the child resources exist
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
+			}
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y/z", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
+			}
+		})
+
 		t.Run("ListSubresources", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/resource/a", nil)
