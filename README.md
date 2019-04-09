@@ -58,6 +58,14 @@ createdb
 ./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/well-known/.jwks
 ```
 
+There is also the `Dockerfile` in the root directory which is used to build a
+Docker image for the server. In short, run this command from the root directory
+to build an image:
+```
+docker build -t arborist .
+```
+See also Docker documentation for more details on how to use Docker.
+
 ### Building From GitHub
 
 Clone/Build/Install all-in-one command:
