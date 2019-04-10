@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +56,7 @@ func (jwtApp *mockJWTApp) Decode(token string) (*map[string]interface{}, error) 
 type TestJWT struct {
 	username string
 	policies []string
+	exp      int64
 }
 
 // Encode takes the information in the TestJWT and creates a string of an
@@ -74,6 +76,10 @@ func (testJWT *TestJWT) Encode() string {
 	if err != nil {
 		panic(err)
 	}
+	exp := testJWT.exp
+	if exp == 0 {
+		exp = time.Now().Unix() + 10000
+	}
 	var payload []byte
 	if testJWT.policies == nil || len(testJWT.policies) == 0 {
 		payload = []byte(fmt.Sprintf(
@@ -87,7 +93,7 @@ func (testJWT *TestJWT) Encode() string {
 					}
 				}
 			}`,
-			time.Now().Unix()+10000,
+			exp,
 			testJWT.username,
 		))
 	} else {
@@ -155,6 +161,7 @@ func TestServer(t *testing.T) {
 	serviceName := "zxcv"
 	roleName := "hjkl"
 	permissionName := "qwer"
+	methodName := permissionName
 	policyName := "asdf"
 	roleBody := []byte(fmt.Sprintf(
 		`{
@@ -166,7 +173,7 @@ func TestServer(t *testing.T) {
 		roleName,
 		permissionName,
 		serviceName,
-		permissionName,
+		methodName,
 	))
 	policyBody := []byte(fmt.Sprintf(
 		`{
@@ -1135,9 +1142,9 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, false, result.Auth, msg)
 		})
 
-		t.Run("Resources", func(t *testing.T) {
-			deleteEverything()
+		deleteEverything()
 
+		t.Run("Resources", func(t *testing.T) {
 			t.Run("Empty", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				token := TestJWT{username: username}
@@ -1184,6 +1191,116 @@ func TestServer(t *testing.T) {
 				}
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+			})
+		})
+
+		deleteEverything()
+
+		t.Run("Proxy", func(t *testing.T) {
+			createResourceBytes(t, resourceBody)
+			createRoleBytes(t, roleBody)
+			createPolicyBytes(t, policyBody)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, policyName)
+			token := TestJWT{username: username}
+
+			t.Run("Authorized", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+					url.QueryEscape(permissionName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth proxy request failed")
+				}
+			})
+
+			t.Run("Unauthorized", func(t *testing.T) {
+				t.Run("BadHeader", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", "Bearer garbage")
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusUnauthorized {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("TokenExpired", func(t *testing.T) {
+					token := TestJWT{username: username, exp: 1}
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusUnauthorized {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("ResourceNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape("/not/authorized"),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("WrongMethod", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape("bogus_method"),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("WrongService", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape("bogus_service"),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
 			})
 		})
 
