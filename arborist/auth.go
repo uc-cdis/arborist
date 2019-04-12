@@ -22,7 +22,7 @@ type AuthRequestJSON_User struct {
 	Audiences []string `json:"aud,omitempty"`
 }
 
-func (requestJSON *AuthRequestJSON_User) Unmarshal(data []byte) error {
+func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
 	if err != nil {
@@ -59,7 +59,7 @@ type AuthRequestJSON_Request struct {
 // UnmarshalJSON defines the deserialization from JSON into an AuthRequestJSON
 // struct, which includes validating that required fields are present.
 // (Required fields are anything not in the `optionalFields` variable.)
-func (requestJSON *AuthRequestJSON_Request) Unmarshal(data []byte) error {
+func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
 	if err != nil {
