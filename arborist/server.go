@@ -209,7 +209,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	if authHeader == "" {
 		msg := "auth proxy request missing auth header"
 		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse := newErrorResponse(msg, 401, nil)
 		_ = errResponse.write(w, r)
 		return
 	}
