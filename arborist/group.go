@@ -33,12 +33,12 @@ func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
 		SELECT
 			grp.name,
 			array_remove(array_agg(usr.name), NULL) AS users,
-			array_remove(array_agg(policy.name), NULL) AS policies
+			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM grp
-		LEFT JOIN usr_grp ON usr_grp.grp_id = grp.id
-		LEFT JOIN usr ON usr.id = usr_grp.usr_id
 		LEFT JOIN grp_policy ON grp_policy.grp_id = grp.id
 		LEFT JOIN policy ON policy.id = grp_policy.policy_id
+		LEFT JOIN usr_grp ON usr_grp.grp_id = grp.id
+		LEFT JOIN usr ON usr.id = usr_grp.usr_id
 		WHERE grp.name = $1
 		GROUP BY grp.id
 		LIMIT 1
@@ -116,8 +116,8 @@ func (group *Group) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	_, err := db.Exec(stmt, group.Name)
 	if err != nil {
 		// TODO: verify correct error
-		msg := fmt.Sprintf("failed to delete group: group does not exist: %s", group.Name)
-		return newErrorResponse(msg, 404, nil)
+		// group does not exist; that's fine
+		return nil
 	}
 	return nil
 }
@@ -155,6 +155,7 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorRe
 		}
 		// at this point, we assume the group already has this policy. this is fine.
 	}
+	fmt.Printf("added policy %s to group %s\n", policyName, groupName)
 	return nil
 }
 

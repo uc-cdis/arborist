@@ -13,6 +13,10 @@ coverage-viz: coverage # help: generate test coverage file and run coverage visu
 
 coverage: test # help: generate test coverage file
 	go test --coverprofile=coverage.out ./arborist/
+	@# Remove auto-generated files from test coverage results
+	@mv coverage.out tmp
+	@grep -v "resource_rules.go" tmp > coverage.out
+	@rm tmp
 
 db-test: $(which psql) # help: set up the database for testing (run automatically by `test`)
 	createdb || true

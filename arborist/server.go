@@ -358,7 +358,7 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	resources := []*Resource{}
+	resources := []Resource{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -452,7 +452,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
 	resourcesFromQuery, err := listResourcesFromDb(server.db)
-	resources := []*Resource{}
+	resources := []Resource{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -463,7 +463,12 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(resources, http.StatusOK).write(w, r)
+	result := struct {
+		Resources []Resource `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -583,7 +588,12 @@ func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
 	for _, roleFromQuery := range rolesFromQuery {
 		roles = append(roles, roleFromQuery.standardize())
 	}
-	_ = jsonResponseFrom(roles, http.StatusOK).write(w, r)
+	result := struct {
+		Roles []Role `json:"roles"`
+	}{
+		Roles: roles,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, body []byte) {

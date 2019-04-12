@@ -350,8 +350,70 @@ func TestServer(t *testing.T) {
 		tearDown(t)
 	})
 
+	t.Run("NotFound", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest("GET", "/bogus/url", nil)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			httpError(t, w, "didn't get 404 for nonexistent URL")
+		}
+		result := struct {
+			Error struct {
+				Message string `json:"message"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from 404 handler")
+		}
+		assert.Equal(t, 404, result.Error.Code, "unexpected response for 404")
+	})
+
 	t.Run("Resource", func(t *testing.T) {
 		tearDown := testSetup(t)
+
+		t.Run("ListEmpty", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list resources")
+			}
+			result := struct {
+				Resources []interface{} `json:"resources"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resources list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, []interface{}{}, result.Resources, msg)
+		})
+
+		t.Run("CreateWithError", func(t *testing.T) {
+			t.Run("MissingPath", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"name": "test", "description": "this resource has no path"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
+
+			t.Run("UnexpectedField", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"path": "/a", "barrnt": "unexpected"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
+		})
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -483,6 +545,24 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, "foo", result.Name, msg)
+		})
+
+		t.Run("List", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/role", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list roles")
+			}
+			result := struct {
+				Roles []interface{} `json:"roles"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from roles list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 1, len(result.Roles), msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {
@@ -857,6 +937,34 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("CreateAlreadyExists", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
+			req := newRequest("POST", "/group", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusConflict {
+				httpError(t, w, "creating group that already exists didn't error as expected")
+			}
+		})
+
+		t.Run("List", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/group", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list groups")
+			}
+			result := struct {
+				Groups []interface{} `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from groups list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 1, len(result.Groups), msg)
+		})
+
 		t.Run("Read", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", fmt.Sprintf("/group/%s", testGroupName), nil)
@@ -944,10 +1052,12 @@ func TestServer(t *testing.T) {
 			assert.NotContains(t, result.Users, userToRemove, msg)
 		})
 
-		t.Run("GrantPolicy", func(t *testing.T) {
-			// TODO: add group policy endpoint, enable test
-			t.SkipNow()
+		// do some preliminary setup so we have a policy to work with
+		createResourceBytes(t, resourceBody)
+		createRoleBytes(t, roleBody)
+		createPolicyBytes(t, policyBody)
 
+		t.Run("GrantPolicy", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/group/%s/policy", testGroupName)
 			req := newRequest(
@@ -959,7 +1069,7 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't grant policy to group")
 			}
-			// look up user again and check that policy is there
+			// look up group again and check that policy is there
 			w = httptest.NewRecorder()
 			url = fmt.Sprintf("/group/%s", testGroupName)
 			req = newRequest("GET", url, nil)
@@ -1028,6 +1138,16 @@ func TestServer(t *testing.T) {
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
 				httpError(t, w, "group was not actually deleted")
+			}
+		})
+
+		t.Run("DeleteNotExist", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s", testGroupName)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "wrong response from deleting group that doesn't exist")
 			}
 		})
 
@@ -1210,7 +1330,7 @@ func TestServer(t *testing.T) {
 					"/auth/proxy?resource=%s&service=%s&method=%s",
 					url.QueryEscape(resourcePath),
 					url.QueryEscape(serviceName),
-					url.QueryEscape(permissionName),
+					url.QueryEscape(methodName),
 				)
 				req := newRequest("GET", authUrl, nil)
 				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
@@ -1301,6 +1421,71 @@ func TestServer(t *testing.T) {
 						httpError(t, w, "auth proxy request succeeded when it should not have")
 					}
 				})
+			})
+
+			t.Run("MissingAuthHeader", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// request is good
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				// but no header added to the request!
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusUnauthorized {
+					httpError(t, w, "auth proxy request without auth header didn't fail as expected")
+				}
+			})
+
+			t.Run("MissingMethod", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit method
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
+			})
+
+			t.Run("MissingService", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit service
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
+			})
+
+			t.Run("MissingResource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit resource
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?&method=%sservice=%s",
+					url.QueryEscape(methodName),
+					url.QueryEscape(serviceName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
 			})
 		})
 

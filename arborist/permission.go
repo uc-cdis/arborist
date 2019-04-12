@@ -2,8 +2,6 @@ package arborist
 
 import (
 	"encoding/json"
-
-	"github.com/jmoiron/sqlx"
 )
 
 type Permission struct {
@@ -52,34 +50,4 @@ func (permission *Permission) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
-}
-
-func permissionWithNameExists(db *sqlx.DB, name string) (bool, error) {
-	stmt := `
-		SELECT COUNT(*)
-		FROM permission
-		WHERE name = $1
-	`
-	var count int
-	err := db.Get(&count, stmt, name)
-	if err != nil {
-		return false, err
-	}
-	exists := count == 1
-	return exists, nil
-}
-
-func permissionsWithNamesExist(db *sqlx.DB, names []string) (bool, error) {
-	stmt := `
-		SELECT COUNT(*)
-		FROM permission
-		WHERE name IN ($1)
-	`
-	var count int
-	err := db.Get(&count, stmt, names)
-	if err != nil {
-		return false, err
-	}
-	exists := count == len(names)
-	return exists, nil
 }
