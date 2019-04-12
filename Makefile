@@ -2,24 +2,40 @@ GOYACC ?= goyacc
 
 _default: bin/arborist
 
-test: bin/arborist db-test
-	go test -v ./arborist/
-
-bin/arborist: arborist/*.go
+bin/arborist: arborist/*.go # help: run the server
 	go build -o bin/arborist
 
-up: upgrade
+test: bin/arborist db-test # help: run the tests
+	go test -v ./arborist/
+
+coverage-viz: coverage # help: generate test coverage file and run coverage visualizer
+	go tool cover --html=coverage.out
+
+coverage: test # help: generate test coverage file
+	go test --coverprofile=coverage.out ./arborist/
+
+db-test: $(which psql) # help: set up the database for testing (run automatically by `test`)
+	createdb || true
+	./migrations/latest
+
+up: upgrade # help: try to migrate the database to the next more recent version
 upgrade:
 	./migrations/up
 
-down: downgrade
+down: downgrade # help: try to revert the database to the previous version
 downgrade:
 	./migrations/down
-
-db-test: $(which psql)
-	createdb || true
-	./migrations/latest
 
 arborist/resource_rules.go: arborist/resource_rules.y
 	which $(GOYACC) || go get golang.org/x/tools/cmd/goyacc
 	$(GOYACC) -o arborist/resource_rules.go arborist/resource_rules.y
+
+help: # help: show this help
+	# You can add a comment following a make target starting with "# help:" to
+	# have `make help` include that comment in its output.
+	@echo "Makefile utilities for arborist. Note that most require you to have already"
+	@echo "exported the necessary postgres variables. See README for details."
+	@echo ""
+	@echo "The default command is bin/arborist."
+	@echo ""
+	@grep -h "^.*:.*help" $(MAKEFILE_LIST) | grep -v grep | sed -e "s/:.*# help:/:/"
