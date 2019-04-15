@@ -34,12 +34,13 @@ arborist/resource_rules.go: arborist/resource_rules.y
 	which $(GOYACC) || go get golang.org/x/tools/cmd/goyacc
 	$(GOYACC) -o arborist/resource_rules.go arborist/resource_rules.y
 
+# You can add a comment following a make target starting with "# help:" to have
+# `make help` include that comment in its output.
 help: # help: show this help
-	# You can add a comment following a make target starting with "# help:" to
-	# have `make help` include that comment in its output.
 	@echo "Makefile utilities for arborist. Note that most require you to have already"
-	@echo "exported the necessary postgres variables. See README for details."
+	@echo "exported the necessary postgres variables: \`PGDATABASE\`, \`PGUSER\`, \`PGHOST\`,"
+	@echo "and \`PGPORT\`. Set \`PGSSLMODE=disable\` if not using SSL. See README for details."
 	@echo ""
 	@echo "The default command is bin/arborist."
 	@echo ""
-	@grep -h "^.*:.*help" $(MAKEFILE_LIST) | grep -v grep | sed -e "s/:.*# help:/:/"
+	@grep -h "^.*:.*# help" $(MAKEFILE_LIST) | grep -v grep | sed -e "s/:.*# help:/:/"
