@@ -155,7 +155,6 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorRe
 		}
 		// at this point, we assume the group already has this policy. this is fine.
 	}
-	fmt.Printf("added policy %s to group %s\n", policyName, groupName)
 	return nil
 }
 

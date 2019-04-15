@@ -378,7 +378,11 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
-	policies, err := listPoliciesFromDb(server.db)
+	policiesFromQuery, err := listPoliciesFromDb(server.db)
+	policies := []Policy{}
+	for _, policyFromQuery := range policiesFromQuery {
+		policies = append(policies, policyFromQuery.standardize())
+	}
 	if err != nil {
 		msg := fmt.Sprintf("policies query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -386,7 +390,12 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(policies, http.StatusOK).write(w, r)
+	result := struct {
+		Policies []Policy `json:"policies"`
+	}{
+		Policies: policies,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -447,7 +456,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(nil, http.StatusCreated).write(w, r)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
