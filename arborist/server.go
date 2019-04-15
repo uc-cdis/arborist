@@ -209,7 +209,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	if authHeader == "" {
 		msg := "auth proxy request missing auth header"
 		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse := newErrorResponse(msg, 401, nil)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -272,6 +272,18 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		server.logger.Info(err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)
 		_ = errResponse.write(w, r)
+		return
+	}
+
+	// check that the request has minimum necessary information
+	if authRequest.Request.Resource == "" {
+		msg := "missing resource in auth request"
+		_ = newErrorResponse(msg, 400, nil).write(w, r)
+		return
+	}
+	if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
+		msg := "missing both username and policies in request (at least one is required)"
+		_ = newErrorResponse(msg, 400, nil).write(w, r)
 		return
 	}
 
@@ -346,7 +358,7 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	resources := []*Resource{}
+	resources := []Resource{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -366,7 +378,11 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
-	policies, err := listPoliciesFromDb(server.db)
+	policiesFromQuery, err := listPoliciesFromDb(server.db)
+	policies := []Policy{}
+	for _, policyFromQuery := range policiesFromQuery {
+		policies = append(policies, policyFromQuery.standardize())
+	}
 	if err != nil {
 		msg := fmt.Sprintf("policies query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -374,7 +390,12 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(policies, http.StatusOK).write(w, r)
+	result := struct {
+		Policies []Policy `json:"policies"`
+	}{
+		Policies: policies,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -435,12 +456,12 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(nil, http.StatusCreated).write(w, r)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
 	resourcesFromQuery, err := listResourcesFromDb(server.db)
-	resources := []*Resource{}
+	resources := []Resource{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -451,7 +472,12 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(resources, http.StatusOK).write(w, r)
+	result := struct {
+		Resources []Resource `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -571,7 +597,12 @@ func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
 	for _, roleFromQuery := range rolesFromQuery {
 		roles = append(roles, roleFromQuery.standardize())
 	}
-	_ = jsonResponseFrom(roles, http.StatusOK).write(w, r)
+	result := struct {
+		Roles []Role `json:"roles"`
+	}{
+		Roles: roles,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, body []byte) {

@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +56,7 @@ func (jwtApp *mockJWTApp) Decode(token string) (*map[string]interface{}, error) 
 type TestJWT struct {
 	username string
 	policies []string
+	exp      int64
 }
 
 // Encode takes the information in the TestJWT and creates a string of an
@@ -74,6 +76,10 @@ func (testJWT *TestJWT) Encode() string {
 	if err != nil {
 		panic(err)
 	}
+	exp := testJWT.exp
+	if exp == 0 {
+		exp = time.Now().Unix() + 10000
+	}
 	var payload []byte
 	if testJWT.policies == nil || len(testJWT.policies) == 0 {
 		payload = []byte(fmt.Sprintf(
@@ -87,7 +93,7 @@ func (testJWT *TestJWT) Encode() string {
 					}
 				}
 			}`,
-			time.Now().Unix()+10000,
+			exp,
 			testJWT.username,
 		))
 	} else {
@@ -155,6 +161,7 @@ func TestServer(t *testing.T) {
 	serviceName := "zxcv"
 	roleName := "hjkl"
 	permissionName := "qwer"
+	methodName := permissionName
 	policyName := "asdf"
 	roleBody := []byte(fmt.Sprintf(
 		`{
@@ -166,7 +173,7 @@ func TestServer(t *testing.T) {
 		roleName,
 		permissionName,
 		serviceName,
-		permissionName,
+		methodName,
 	))
 	policyBody := []byte(fmt.Sprintf(
 		`{
@@ -189,7 +196,10 @@ func TestServer(t *testing.T) {
 	// httpError is a utility function which writes some useful output after an error.
 	httpError := func(t *testing.T, w *httptest.ResponseRecorder, msg string) {
 		t.Errorf("%s; got status %d, response: %s", msg, w.Code, w.Body.String())
+		fmt.Println("test errored, dumping logs")
+		fmt.Println("logs start")
 		_, err = logBuffer.WriteTo(os.Stdout)
+		fmt.Println("logs end")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,7 +215,7 @@ func TestServer(t *testing.T) {
 		return req
 	}
 
-	createUser := func(t *testing.T, body []byte) {
+	createUserBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/user", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -223,7 +233,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createResource := func(t *testing.T, body []byte) {
+	createResourceBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -241,7 +251,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createRole := func(t *testing.T, body []byte) {
+	createRoleBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/role", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -250,7 +260,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	createPolicy := func(t *testing.T, body []byte) {
+	createPolicyBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/policy", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -340,8 +350,70 @@ func TestServer(t *testing.T) {
 		tearDown(t)
 	})
 
+	t.Run("NotFound", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest("GET", "/bogus/url", nil)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			httpError(t, w, "didn't get 404 for nonexistent URL")
+		}
+		result := struct {
+			Error struct {
+				Message string `json:"message"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from 404 handler")
+		}
+		assert.Equal(t, 404, result.Error.Code, "unexpected response for 404")
+	})
+
 	t.Run("Resource", func(t *testing.T) {
 		tearDown := testSetup(t)
+
+		t.Run("ListEmpty", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list resources")
+			}
+			result := struct {
+				Resources []interface{} `json:"resources"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resources list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, []interface{}{}, result.Resources, msg)
+		})
+
+		t.Run("CreateWithError", func(t *testing.T) {
+			t.Run("MissingPath", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"name": "test", "description": "this resource has no path"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
+
+			t.Run("UnexpectedField", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"path": "/a", "barrnt": "unexpected"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
+		})
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -455,6 +527,21 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from role creation")
 			}
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"id": "foo",
+					"permissions": [
+						{"id": "foo", "action": {"service": "test", "method": "foo"}}
+					]
+				}`)
+				req := newRequest("POST", "/role", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "expected conflict error from trying to create role again")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
@@ -473,6 +560,24 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, "foo", result.Name, msg)
+		})
+
+		t.Run("List", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/role", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list roles")
+			}
+			result := struct {
+				Roles []interface{} `json:"roles"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from roles list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 1, len(result.Roles), msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {
@@ -499,9 +604,13 @@ func TestServer(t *testing.T) {
 	t.Run("Policy", func(t *testing.T) {
 		tearDown := testSetup(t)
 
+		roleName := "bazgo-create"
+		policyName := "bazgo-create-b"
+
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			// set up some resources to work with
+			// TODO: make more of this setup into "fixtures", not hard-coded
 			body := []byte(`{"path": "/a"}`)
 			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
@@ -524,15 +633,18 @@ func TestServer(t *testing.T) {
 			}
 			// set up roles
 			w = httptest.NewRecorder()
-			body = []byte(`{
-				"id": "bazgo-create",
-				"permissions": [
-					{
-						"id": "foo",
-						"action": {"service": "bazgo", "method": "create"}
-					}
-				]
-			}`)
+			body = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"permissions": [
+						{
+							"id": "foo",
+							"action": {"service": "bazgo", "method": "create"}
+						}
+					]
+				}`,
+				roleName,
+			))
 			req = newRequest("POST", "/role", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
@@ -540,11 +652,15 @@ func TestServer(t *testing.T) {
 			}
 			// create the policy
 			w = httptest.NewRecorder()
-			body = []byte(`{
-				"id": "bazgo-create-b",
-				"resource_paths": ["/a/b"],
-				"role_ids": ["bazgo-create"]
-			}`)
+			body = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["/a/b"],
+					"role_ids": ["%s"]
+				}`,
+				policyName,
+				roleName,
+			))
 			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
@@ -561,7 +677,8 @@ func TestServer(t *testing.T) {
 
 		t.Run("Read", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			req := newRequest("GET", "/policy/bazgo-create-b", nil)
+			url := fmt.Sprintf("/policy/%s", policyName)
+			req := newRequest("GET", url, nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				httpError(t, w, "policy not found")
@@ -576,9 +693,47 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from GET policy")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, "bazgo-create-b", result.Name, msg)
+			assert.Equal(t, policyName, result.Name, msg)
 			assert.Equal(t, []string{"/a/b"}, result.Resources, msg)
-			assert.Equal(t, []string{"bazgo-create"}, result.Roles, msg)
+			assert.Equal(t, []string{roleName}, result.Roles, msg)
+		})
+
+		t.Run("List", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/policy", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list policies")
+			}
+			result := struct {
+				Policies []interface{} `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			fmt.Println(string(w.Body.Bytes()))
+			if err != nil {
+				httpError(t, w, "couldn't read response from policies list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 1, len(result.Policies), msg)
+			// TODO (rudyardrichter, 2019-04-15): more checks here on response
+		})
+
+		t.Run("Delete", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("DELETE", "/policy/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't delete policy")
+			}
+		})
+
+		t.Run("CheckDeleted", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/policy/foo", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "policy was not actually deleted")
+			}
 		})
 
 		tearDown(t)
@@ -667,9 +822,9 @@ func TestServer(t *testing.T) {
 		})
 
 		// do some preliminary setup so we have a policy to work with
-		createResource(t, resourceBody)
-		createRole(t, roleBody)
-		createPolicy(t, policyBody)
+		createResourceBytes(t, resourceBody)
+		createRoleBytes(t, roleBody)
+		createPolicyBytes(t, policyBody)
 
 		t.Run("GrantPolicy", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -778,6 +933,16 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("DeleteNotExist", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s", username)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "wrong response from deleting user that doesn't exist")
+			}
+		})
+
 		t.Run("CheckDeleted", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/user/foo", nil)
@@ -847,6 +1012,34 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("CreateAlreadyExists", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
+			req := newRequest("POST", "/group", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusConflict {
+				httpError(t, w, "creating group that already exists didn't error as expected")
+			}
+		})
+
+		t.Run("List", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/group", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list groups")
+			}
+			result := struct {
+				Groups []interface{} `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from groups list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 1, len(result.Groups), msg)
+		})
+
 		t.Run("Read", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", fmt.Sprintf("/group/%s", testGroupName), nil)
@@ -871,7 +1064,7 @@ func TestServer(t *testing.T) {
 
 		t.Run("AddUsers", func(t *testing.T) {
 			for _, testUsername := range testGroupUsers {
-				createUser(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
+				createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
 				w := httptest.NewRecorder()
 				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testUsername))
@@ -934,10 +1127,12 @@ func TestServer(t *testing.T) {
 			assert.NotContains(t, result.Users, userToRemove, msg)
 		})
 
-		t.Run("GrantPolicy", func(t *testing.T) {
-			// TODO: add group policy endpoint, enable test
-			t.SkipNow()
+		// do some preliminary setup so we have a policy to work with
+		createResourceBytes(t, resourceBody)
+		createRoleBytes(t, roleBody)
+		createPolicyBytes(t, policyBody)
 
+		t.Run("GrantPolicy", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/group/%s/policy", testGroupName)
 			req := newRequest(
@@ -949,7 +1144,7 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't grant policy to group")
 			}
-			// look up user again and check that policy is there
+			// look up group again and check that policy is there
 			w = httptest.NewRecorder()
 			url = fmt.Sprintf("/group/%s", testGroupName)
 			req = newRequest("GET", url, nil)
@@ -974,7 +1169,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("PolicyNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				url := fmt.Sprintf("/group/%s/policy", username)
+				url := fmt.Sprintf("/group/%s/policy", testGroupName)
 				req := newRequest(
 					"POST",
 					url,
@@ -1001,6 +1196,34 @@ func TestServer(t *testing.T) {
 			})
 		})
 
+		t.Run("RevokePolicy", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s/policy/%s", testGroupName, policyName)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't revoke policy from group")
+			}
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/group/%s", testGroupName)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			result := struct {
+				Name     string   `json:"name"`
+				Users    []string `json:"users"`
+				Policies []string `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.NotContains(t, policyName, result.Policies, msg)
+		})
+
 		t.Run("Delete", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/group/%s", testGroupName)
@@ -1021,11 +1244,140 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("DeleteNotExist", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/group/%s", testGroupName)
+			req := newRequest("DELETE", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "wrong response from deleting group that doesn't exist")
+			}
+		})
+
 		tearDown(t)
 	})
 
 	t.Run("Auth", func(t *testing.T) {
 		tearDown := testSetup(t)
+
+		t.Run("Request", func(t *testing.T) {
+			createResourceBytes(t, []byte(`{"path": "/example"}`))
+			createResourceBytes(t, []byte(`{"path": "/example/a"}`))
+			createResourceBytes(t, []byte(`{"path": "/example/b"}`))
+			createRoleBytes(
+				t,
+				[]byte(`{
+					"id": "foo",
+					"permissions": [
+						{"id": "test", "action": {"service": "test", "method": "foo"}}
+					]
+				}`),
+			)
+			createRoleBytes(
+				t,
+				[]byte(`{
+					"id": "bar",
+					"permissions": [
+						{"id": "test", "action": {"service": "test", "method": "bar"}}
+					]
+				}`),
+			)
+			createPolicyBytes(
+				t,
+				[]byte(`{
+					"id": "example-policy-foo",
+					"resource_paths": ["/example/a"],
+					"role_ids": ["foo"]
+				}`),
+			)
+			createPolicyBytes(
+				t,
+				[]byte(`{
+					"id": "example-policy-bar",
+					"resource_paths": ["/example/b"],
+					"role_ids": ["bar"]
+				}`),
+			)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, "example-policy-foo")
+
+			w := httptest.NewRecorder()
+			token := TestJWT{username: username}
+			body := []byte(fmt.Sprintf(
+				`{
+					"user": {"token": "%s"},
+					"request": {
+						"resource": "/example/a",
+						"action": {
+							"service": "test",
+							"method": "foo"
+						}
+					}
+				}`,
+				token.Encode(),
+			))
+			req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "auth request failed")
+			}
+			// request should succeed, user has authorization
+			result := struct {
+				Auth bool `json:"auth"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from auth request")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, true, result.Auth, msg)
+
+			t.Run("Unauthorized", func(t *testing.T) {
+				w = httptest.NewRecorder()
+				token = TestJWT{username: username}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "/example/b",
+							"action": {
+								"service": "test",
+								"method": "foo"
+							}
+						}
+					}`,
+					token.Encode(),
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should fail
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, false, result.Auth, msg)
+			})
+
+			t.Run("BadRequest", func(t *testing.T) {
+				w = httptest.NewRecorder()
+				token = TestJWT{username: username}
+				body = []byte("not real JSON")
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error")
+				}
+			})
+		})
+
+		deleteEverything()
 
 		t.Run("Resources", func(t *testing.T) {
 			t.Run("Empty", func(t *testing.T) {
@@ -1050,10 +1402,10 @@ func TestServer(t *testing.T) {
 			})
 
 			t.Run("Granted", func(t *testing.T) {
-				createResource(t, resourceBody)
-				createRole(t, roleBody)
-				createPolicy(t, policyBody)
-				createUser(t, userBody)
+				createResourceBytes(t, resourceBody)
+				createRoleBytes(t, roleBody)
+				createPolicyBytes(t, policyBody)
+				createUserBytes(t, userBody)
 				grantUserPolicy(t, username, policyName)
 
 				w := httptest.NewRecorder()
@@ -1074,9 +1426,226 @@ func TestServer(t *testing.T) {
 				}
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+
+				t.Run("Policies", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(
+						`{"user": {"token": "%s", "policies": ["%s"]}}`,
+						token.Encode(),
+						policyName,
+					))
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// in this case, since the user has zero access yet, should be empty
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+				})
+			})
+		})
+
+		deleteEverything()
+
+		t.Run("Proxy", func(t *testing.T) {
+			createResourceBytes(t, resourceBody)
+			createRoleBytes(t, roleBody)
+			createPolicyBytes(t, policyBody)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, policyName)
+			token := TestJWT{username: username}
+
+			t.Run("Authorized", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth proxy request failed")
+				}
+			})
+
+			t.Run("BadRequest", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s&method=%s",
+					url.QueryEscape("not-even-a-resource-path"),
+					url.QueryEscape(serviceName),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request succeeded when it should not have")
+				}
+			})
+
+			t.Run("Unauthorized", func(t *testing.T) {
+				t.Run("BadHeader", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", "Bearer garbage")
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusUnauthorized {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("TokenExpired", func(t *testing.T) {
+					token := TestJWT{username: username, exp: 1}
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusUnauthorized {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("ResourceNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape("/not/authorized"),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("WrongMethod", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape("bogus_method"),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
+				t.Run("WrongService", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape("bogus_service"),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+			})
+
+			t.Run("MissingAuthHeader", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// request is good
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				// but no header added to the request!
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusUnauthorized {
+					httpError(t, w, "auth proxy request without auth header didn't fail as expected")
+				}
+			})
+
+			t.Run("MissingMethod", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit method
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&service=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(serviceName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
+			})
+
+			t.Run("MissingService", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit service
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?resource=%s&method=%s",
+					url.QueryEscape(resourcePath),
+					url.QueryEscape(methodName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
+			})
+
+			t.Run("MissingResource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// omit resource
+				authUrl := fmt.Sprintf(
+					"/auth/proxy?&method=%sservice=%s",
+					url.QueryEscape(methodName),
+					url.QueryEscape(serviceName),
+				)
+				req := newRequest("GET", authUrl, nil)
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "auth proxy request did not error as expected")
+				}
 			})
 		})
 
 		tearDown(t)
 	})
+
+	deleteEverything()
 }

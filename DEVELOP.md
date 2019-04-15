@@ -160,3 +160,12 @@ if err != nil {
 }
 assert.Equal(t, "what we expect", result.A, "result had the wrong value for a")
 ```
+
+### Code Coverage
+
+Run this to both generate a coverage output file usable by go tools,
+`coverage.out`, and open it using the go coverage tool to visualize line-by-line
+coverage.
+```
+make coverage-viz
+```

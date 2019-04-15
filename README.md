@@ -181,3 +181,9 @@ Run all the tests:
 ```bash
 go test ./...
 ```
+
+### Code Coverage
+
+Use `make coverage` to generate a `coverage.out` file which can be used with go
+testing and coverage tools. `make coverage-viz` will additionally open it using
+the go coverage tools to visualize line-by-line coverage.
