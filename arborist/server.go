@@ -97,6 +97,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
 	router.Handle("/resource", http.HandlerFunc(parseJSON(server.handleResourceCreate))).Methods("POST")
+	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(parseJSON(server.handleSubresourceCreate))).Methods("POST")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceDelete)).Methods("DELETE")
@@ -497,7 +498,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := resource.createInDb(server.db)
+	resourceFromQuery, errResponse := resource.createInDb(server.db)
 	if errResponse != nil {
 		if errResponse.Error.Code >= 500 {
 			server.logger.Error(errResponse.Error.Message)
@@ -507,12 +508,13 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		_ = errResponse.write(w, r)
 		return
 	}
-	created := struct {
+	created := resourceFromQuery.standardize()
+	result := struct {
 		Created *Resource `json:"created"`
 	}{
-		Created: resource,
+		Created: &created,
 	}
-	_ = jsonResponseFrom(created, 201).write(w, r)
+	_ = jsonResponseFrom(result, 201).write(w, r)
 }
 
 func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -534,7 +536,7 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	}
 	parentPath := parseResourcePath(r)
 	resource.Path = parentPath + "/" + resource.Name
-	errResponse := resource.createInDb(server.db)
+	resourceFromQuery, errResponse := resource.createInDb(server.db)
 	if errResponse != nil {
 		if errResponse.Error.Code >= 500 {
 			server.logger.Error(errResponse.Error.Message)
@@ -544,12 +546,13 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 		_ = errResponse.write(w, r)
 		return
 	}
-	created := struct {
+	created := resourceFromQuery.standardize()
+	result := struct {
 		Created *Resource `json:"created"`
 	}{
-		Created: resource,
+		Created: &created,
 	}
-	_ = jsonResponseFrom(created, 201).write(w, r)
+	_ = jsonResponseFrom(result, 201).write(w, r)
 }
 
 func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
@@ -557,6 +560,26 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 	resourceFromQuery, err := resourceWithPath(server.db, path)
 	if resourceFromQuery == nil {
 		msg := fmt.Sprintf("no resource found with path: `%s`", path)
+		errResponse := newErrorResponse(msg, 404, nil)
+		_ = errResponse.write(w, r)
+		return
+	}
+	if err != nil {
+		msg := fmt.Sprintf("resource query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resource := resourceFromQuery.standardize()
+	_ = jsonResponseFrom(resource, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Request) {
+	tag := mux.Vars(r)["tag"]
+	resourceFromQuery, err := resourceWithTag(server.db, tag)
+	if resourceFromQuery == nil {
+		msg := fmt.Sprintf("no resource found with tag: `%s`", tag)
 		errResponse := newErrorResponse(msg, 404, nil)
 		_ = errResponse.write(w, r)
 		return

@@ -425,12 +425,20 @@ func TestServer(t *testing.T) {
 			}
 			// make one-off struct to read the response into
 			result := struct {
-				_ interface{} `json:"created"`
+				Resource struct {
+					Name string `json:"name"`
+					Path string `json:"path"`
+					Tag  string `json:"tag"`
+				} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, "a", result.Resource.Name, msg)
+			assert.Equal(t, "/a", result.Resource.Path, msg)
+			assert.NotEqual(t, "", result.Resource.Tag, msg)
 		})
 
 		t.Run("CreateSubresource", func(t *testing.T) {
