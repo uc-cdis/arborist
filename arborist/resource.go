@@ -9,14 +9,19 @@ import (
 	"github.com/lib/pq"
 )
 
-// ResoruceJSON defines a representation of a Resource that can be serialized
-// directly into JSON using `json.Marshal`.
-//
 // A note on the fields here: either the resource must have been created
 // through the subresources field of a parent resource, in which case the path
 // is formed from the parent path joined with this resource's name, or with an
 // explicit full path here.
-type Resource struct {
+
+type ResourceIn struct {
+	Name         string       `json:"name"`
+	Path         string       `json:"path"`
+	Description  string       `json:"description"`
+	Subresources []ResourceIn `json:"subresources"`
+}
+
+type ResourceOut struct {
 	Name         string   `json:"name"`
 	Path         string   `json:"path"`
 	Description  string   `json:"description"`
@@ -28,7 +33,7 @@ type Resource struct {
 // not able to validate all cases precisely. The unmarshalling will pass as
 // long as either the name or the path is provided, which may require
 // additional validation where this is called.
-func (resource *Resource) UnmarshalJSON(data []byte) error {
+func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
 	if err != nil {
@@ -53,14 +58,14 @@ func (resource *Resource) UnmarshalJSON(data []byte) error {
 
 	// Trick to use `json.Unmarshal` inside here, making a type alias which we
 	// cast the Resource to.
-	type loader Resource
+	type loader ResourceIn
 	err = json.Unmarshal(data, (*loader)(resource))
 	if err != nil {
 		return err
 	}
 
 	if resource.Subresources == nil {
-		resource.Subresources = []string{}
+		resource.Subresources = []ResourceIn{}
 	}
 
 	return nil
@@ -79,12 +84,12 @@ type ResourceFromQuery struct {
 
 // standardize takes a resource returned from a query and turns it into the
 // standard form.
-func (resourceFromQuery *ResourceFromQuery) standardize() Resource {
+func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	subresources := []string{}
 	for _, subresource := range resourceFromQuery.Subresources {
 		subresources = append(subresources, formatDbPath(subresource))
 	}
-	resource := Resource{
+	resource := ResourceOut{
 		Name:         resourceFromQuery.Name,
 		Path:         formatDbPath(resourceFromQuery.Path),
 		Subresources: subresources,
@@ -172,7 +177,7 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	return resources, nil
 }
 
-func (resource *Resource) createInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) createInDb(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
@@ -197,7 +202,7 @@ func (resource *Resource) createInDb(db *sqlx.DB) *ErrorResponse {
 		// this should only fail because the resource was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
-		return newErrorResponse(msg, 400, &err)
+		return newErrorResponse(msg, 409, &err)
 	}
 
 	err = tx.Commit()
@@ -213,10 +218,27 @@ func (resource *Resource) createInDb(db *sqlx.DB) *ErrorResponse {
 		return newErrorResponse(msg, 400, &err)
 	}
 
+	// recursively create subresources
+	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
+	for _, subresource := range resource.Subresources {
+		// fill out subresource paths based on the current name
+		if subresource.Path == "" {
+			subresource.Path = resource.Path + "/" + subresource.Name
+		}
+		errResponse := subresource.createInDb(db)
+		if errResponse != nil {
+			return errResponse
+		}
+	}
+
 	return nil
 }
 
-func (resource *Resource) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) deleteInDb(db *sqlx.DB) *ErrorResponse {
+	if resource.Path == "" {
+		msg := "resource missing required field `path`"
+		return newErrorResponse(msg, 400, nil)
+	}
 	stmt := "DELETE FROM resource WHERE path = $1"
 	_, err := db.Exec(stmt, formatPathForDb(resource.Path))
 	if err != nil {
