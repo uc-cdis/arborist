@@ -47,6 +47,13 @@ CREATE CONSTRAINT TRIGGER resource_has_parent_check
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE PROCEDURE resource_has_parent();
 
+-- Define a function to return some random bytea with the given length.
+CREATE OR REPLACE FUNCTION random_bytea(bytea_length integer) RETURNS bytea LANGUAGE sql AS
+$$
+    SELECT decode(string_agg(lpad(to_hex(width_bucket(random(), 0, 1, 256)-1),2,'0') ,''), 'hex')
+    FROM generate_series(1, $1);
+$$;
+
 -- Define a trigger function which fills in the resource name from the path.
 CREATE OR REPLACE FUNCTION resource_path() RETURNS TRIGGER LANGUAGE plpgsql AS
 $$
