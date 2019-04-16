@@ -127,8 +127,8 @@ func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	_, err := db.Exec(stmt, user.Name)
 	if err != nil {
 		// TODO: verify correct error
-		msg := fmt.Sprintf("failed to delete user: user does not exist: %s", user.Name)
-		return newErrorResponse(msg, 404, nil)
+		// user does not exist; that's fine
+		return nil
 	}
 	return nil
 }

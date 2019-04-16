@@ -84,12 +84,12 @@ type ResourceFromQuery struct {
 
 // standardize takes a resource returned from a query and turns it into the
 // standard form.
-func (resourceFromQuery *ResourceFromQuery) standardize() *ResourceOut {
+func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	subresources := []string{}
 	for _, subresource := range resourceFromQuery.Subresources {
 		subresources = append(subresources, formatDbPath(subresource))
 	}
-	resource := &ResourceOut{
+	resource := ResourceOut{
 		Name:         resourceFromQuery.Name,
 		Path:         formatDbPath(resourceFromQuery.Path),
 		Subresources: subresources,

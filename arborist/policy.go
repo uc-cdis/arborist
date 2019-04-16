@@ -67,12 +67,12 @@ type PolicyFromQuery struct {
 	RoleIDs       pq.StringArray `db:"role_ids" json:"role_ids"`
 }
 
-func (policyFromQuery *PolicyFromQuery) standardize() *Policy {
+func (policyFromQuery *PolicyFromQuery) standardize() Policy {
 	paths := make([]string, len(policyFromQuery.ResourcePaths))
 	for i, queryPath := range policyFromQuery.ResourcePaths {
 		paths[i] = formatDbPath(queryPath)
 	}
-	policy := &Policy{
+	policy := Policy{
 		Name:          policyFromQuery.Name,
 		ResourcePaths: paths,
 		RoleIDs:       policyFromQuery.RoleIDs,
