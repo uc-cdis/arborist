@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gorilla/handlers"
@@ -71,9 +72,7 @@ const resourcePath string = `/{resourcePath:[a-zA-Z0-9_\-\/]+}`
 func parseResourcePath(r *http.Request) string {
 	path, exists := mux.Vars(r)["resourcePath"]
 	if !exists {
-		// should never happen: route was set up to call this function when the
-		// URL did not actually match a resource path
-		panic(errors.New("fix resource routes"))
+		return ""
 	}
 	// We have to add a slash at the front here; see resourcePath constant.
 	return strings.Join([]string{"/", path}, "")
@@ -126,7 +125,13 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.NotFoundHandler = http.HandlerFunc(handleNotFound)
 
-	return handlers.CombinedLoggingHandler(out, router)
+	// remove trailing slashes sent in URLs
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = strings.TrimSuffix(r.URL.Path, "/")
+		router.ServeHTTP(w, r)
+	})
+
+	return handlers.CombinedLoggingHandler(out, handler)
 }
 
 // parseJSON abstracts JSON parsing for handler functions that should
@@ -146,6 +151,12 @@ func parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) fun
 		baseHandler(w, r, body)
 	}
 	return handler
+}
+
+var regWhitespace *regexp.Regexp = regexp.MustCompile(`\s`)
+
+func loggableJSON(bytes []byte) []byte {
+	return regWhitespace.ReplaceAll(bytes, []byte(""))
 }
 
 func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -359,7 +370,7 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	resources := []Resource{}
+	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -462,7 +473,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
 	resourcesFromQuery, err := listResourcesFromDb(server.db)
-	resources := []Resource{}
+	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
 	}
@@ -474,7 +485,7 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	result := struct {
-		Resources []Resource `json:"resources"`
+		Resources []ResourceOut `json:"resources"`
 	}{
 		Resources: resources,
 	}
@@ -482,16 +493,22 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 }
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
-	resource := &Resource{}
+	resource := &ResourceIn{}
 	err := json.Unmarshal(body, resource)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse resource from JSON: %s", err.Error())
-		server.logger.Info("tried to create resource but input was invalid: %s", msg)
+		msg := "could not parse resource from JSON; make sure input has correct types"
+		server.logger.Info(
+			"tried to create resource but input was invalid; offending JSON: %s",
+			loggableJSON(body),
+		)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
 		return
 	}
 	if resource.Path == "" {
+		server.handleSubresourceCreate(w, r, body)
+		return
+
 		err := missingRequiredField("resource", "path")
 		server.logger.Info(err.Error())
 		response := newErrorResponse(err.Error(), 400, &err)
@@ -510,7 +527,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	created := resourceFromQuery.standardize()
 	result := struct {
-		Created *Resource `json:"created"`
+		Created *ResourceOut `json:"created"`
 	}{
 		Created: &created,
 	}
@@ -518,7 +535,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
-	resource := &Resource{}
+	resource := &ResourceIn{}
 	err := json.Unmarshal(body, resource)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse resource from JSON: %s", err.Error())
@@ -548,7 +565,7 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	}
 	created := resourceFromQuery.standardize()
 	result := struct {
-		Created *Resource `json:"created"`
+		Created *ResourceOut `json:"created"`
 	}{
 		Created: &created,
 	}
@@ -597,7 +614,11 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
 	path := parseResourcePath(r)
-	resource := Resource{Path: path}
+	if path == "" {
+		errResponse := newErrorResponse("can't delete root resource", 400, nil)
+		_ = errResponse.write(w, r)
+	}
+	resource := ResourceIn{Path: path}
 	errResponse := resource.deleteInDb(server.db)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
@@ -790,6 +811,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 

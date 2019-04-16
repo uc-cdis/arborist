@@ -9,14 +9,19 @@ import (
 	"github.com/lib/pq"
 )
 
-// ResoruceJSON defines a representation of a Resource that can be serialized
-// directly into JSON using `json.Marshal`.
-//
 // A note on the fields here: either the resource must have been created
 // through the subresources field of a parent resource, in which case the path
 // is formed from the parent path joined with this resource's name, or with an
 // explicit full path here.
-type Resource struct {
+
+type ResourceIn struct {
+	Name         string       `json:"name"`
+	Path         string       `json:"path"`
+	Description  string       `json:"description"`
+	Subresources []ResourceIn `json:"subresources"`
+}
+
+type ResourceOut struct {
 	Name         string   `json:"name"`
 	Path         string   `json:"path"`
 	Tag          string   `json:"tag"`
@@ -29,7 +34,7 @@ type Resource struct {
 // not able to validate all cases precisely. The unmarshalling will pass as
 // long as either the name or the path is provided, which may require
 // additional validation where this is called.
-func (resource *Resource) UnmarshalJSON(data []byte) error {
+func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
 	if err != nil {
@@ -59,14 +64,14 @@ func (resource *Resource) UnmarshalJSON(data []byte) error {
 
 	// Trick to use `json.Unmarshal` inside here, making a type alias which we
 	// cast the Resource to.
-	type loader Resource
+	type loader ResourceIn
 	err = json.Unmarshal(data, (*loader)(resource))
 	if err != nil {
 		return err
 	}
 
 	if resource.Subresources == nil {
-		resource.Subresources = []string{}
+		resource.Subresources = []ResourceIn{}
 	}
 
 	return nil
@@ -86,12 +91,12 @@ type ResourceFromQuery struct {
 
 // standardize takes a resource returned from a query and turns it into the
 // standard form.
-func (resourceFromQuery *ResourceFromQuery) standardize() Resource {
+func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	subresources := []string{}
 	for _, subresource := range resourceFromQuery.Subresources {
 		subresources = append(subresources, formatDbPath(subresource))
 	}
-	resource := Resource{
+	resource := ResourceOut{
 		Name:         resourceFromQuery.Name,
 		Path:         formatDbPath(resourceFromQuery.Path),
 		Tag:          resourceFromQuery.Tag,
@@ -218,14 +223,25 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	return resources, nil
 }
 
-func (resource *Resource) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+	errResponse := resource.createRecursively(db)
+	if errResponse != nil {
+		return nil, errResponse
+	}
+	resourceFromQuery, err := resourceWithPath(db, resource.Path)
+	if err != nil {
+		return nil, newErrorResponse(err.Error(), 500, &err)
+	}
+	return resourceFromQuery, nil
+}
+
+func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return nil, newErrorResponse(msg, 500, &err)
+		return newErrorResponse(msg, 500, &err)
 	}
 
-	var resourceFromQuery ResourceFromQuery
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	// -1 means replace everything
 	path := strings.Replace(resource.Path, "/", ".", -1)
@@ -234,9 +250,8 @@ func (resource *Resource) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorRes
 		segments := strings.Split(path, ".")
 		resource.Name = segments[len(segments)-1]
 	}
-	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2) RETURNING *"
-	row := tx.QueryRowx(stmt, path, resource.Description)
-	err = row.StructScan(&resourceFromQuery)
+	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
+	_, err = tx.Exec(stmt, path, resource.Description)
 	if err != nil {
 		fmt.Println(err)
 		// should add more checking here to guarantee the correct error
@@ -244,7 +259,7 @@ func (resource *Resource) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorRes
 		// this should only fail because the resource was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
-		return nil, newErrorResponse(msg, 409, &err)
+		return newErrorResponse(msg, 409, &err)
 	}
 
 	err = tx.Commit()
@@ -257,13 +272,28 @@ func (resource *Resource) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorRes
 		// database side, because of missing parent or similar; return 400.
 		errMsg := strings.TrimPrefix(err.Error(), "pq: ")
 		msg := fmt.Sprintf("couldn't create resource: %s", errMsg)
-		return nil, newErrorResponse(msg, 400, &err)
+		return newErrorResponse(msg, 400, &err)
 	}
 
-	return &resourceFromQuery, nil
+	// recursively create subresources
+	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
+	for _, subresource := range resource.Subresources {
+		// fill out subresource paths based on the current name
+		subresource.Path = resource.Path + "/" + subresource.Name
+		errResponse := subresource.createRecursively(db)
+		if errResponse != nil {
+			return errResponse
+		}
+	}
+
+	return nil
 }
 
-func (resource *Resource) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) deleteInDb(db *sqlx.DB) *ErrorResponse {
+	if resource.Path == "" {
+		msg := "resource missing required field `path`"
+		return newErrorResponse(msg, 400, nil)
+	}
 	stmt := "DELETE FROM resource WHERE path = $1"
 	_, err := db.Exec(stmt, formatPathForDb(resource.Path))
 	if err != nil {

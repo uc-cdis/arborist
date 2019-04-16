@@ -392,17 +392,6 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("CreateWithError", func(t *testing.T) {
-			t.Run("MissingPath", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				// missing required field
-				body := []byte(`{"name": "test", "description": "this resource has no path"}`)
-				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
-					httpError(t, w, "resource creation didn't fail as expected")
-				}
-			})
-
 			t.Run("UnexpectedField", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				// missing required field
@@ -456,6 +445,45 @@ func TestServer(t *testing.T) {
 			err = json.Unmarshal(w.Body.Bytes(), &expected)
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
+			}
+		})
+
+		t.Run("CreateWithSubresources", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"name": "x",
+				"subresources": [
+					{
+						"name": "y",
+						"subresources": [{"name": "z"}]
+					}
+				]
+			}`)
+			// try to create under the resource created with the previous test
+			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			expected := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &expected)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			// now check that the child resources exist
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
+			}
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y/z", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
 			}
 		})
 
