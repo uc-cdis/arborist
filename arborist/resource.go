@@ -183,8 +183,6 @@ func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 			) AS subresources
 		FROM resource AS parent
 		WHERE parent.tag = $1
-		GROUP BY parent.id
-		LIMIT 1
 	`
 	err := db.Select(&resources, stmt, tag)
 	if len(resources) == 0 {

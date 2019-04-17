@@ -61,13 +61,17 @@ DECLARE found integer;
 BEGIN
     NEW.name = (ltree2text(subpath(NEW.path, -1)));
 
+    -- also generate a unique "tag" for the resource
     LOOP
         NEW.tag = encode(random_bytea(6), 'base64');
+        -- make it URL safe
         NEW.tag = replace(NEW.tag, '/', '_');
         NEW.tag = replace(NEW.tag, '+', '-');
-        -- guarantee uniqueness
+        -- try to guarantee uniqueness
+        -- (no guarantees for concurrent transactions)
         EXECUTE 'SELECT COUNT(*) FROM resource WHERE tag = ' || quote_literal(NEW.tag) INTO found;
         IF (found = 0) THEN
+            -- not a duplicate; exit loop
             EXIT;
         END IF;
     END LOOP;
