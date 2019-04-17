@@ -25,6 +25,8 @@ CREATE TABLE resource (
 -- This index, using specifically GiST index, is required for ltree.
 CREATE INDEX resource_path_idx ON resource USING gist(path);
 
+CREATE INDEX resource_tag_idx ON resource USING HASH(tag);
+
 INSERT INTO resource(name, path, tag) VALUES ('root', 'root', 'AAAAAAAA');
 
 -- Define a trigger which validates resource inputs; the path must have a valid
@@ -81,9 +83,54 @@ END;
 $$;
 
 -- Add the trigger to fill in resource name from the path automatically.
+CREATE TRIGGER resource_generate_tag
+    BEFORE INSERT ON resource
+    FOR EACH ROW EXECUTE PROCEDURE resource_path();
+
+CREATE OR REPLACE FUNCTION resource_name() RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+    NEW.name = (ltree2text(subpath(NEW.path, -1)));
+    RETURN NEW;
+END;
+$$;
+
 CREATE TRIGGER resource_path_compute_name
     BEFORE INSERT OR UPDATE ON resource
-    FOR EACH ROW EXECUTE PROCEDURE resource_path();
+    FOR EACH ROW EXECUTE PROCEDURE resource_name();
+
+CREATE OR REPLACE FUNCTION resource_protect_root_delete() RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF OLD.name == 'root' THEN
+        RAISE EXCEPTION 'modifying root resource is not allowed';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER resource_protect_root_delete
+    BEFORE DELETE ON resource
+    FOR EACH ROW
+    WHEN (OLD.name = 'root')
+    EXECUTE PROCEDURE resource_protect_root_delete();
+
+CREATE OR REPLACE FUNCTION resource_protect_root_update() RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF (NEW.path != 'root' OR NEW.name != 'root') THEN
+        RAISE EXCEPTION 'modifying root resource is not allowed';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- triggers on same event run in alphabetical order, hence the 0
+CREATE TRIGGER resource_0_protect_root_update
+    BEFORE UPDATE ON resource
+    FOR EACH ROW
+    WHEN (OLD.name = 'root')
+    EXECUTE PROCEDURE resource_protect_root_update();
 
 -- Define a trigger function which recursively deletes the entire resource
 -- subtree when a resource is deleted.
