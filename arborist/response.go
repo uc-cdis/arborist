@@ -99,6 +99,9 @@ func (errorResponse *ErrorResponse) write(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(errorResponse.Error.Code)
-	w.Write(bytes)
+	_, err = w.Write(bytes)
+	if err != nil {
+		return err
+	}
 	return nil
 }

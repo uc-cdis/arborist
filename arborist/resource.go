@@ -24,6 +24,7 @@ type ResourceIn struct {
 type ResourceOut struct {
 	Name         string   `json:"name"`
 	Path         string   `json:"path"`
+	Tag          string   `json:"tag"`
 	Description  string   `json:"description"`
 	Subresources []string `json:"subresources"`
 }
@@ -40,14 +41,19 @@ func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	// delete fields which should be ignored in user input
+	delete(fields, "tag")
+
 	optionalFieldsPath := map[string]struct{}{
 		"name":         struct{}{},
+		"tag":          struct{}{},
 		"description":  struct{}{},
 		"subresources": struct{}{},
 	}
 	errPath := validateJSON("resource", resource, fields, optionalFieldsPath)
 	optionalFieldsName := map[string]struct{}{
 		"path":         struct{}{},
+		"tag":          struct{}{},
 		"description":  struct{}{},
 		"subresources": struct{}{},
 	}
@@ -77,6 +83,7 @@ func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 type ResourceFromQuery struct {
 	ID           int64          `db:"id"`
 	Name         string         `db:"name"`
+	Tag          string         `db:"tag"`
 	Description  *string        `db:"description"`
 	Path         string         `db:"path"`
 	Subresources pq.StringArray `db:"subresources"`
@@ -92,6 +99,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	resource := ResourceOut{
 		Name:         resourceFromQuery.Name,
 		Path:         formatDbPath(resourceFromQuery.Path),
+		Tag:          resourceFromQuery.Tag,
 		Subresources: subresources,
 	}
 	if resourceFromQuery.Description != nil {
@@ -127,6 +135,7 @@ func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 			parent.id,
 			parent.name,
 			parent.path,
+			parent.tag,
 			parent.description,
 			array(
 				SELECT child.path
@@ -141,6 +150,41 @@ func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 		LIMIT 1
 	`
 	err := db.Select(&resources, stmt, path)
+	if len(resources) == 0 {
+		// not found
+		return nil, nil
+	}
+	if err != nil {
+		// query broken
+		return nil, err
+	}
+	resource := resources[0]
+	return &resource, nil
+}
+
+// resourceWithPath looks up a resource matching the given path. The database
+// schema guarantees such a resource to be unique. Any error returned is
+// because of internal database failure.
+func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
+	resources := []ResourceFromQuery{}
+	stmt := `
+		SELECT
+			parent.id,
+			parent.name,
+			parent.path,
+			parent.tag,
+			parent.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM resource AS parent
+		WHERE parent.tag = $1
+	`
+	err := db.Select(&resources, stmt, tag)
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -177,14 +221,25 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	return resources, nil
 }
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+	errResponse := resource.createRecursively(db)
+	if errResponse != nil {
+		return nil, errResponse
+	}
+	resourceFromQuery, err := resourceWithPath(db, resource.Path)
+	if err != nil {
+		return nil, newErrorResponse(err.Error(), 500, &err)
+	}
+	return resourceFromQuery, nil
+}
+
+func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	var resourceID int
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	// -1 means replace everything
 	path := strings.Replace(resource.Path, "/", ".", -1)
@@ -193,10 +248,10 @@ func (resource *ResourceIn) createInDb(db *sqlx.DB) *ErrorResponse {
 		segments := strings.Split(path, ".")
 		resource.Name = segments[len(segments)-1]
 	}
-	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2) RETURNING id"
-	row := tx.QueryRowx(stmt, path, resource.Description)
-	err = row.Scan(&resourceID)
+	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
+	_, err = tx.Exec(stmt, path, resource.Description)
 	if err != nil {
+		fmt.Println(err)
 		// should add more checking here to guarantee the correct error
 		_ = tx.Rollback()
 		// this should only fail because the resource was not unique. return error
@@ -222,10 +277,8 @@ func (resource *ResourceIn) createInDb(db *sqlx.DB) *ErrorResponse {
 	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
-		if subresource.Path == "" {
-			subresource.Path = resource.Path + "/" + subresource.Name
-		}
-		errResponse := subresource.createInDb(db)
+		subresource.Path = resource.Path + "/" + subresource.Name
+		errResponse := subresource.createRecursively(db)
 		if errResponse != nil {
 			return errResponse
 		}

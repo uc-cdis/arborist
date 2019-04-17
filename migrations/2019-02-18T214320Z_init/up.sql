@@ -13,6 +13,7 @@ CREATE EXTENSION IF NOT EXISTS ltree;
 
 CREATE TABLE resource (
     id serial PRIMARY KEY,
+    tag text UNIQUE NOT NULL,
     -- name is NOT unique
     name text NOT NULL,
     description text,
@@ -24,7 +25,7 @@ CREATE TABLE resource (
 -- This index, using specifically GiST index, is required for ltree.
 CREATE INDEX resource_path_idx ON resource USING gist(path);
 
-INSERT INTO resource(name, path) VALUES ('root', 'root');
+INSERT INTO resource(name, path, tag) VALUES ('root', 'root', 'AAAAAAAA');
 
 -- Define a trigger which validates resource inputs; the path must have a valid
 -- parent which already exists in the table.
@@ -46,11 +47,35 @@ CREATE CONSTRAINT TRIGGER resource_has_parent_check
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE PROCEDURE resource_has_parent();
 
+-- Define a function to return some random bytea with the given length.
+CREATE OR REPLACE FUNCTION random_bytea(bytea_length integer) RETURNS bytea LANGUAGE sql AS
+$$
+    SELECT decode(string_agg(lpad(to_hex(width_bucket(random(), 0, 1, 256)-1),2,'0') ,''), 'hex')
+    FROM generate_series(1, $1);
+$$;
+
 -- Define a trigger function which fills in the resource name from the path.
 CREATE OR REPLACE FUNCTION resource_path() RETURNS TRIGGER LANGUAGE plpgsql AS
 $$
+DECLARE found integer;
 BEGIN
     NEW.name = (ltree2text(subpath(NEW.path, -1)));
+
+    -- also generate a unique "tag" for the resource
+    LOOP
+        NEW.tag = encode(random_bytea(6), 'base64');
+        -- make it URL safe
+        NEW.tag = replace(NEW.tag, '/', '_');
+        NEW.tag = replace(NEW.tag, '+', '-');
+        -- try to guarantee uniqueness
+        -- (no guarantees for concurrent transactions)
+        EXECUTE 'SELECT COUNT(*) FROM resource WHERE tag = ' || quote_literal(NEW.tag) INTO found;
+        IF (found = 0) THEN
+            -- not a duplicate; exit loop
+            EXIT;
+        END IF;
+    END LOOP;
+
     RETURN NEW;
 END;
 $$;
