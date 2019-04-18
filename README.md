@@ -136,10 +136,27 @@ We will start from the lowest-level definitions, and work upwards.
 - *Group:* a set of users. Groups can be granted their own policies; this gives
   access to that policy for all users in the group.
 
-
 ## Configuring Access
 
-TODO
+Ultimately, the flowchart for granting access to users goes something like the
+following:
+
+1. Create roles, resources, and policies to define access.
+2. One or more of the following:
+  - Using groups:
+    1. Grant a policy to a group (`/group/{group}/policy` endpoint).
+    2. Add users to the group (`/group/{group}/user` endpoint).
+    3. Users in the group now have access.
+  - For generic permissions which should be granted to all users (including
+    anonymous users, or only those who are logged in, i.e. have a JWT):
+    1. Grant a policy to the built-in `anonymous` and/or `logged-in` groups.
+       (`/group/anonymous/policy` and `/group/logged-in/policy` endpoints)
+    2. Now users even without a JWT have access using the policies granted to
+       the `anonymous` group, and all users with just a JWT have access to the
+       policies for the `logged-in` group.
+  - Specifying permissions for individual users directly:
+    1. Grant an individual user a policy (`/user/{username}/policy` endpoint).
+    2. Now that user has access.
 
 ## Development
 
