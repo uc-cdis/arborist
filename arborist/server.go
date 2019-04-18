@@ -614,10 +614,6 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
 	path := parseResourcePath(r)
-	if path == "" {
-		errResponse := newErrorResponse("can't delete root resource", 400, nil)
-		_ = errResponse.write(w, r)
-	}
 	resource := ResourceIn{Path: path}
 	errResponse := resource.deleteInDb(server.db)
 	if errResponse != nil {

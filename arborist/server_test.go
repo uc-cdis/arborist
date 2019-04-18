@@ -294,7 +294,7 @@ func TestServer(t *testing.T) {
 		_ = db.MustExec("DELETE FROM policy_role")
 		_ = db.MustExec("DELETE FROM policy_resource")
 		_ = db.MustExec("DELETE FROM permission")
-		_ = db.MustExec("DELETE FROM resource WHERE (name != 'root')")
+		_ = db.MustExec("DELETE FROM resource")
 		_ = db.MustExec("DELETE FROM role")
 		_ = db.MustExec("DELETE FROM usr_grp")
 		_ = db.MustExec("DELETE FROM usr_policy")

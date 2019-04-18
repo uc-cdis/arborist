@@ -17,15 +17,11 @@ CREATE TABLE resource (
     -- name is NOT unique
     name text NOT NULL,
     description text,
-    -- resource path should always start with 'root'; don't allow anything which
-    -- would use some other structure.
-    path ltree UNIQUE NOT NULL CONSTRAINT path_starts_at_root CHECK (path ~ 'root.*')
+    path ltree UNIQUE NOT NULL
 );
 
 -- This index, using specifically GiST index, is required for ltree.
 CREATE INDEX resource_path_idx ON resource USING gist(path);
-
-INSERT INTO resource(name, path, tag) VALUES ('root', 'root', 'AAAAAAAA');
 
 -- Define a trigger which validates resource inputs; the path must have a valid
 -- parent which already exists in the table.
@@ -33,6 +29,10 @@ CREATE OR REPLACE FUNCTION resource_has_parent() RETURNS TRIGGER LANGUAGE plpgsq
 $$
 DECLARE parent integer;
 BEGIN
+    -- If there's only one path segment, we're at the root, so it's fine if there's no parent.
+    IF (nlevel(NEW.path) = 1) THEN
+        RETURN NEW;
+    END IF;
     parent := (SELECT COUNT(*) FROM resource WHERE path = subpath(NEW.path, 0, -1));
     IF (parent = 0) THEN
         RAISE EXCEPTION 'Parent resource % does not exist; cannot create resource with path %', subpath(NEW.path, 0, -1), NEW.path;
