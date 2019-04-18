@@ -179,3 +179,21 @@ CREATE TABLE grp_policy (
     policy_id integer REFERENCES policy(id) ON DELETE CASCADE,
     PRIMARY KEY(grp_id, policy_id)
 );
+
+INSERT INTO grp(name) VALUES ('anonymous');
+INSERT INTO grp(name) VALUES ('logged-in');
+
+CREATE OR REPLACE FUNCTION grp_protect_built_in() RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF OLD.name = 'anonymous' OR OLD.name = 'logged-in' THEN
+        RAISE EXCEPTION 'Cannot delete built-in groups';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+-- Add the trigger to recursively delete subresources before a resource delete.
+CREATE TRIGGER resource_path_delete_children
+    BEFORE DELETE ON grp
+    FOR EACH ROW EXECUTE PROCEDURE grp_protect_built_in();

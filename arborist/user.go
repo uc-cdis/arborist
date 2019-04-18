@@ -197,6 +197,9 @@ func revokeUserPolicyAll(db *sqlx.DB, username string) *ErrorResponse {
 }
 
 func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorResponse {
+	if groupName == AnonymousGroup || groupName == LoggedInGroup {
+		return newErrorResponse("can't add users to built-in groups", 400, nil)
+	}
 	stmt := `
 		INSERT INTO usr_grp(usr_id, grp_id)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2))

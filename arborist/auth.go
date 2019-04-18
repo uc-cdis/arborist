@@ -97,6 +97,81 @@ type AuthResponse struct {
 	Auth bool `json:"auth"`
 }
 
+// Authorize a request where the end user is anonymous, so there is no token
+// involved, and access is granted only through the built-in anonymous group.
+func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
+	// parse the resource string
+	exp, args, err := Parse(request.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	resources := make([]string, len(args))
+	// format resource path for DB
+	for i, arg := range args {
+		resources[i] = formatPathForDb(arg)
+	}
+
+	// run authorization query
+	rows, err := request.stmts.Query(
+		`
+		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
+			SELECT array_agg(resource.path) AS allowed FROM (
+				SELECT policy_id FROM grp_policy
+				INNER JOIN grp ON grp_policy.grp_id = grp.id
+				WHERE grp.name = 'anonymous'
+			) AS policies
+			JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			JOIN resource ON resource.id = policy_resource.resource_id
+			WHERE EXISTS (
+				SELECT 1 FROM policy_role
+				JOIN permission ON permission.role_id = policy_role.role_id
+				WHERE policy_role.policy_id = policies.policy_id
+				AND permission.service = $1
+				AND permission.method = $2
+			) AND (
+				$3 OR policies.policy_id IN (
+					SELECT id FROM policy
+					WHERE policy.name = ANY($4)
+				)
+			)
+		) _, unnest($5::text[])
+		`,
+		request.Service,            // $1
+		request.Method,             // $2
+		len(request.Policies) == 0, // $3
+		pq.Array(request.Policies), // $4
+		pq.Array(resources),        // $5
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// build the map for evaluation
+	i := 0
+	vars := make(map[string]bool)
+	for rows.Next() {
+		var result bool
+		err = rows.Scan(&result)
+		if err != nil {
+			return nil, err
+		}
+		vars[args[i]] = result
+		i++
+	}
+	if i != len(args) {
+		// user not found (i = 0)
+		return &AuthResponse{false}, nil
+	}
+
+	// evaluate the result
+	rv, err := Eval(exp, vars)
+	if err != nil {
+		return nil, err
+	}
+	return &AuthResponse{rv}, nil
+}
+
 // Authorize the given token to access resources by service and method.
 // The given resource can be an expression of slash-separated resource paths
 // connected with `and`, `or` or `not`. The priority of these boolean operators
@@ -120,34 +195,39 @@ func authorize(request *AuthRequest) (*AuthResponse, error) {
 	// run authorization query
 	rows, err := request.stmts.Query(
 		`
-SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
-	SELECT (
-		SELECT array_agg(resource.path) AS allowed FROM (
-				SELECT policy_id FROM usr_policy
-				WHERE usr_id = usr.id
-			UNION
-				SELECT policy_id FROM usr_grp
-				JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-				WHERE usr_id = usr.id
-		) AS policies
-		JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-		JOIN resource ON resource.id = policy_resource.resource_id
-		WHERE EXISTS (
-			SELECT 1 FROM policy_role
-			JOIN permission ON permission.role_id = policy_role.role_id
-			WHERE policy_role.policy_id = policies.policy_id
-			AND permission.service = $2
-			AND permission.method = $3
-		) AND (
-			$4 OR policies.policy_id IN (
-				SELECT id FROM policy
-				WHERE policy.name = ANY($5)
-			)
-		)
-	) FROM usr
-	WHERE usr.name = $1
-) _, unnest($6::text[]);
-`,
+		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
+			SELECT (
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT policy_id FROM usr_policy
+					WHERE usr_id = usr.id
+					UNION
+					SELECT policy_id FROM grp_policy
+					INNER JOIN grp ON grp_policy.grp_id = grp.id
+					LEFT JOIN usr_grp ON grp_policy.grp_id = usr_grp.grp_id
+					WHERE (
+						usr_grp.usr_id = usr.id
+						OR grp.name = 'anonymous'
+						OR grp.name = 'logged-in'
+					)
+				) AS policies
+				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND permission.service = $2
+					AND permission.method = $3
+				) AND (
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
+				)
+			) FROM usr
+			WHERE usr.name = $1
+		) _, unnest($6::text[])
+		`,
 		request.Username,           // $1
 		request.Service,            // $2
 		request.Method,             // $3

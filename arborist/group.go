@@ -7,6 +7,9 @@ import (
 	"github.com/lib/pq"
 )
 
+const AnonymousGroup = "anonymous"
+const LoggedInGroup = "logged-in"
+
 type Group struct {
 	Name     string   `json:"name"`
 	Users    []string `json:"users"`
@@ -112,6 +115,9 @@ func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 }
 
 func (group *Group) deleteInDb(db *sqlx.DB) *ErrorResponse {
+	if group.Name == AnonymousGroup || group.Name == LoggedInGroup {
+		return newErrorResponse("can't delete built-in groups", 400, nil)
+	}
 	stmt := "DELETE FROM grp WHERE name = $1"
 	_, err := db.Exec(stmt, group.Name)
 	if err != nil {
