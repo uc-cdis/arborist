@@ -111,17 +111,17 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 // formatPathForDb takes a path from a resource in the database and transforms
 // it to the front-end version of the resource path. Inverse of `formatDbPath`.
 //
-//     formatDbPath("/a/b/c") == "root.a.b.c"
+//     formatDbPath("/a/b/c") == "a.b.c"
 func formatPathForDb(path string) string {
-	return "root" + strings.Replace(path, "/", ".", -1)
+	return strings.TrimLeft(strings.Replace(path, "/", ".", -1), ".")
 }
 
 // formatDbPath takes a path from a resource in the database and transforms it
 // to the front-end version of the resource path. Inverse of `formatPathForDb`.
 //
-//     formatDbPath("root.a.b.c") == "/a/b/c"
+//     formatDbPath("a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
-	return strings.Replace(strings.TrimPrefix(path, "root"), ".", "/", -1)
+	return "/" + strings.Replace(path, ".", "/", -1)
 }
 
 // resourceWithPath looks up a resource matching the given path. The database
@@ -210,7 +210,6 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 				)
 			) AS subresources
 		FROM resource AS parent
-		WHERE parent.name != 'root'
 		GROUP BY parent.id
 	`
 	var resources []ResourceFromQuery
@@ -242,8 +241,7 @@ func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	// -1 means replace everything
-	path := strings.Replace(resource.Path, "/", ".", -1)
-	path = "root" + path
+	path := formatPathForDb(resource.Path)
 	if resource.Name == "" {
 		segments := strings.Split(path, ".")
 		resource.Name = segments[len(segments)-1]
