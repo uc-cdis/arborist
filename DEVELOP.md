@@ -125,6 +125,8 @@ that we send to the handler for our server. The `httptest.ResponseRecorder`
 stores the response information including `.Code` and `.Body` which can be
 returned as a string or bytes.
 
+### Example Test
+
 This is a basic pattern for a test to hit a server endpoint (in this example,
 sending some JSON in a `POST`):
 
@@ -169,3 +171,4 @@ coverage.
 ```
 make coverage-viz
 ```
+The `coverage.out` file can also be used with the usual go testing and coverage tools.

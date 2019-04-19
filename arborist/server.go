@@ -279,6 +279,26 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		copy(aud, authRequest.User.Audiences)
 	}
 
+	// if no token is provided, use anonymous group to check auth
+	if authRequest.User.Token == "" {
+		request := AuthRequest{
+			Resource: authRequest.Request.Resource,
+			Service:  authRequest.Request.Action.Service,
+			Method:   authRequest.Request.Action.Method,
+			stmts:    server.stmts,
+		}
+		rv, err := authorizeAnonymous(&request)
+		if err != nil {
+			msg := fmt.Sprintf("could not authorize: %s", err.Error())
+			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(rv, 200).write(w, r)
+		return
+	}
+
 	info, err := server.decodeToken(authRequest.User.Token, aud)
 	if err != nil {
 		server.logger.Info(err.Error())
@@ -300,12 +320,12 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	request := &AuthRequest{
-		info.username,
-		info.policies,
-		authRequest.Request.Resource,
-		authRequest.Request.Action.Service,
-		authRequest.Request.Action.Method,
-		server.stmts,
+		Username: info.username,
+		Policies: info.policies,
+		Resource: authRequest.Request.Resource,
+		Service:  authRequest.Request.Action.Service,
+		Method:   authRequest.Request.Action.Method,
+		stmts:    server.stmts,
 	}
 	if authRequest.User.Policies != nil {
 		request.Policies = authRequest.User.Policies
