@@ -293,8 +293,8 @@ func (policy *Policy) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	_, err := db.Exec(stmt, policy.Name)
 	if err != nil {
 		// TODO: verify correct error
-		msg := fmt.Sprintf("failed to delete policy: policy does not exist: `%s", policy.Name)
-		return newErrorResponse(msg, 404, nil)
+		// doesn't exist, this is fine
+		return nil
 	}
 	return nil
 }
