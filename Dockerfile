@@ -1,7 +1,7 @@
 FROM golang:1.10-alpine as build
 
 # Install SSL certificates
-RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev bash
+RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev bash jq
 
 # Build static arborist binary
 RUN mkdir -p /go/src/github.com/uc-cdis/arborist
