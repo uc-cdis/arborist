@@ -11,4 +11,4 @@ RUN go get golang.org/x/tools/cmd/goyacc
 RUN goyacc -o arborist/resource_rules.go arborist/resource_rules.y
 RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
 
-ENTRYPOINT ["/go/src/github.com/uc-cdis/arborist/bin/arborist", "--logtostderr=1"]
+ENTRYPOINT ["bin/arborist", "--logtostderr=1"]
