@@ -261,8 +261,8 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
-	authRequest := &AuthRequestJSON{}
-	err := json.Unmarshal(body, authRequest)
+	authRequestJSON := &AuthRequestJSON{}
+	err := json.Unmarshal(body, authRequestJSON)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -272,22 +272,84 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	var aud []string
-	if authRequest.User.Audiences == nil {
+	if authRequestJSON.User.Audiences == nil {
 		aud = []string{"openid"}
 	} else {
-		aud = make([]string, len(authRequest.User.Audiences))
-		copy(aud, authRequest.User.Audiences)
+		aud = make([]string, len(authRequestJSON.User.Audiences))
+		copy(aud, authRequestJSON.User.Audiences)
 	}
 
-	// if no token is provided, use anonymous group to check auth
-	if authRequest.User.Token == "" {
-		request := AuthRequest{
-			Resource: authRequest.Request.Resource,
-			Service:  authRequest.Request.Action.Service,
-			Method:   authRequest.Request.Action.Method,
+	isAnonymous := authRequestJSON.User.Token == ""
+	var info *TokenInfo
+	if !isAnonymous {
+		info, err = server.decodeToken(authRequestJSON.User.Token, aud)
+		if err != nil {
+			server.logger.Info(err.Error())
+			errResponse := newErrorResponse(err.Error(), 401, &err)
+			_ = errResponse.write(w, r)
+			return
+		}
+	}
+	policies := []string{}
+	if info != nil {
+		policies = info.policies
+	}
+	if authRequestJSON.User.Policies != nil {
+		policies = authRequestJSON.User.Policies
+	}
+
+	requests := []AuthRequestJSON_Request{}
+	if authRequestJSON.Request != nil {
+		requests = append(requests, *authRequestJSON.Request)
+	}
+	requests = append(requests, authRequestJSON.Requests...)
+
+	for _, authRequest := range requests {
+		// if no token is provided, use anonymous group to check auth
+		if isAnonymous {
+			request := AuthRequest{
+				Resource: authRequest.Resource,
+				Service:  authRequest.Action.Service,
+				Method:   authRequest.Action.Method,
+				stmts:    server.stmts,
+			}
+			rv, err := authorizeAnonymous(&request)
+			if err != nil {
+				msg := fmt.Sprintf("could not authorize: %s", err.Error())
+				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+				response := newErrorResponse(msg, 400, nil)
+				_ = response.write(w, r)
+				return
+			}
+			if !rv.Auth {
+				_ = jsonResponseFrom(rv, 200).write(w, r)
+				return
+			}
+			continue
+		}
+
+		// check that the request has minimum necessary information
+		if authRequest.Resource == "" {
+			msg := "missing resource in auth request"
+			_ = newErrorResponse(msg, 400, nil).write(w, r)
+			return
+		}
+		if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
+			msg := "missing both username and policies in request (at least one is required)"
+			_ = newErrorResponse(msg, 400, nil).write(w, r)
+			return
+		}
+
+		request := &AuthRequest{
+			Username: info.username,
+			Policies: policies,
+			Resource: authRequest.Resource,
+			Service:  authRequest.Action.Service,
+			Method:   authRequest.Action.Method,
 			stmts:    server.stmts,
 		}
-		rv, err := authorizeAnonymous(&request)
+
+		rv, err := authorize(request)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize: %s", err.Error())
 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -295,51 +357,16 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			_ = response.write(w, r)
 			return
 		}
-		_ = jsonResponseFrom(rv, 200).write(w, r)
-		return
+		if !rv.Auth {
+			_ = jsonResponseFrom(rv, 200).write(w, r)
+			return
+		}
 	}
 
-	info, err := server.decodeToken(authRequest.User.Token, aud)
-	if err != nil {
-		server.logger.Info(err.Error())
-		errResponse := newErrorResponse(err.Error(), 401, &err)
-		_ = errResponse.write(w, r)
-		return
+	result := AuthResponse{
+		Auth: true,
 	}
-
-	// check that the request has minimum necessary information
-	if authRequest.Request.Resource == "" {
-		msg := "missing resource in auth request"
-		_ = newErrorResponse(msg, 400, nil).write(w, r)
-		return
-	}
-	if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
-		msg := "missing both username and policies in request (at least one is required)"
-		_ = newErrorResponse(msg, 400, nil).write(w, r)
-		return
-	}
-
-	request := &AuthRequest{
-		Username: info.username,
-		Policies: info.policies,
-		Resource: authRequest.Request.Resource,
-		Service:  authRequest.Request.Action.Service,
-		Method:   authRequest.Request.Action.Method,
-		stmts:    server.stmts,
-	}
-	if authRequest.User.Policies != nil {
-		request.Policies = authRequest.User.Policies
-	}
-
-	rv, err := authorize(request)
-	if err != nil {
-		msg := fmt.Sprintf("could not authorize: %s", err.Error())
-		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
-	_ = jsonResponseFrom(rv, 200).write(w, r)
+	_ = jsonResponseFrom(result, 200).write(w, r)
 }
 
 func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Request, body []byte) {

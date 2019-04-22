@@ -249,7 +249,6 @@ func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err = tx.Exec(stmt, path, resource.Description)
 	if err != nil {
-		fmt.Println(err)
 		// should add more checking here to guarantee the correct error
 		_ = tx.Rollback()
 		// this should only fail because the resource was not unique. return error

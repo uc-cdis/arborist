@@ -298,15 +298,6 @@ func TestServer(t *testing.T) {
 				methodName,
 			)),
 		)
-		createRoleBytes(
-			t,
-			[]byte(`{
-				"id": "bar",
-				"permissions": [
-					{"id": "test", "action": {"service": "test", "method": "bar"}}
-				]
-			}`),
-		)
 		policyBody := []byte(fmt.Sprintf(
 			`{
 				"id": "%s",
@@ -1535,6 +1526,110 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusBadRequest {
 					httpError(t, w, "expected error")
 				}
+			})
+		})
+
+		deleteEverything()
+
+		t.Run("RequestMultiple", func(t *testing.T) {
+			setupTestPolicy(t)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, policyName)
+			w := httptest.NewRecorder()
+			token := TestJWT{username: username}
+			// TODO (rudyardrichter, 2019-04-22): this works just for testing
+			// the `requests` thing but it would be better if it actually was
+			// using distinct policies
+			body := []byte(fmt.Sprintf(
+				`{
+					"user": {"token": "%s"},
+					"requests": [
+						{
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						},
+						{
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					]
+				}`,
+				token.Encode(),
+				resourcePath,
+				serviceName,
+				methodName,
+				resourcePath,
+				serviceName,
+				methodName,
+			))
+			req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "auth request failed")
+			}
+			// request should succeed, user has authorization
+			result := struct {
+				Auth bool `json:"auth"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from auth request")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, true, result.Auth, msg)
+
+			t.Run("Unauthorized", func(t *testing.T) {
+				w = httptest.NewRecorder()
+				token = TestJWT{username: username}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"requests": [
+							{
+								"resource": "%s",
+								"action": {
+									"service": "%s",
+									"method": "%s"
+								}
+							},
+							{
+								"resource": "%s",
+								"action": {
+									"service": "%s",
+									"method": "%s"
+								}
+							}
+						]
+					}`,
+					token.Encode(),
+					"/wrongresource", // TODO: get errors if these contain dashes
+					serviceName,
+					methodName,
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should fail
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, false, result.Auth, msg)
 			})
 		})
 
