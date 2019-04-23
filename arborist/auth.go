@@ -10,8 +10,9 @@ import (
 )
 
 type AuthRequestJSON struct {
-	User    AuthRequestJSON_User    `json:"user"`
-	Request AuthRequestJSON_Request `json:"request"`
+	User     AuthRequestJSON_User      `json:"user"`
+	Request  *AuthRequestJSON_Request  `json:"request"`
+	Requests []AuthRequestJSON_Request `json:"requests"`
 }
 
 type AuthRequestJSON_User struct {
