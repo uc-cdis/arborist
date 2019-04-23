@@ -751,11 +751,18 @@ components:
             jwt:
               type: string
               description: >-
-                A JWT belonging to a user, as defined by RFC 7519. It must contain a
-                field `context.user.policies` listing the policies granted to the user.
+                A JWT belonging to a user, as defined by RFC 7519. It must
+                contain a field `context.user.policies` listing the policies
+                granted to the user.
               example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
         request:
           type: object
+          description: >-
+              The action and resource a user is trying to access. Instead of
+              `request` the API also accepts `requests` which should be an array
+              of these objects. When using `requests`, arborist will return true
+              if the user has access for every request in the list, though they
+              may be granted via different policies.
           properties:
             resource:
               type: string
