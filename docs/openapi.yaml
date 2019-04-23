@@ -869,7 +869,9 @@ components:
       description: >-
         Input resources require *either* the `name` field, if the resource is
         input as the immediate child of another resource node, or the `path`
-        field if submitted at the root resource endpoint.
+        field if submitted at the root resource endpoint. Note that the name
+        and path are only allowed to contain alphanumeric characters and
+        underscores.
       properties:
         name:
           type: string
