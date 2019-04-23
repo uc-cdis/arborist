@@ -501,6 +501,39 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "/a", result.Resource.Path, msg)
 			assert.NotEqual(t, "", result.Resource.Tag, msg)
 			resourceTag = result.Resource.Tag
+
+			// Test that errors are returned if a resource is input with
+			// invalid characters. (Postgres ltree module only allows
+			// alphanumeric.)
+			t.Run("InvalidCharacters", func(t *testing.T) {
+				t.Run("Path", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(`{"path": "/a-b"}`)
+					req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error from creating resource with invalid characters")
+					}
+				})
+
+				t.Run("Name", func(t *testing.T) {
+					w = httptest.NewRecorder()
+					body = []byte(`{"name": "a-^*#b"}`)
+					req = newRequest("POST", "/resource", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error from creating resource with invalid characters")
+					}
+
+					w = httptest.NewRecorder()
+					body = []byte(`{"name": "a/b"}`)
+					req = newRequest("POST", "/resource", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error from creating resource with invalid characters")
+					}
+				})
+			})
 		})
 
 		t.Run("ReadByTag", func(t *testing.T) {

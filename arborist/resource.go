@@ -3,6 +3,7 @@ package arborist
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -220,7 +221,30 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	return resources, nil
 }
 
+// Regexes used to validate input resource paths. The `ltree` module for
+// postgres currently only allows alphanumeric characters and underscores. We
+// also have to pass through slashes in the path since these will be translated
+// to the correct format for the database later.
+var resourcePathValidRegex = regexp.MustCompile(`^[/a-zA-Z0-9_]*$`)
+var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
+
+// Resource names are the same, except they can't contain slashes at all.
+var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
+var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
+
 func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+	validPath := resourcePathValidRegex.MatchString(resource.Path)
+	if !validPath {
+		invalidChars := resourcePathValidChars.ReplaceAllLiteralString(resource.Path, "")
+		msg := fmt.Sprintf("input resource path contains invalid characters: %s", invalidChars)
+		return nil, newErrorResponse(msg, 400, nil)
+	}
+	validName := resourceNameValidRegex.MatchString(resource.Name)
+	if !validName {
+		invalidChars := resourceNameValidChars.ReplaceAllLiteralString(resource.Name, "")
+		msg := fmt.Sprintf("input resource name contains invalid characters: %s", invalidChars)
+		return nil, newErrorResponse(msg, 400, nil)
+	}
 	errResponse := resource.createRecursively(db)
 	if errResponse != nil {
 		return nil, errResponse
