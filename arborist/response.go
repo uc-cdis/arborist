@@ -31,12 +31,12 @@ func wantPrettyJSON(r *http.Request) bool {
 }
 
 func (response *jsonResponse) write(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/json")
 	if response.code > 0 {
 		w.WriteHeader(response.code)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
-	w.Header().Set("Content-Type", "application/json")
 	var bytes []byte
 	var err error
 	if wantPrettyJSON(r) {
