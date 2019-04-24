@@ -847,6 +847,38 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
+
+			t.Run("RoleNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				createResourceBytes(t, []byte(`{"path": "/test_resource"}`))
+				body := []byte(`{
+					"id": "testPolicyRoleNotExist",
+					"resource_paths": ["/test_resource"],
+					"role_ids": ["does_not_exist"]
+				}`)
+				req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error creating policy with nonexistent role")
+				}
+			})
+
+			t.Run("ResourceNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{
+						"id": "testPolicyResourceNotExist",
+						"resource_paths": ["/does/not/exist"],
+						"role_ids": ["%s"]
+					}`,
+					roleName,
+				))
+				req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error creating policy with nonexistent resource")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
