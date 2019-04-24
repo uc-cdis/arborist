@@ -474,6 +474,8 @@ func TestServer(t *testing.T) {
 			})
 		})
 
+		// We're going to create a resource and save the tag into this variable
+		// so we can test looking it up using the tag.
 		var resourceTag string
 
 		t.Run("CreateBadJSON", func(t *testing.T) {
@@ -487,7 +489,9 @@ func TestServer(t *testing.T) {
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			body := []byte(`{"path": "/a"}`)
+			path := "/a"
+			name := "a"
+			body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
 			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
@@ -506,10 +510,20 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, "a", result.Resource.Name, msg)
-			assert.Equal(t, "/a", result.Resource.Path, msg)
+			assert.Equal(t, name, result.Resource.Name, msg)
+			assert.Equal(t, path, result.Resource.Path, msg)
 			assert.NotEqual(t, "", result.Resource.Tag, msg)
 			resourceTag = result.Resource.Tag
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "expected error from creating resource that already exists")
+				}
+			})
 
 			// Test that errors are returned if a resource is input with
 			// invalid characters. (Postgres ltree module only allows
