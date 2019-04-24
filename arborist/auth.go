@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -87,6 +88,7 @@ func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 
 type AuthRequest struct {
 	Username string
+	ClientID string
 	Policies []string
 	Resource string
 	Service  string
@@ -98,13 +100,14 @@ type AuthResponse struct {
 	Auth bool `json:"auth"`
 }
 
-// Authorize a request where the end user is anonymous, so there is no token
-// involved, and access is granted only through the built-in anonymous group.
-func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
+func parse(resource string) (Expression, []string, []string, error) {
 	// parse the resource string
-	exp, args, err := Parse(request.Resource)
+	exp, args, err := Parse(resource)
 	if err != nil {
-		return nil, err
+		// TODO (rudyardrichter, 2019-04-05): this can return some pretty
+		// unintelligible errors from the yacc code. so far callers are OK to
+		// validate inputs, but could do better to return more readable errors
+		return nil, nil, nil, err
 	}
 
 	resources := make([]string, len(args))
@@ -112,6 +115,14 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	for i, arg := range args {
 		resources[i] = formatPathForDb(arg)
 	}
+
+	return exp, args, resources, nil
+}
+
+// Authorize a request where the end user is anonymous, so there is no token
+// involved, and access is granted only through the built-in anonymous group.
+func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
+	exp, args, resources, err := parse(request.Resource)
 
 	// run authorization query
 	rows, err := request.stmts.Query(
@@ -148,25 +159,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	// build the map for evaluation
-	i := 0
-	vars := make(map[string]bool)
-	for rows.Next() {
-		var result bool
-		err = rows.Scan(&result)
-		if err != nil {
-			return nil, err
-		}
-		vars[args[i]] = result
-		i++
-	}
-	if i != len(args) {
-		// user not found (i = 0)
-		return &AuthResponse{false}, nil
-	}
-
-	// evaluate the result
-	rv, err := Eval(exp, vars)
+	rv, err := evaluate(exp, args, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -177,23 +170,8 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 // The given resource can be an expression of slash-separated resource paths
 // connected with `and`, `or` or `not`. The priority of these boolean operators
 // is: `not > and > or`. When in doubt, use parenthesises to specify explicitly.
-func authorize(request *AuthRequest) (*AuthResponse, error) {
-	// parse the resource string
-	exp, args, err := Parse(request.Resource)
-	if err != nil {
-		// TODO (rudyardrichter, 2019-04-05): this can return some pretty
-		// unintelligible errors from the yacc code. so far callers are OK to
-		// validate inputs, but could do better to return more readable errors
-		return nil, err
-	}
-
-	resources := make([]string, len(args))
-	// format resource path for DB
-	for i, arg := range args {
-		resources[i] = formatPathForDb(arg)
-	}
-
-	// run authorization query
+func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
+	exp, args, resources, err := parse(request.Resource)
 	rows, err := request.stmts.Query(
 		`
 		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
@@ -240,29 +218,73 @@ func authorize(request *AuthRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
+	rv, err := evaluate(exp, args, rows)
+	if err != nil {
+		return nil, err
+	}
+	return &AuthResponse{rv}, nil
+}
+
+// This is similar as authorizeUser, only that this method checks for clientID only
+func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
+	exp, args, resources, err := parse(request.Resource)
+	rows, err := request.stmts.Query(
+		`
+		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
+			SELECT array_agg(resource.path) AS allowed FROM client
+			JOIN client_policy ON client_policy.client_dbid = client.id
+			JOIN policy_resource ON policy_resource.policy_id = client_policy.policy_id
+			JOIN resource ON resource.id = policy_resource.resource_id
+			WHERE client.client_id = $1
+			AND EXISTS (
+				SELECT 1 FROM policy_role
+				JOIN permission ON permission.role_id = policy_role.role_id
+				WHERE policy_role.policy_id = client_policy.policy_id
+				AND permission.service = $2
+				AND permission.method = $3
+			)
+		) _, unnest($4::text[]);
+		`,
+		request.ClientID,    // $1
+		request.Service,     // $2
+		request.Method,      // $3
+		pq.Array(resources), // $4
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	rv, err := evaluate(exp, args, rows)
+	if err != nil {
+		return nil, err
+	}
+	return &AuthResponse{rv}, nil
+}
+
+func evaluate(exp Expression, args []string, rows *sql.Rows) (bool, error) {
 	// build the map for evaluation
 	i := 0
 	vars := make(map[string]bool)
 	for rows.Next() {
 		var result bool
-		err = rows.Scan(&result)
+		err := rows.Scan(&result)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
 		vars[args[i]] = result
 		i++
 	}
 	if i != len(args) {
 		// user not found (i = 0)
-		return &AuthResponse{false}, nil
+		return false, nil
 	}
 
 	// evaluate the result
 	rv, err := Eval(exp, vars)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	return &AuthResponse{rv}, nil
+	return rv, nil
 }
 
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, error) {
@@ -319,14 +341,22 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
 				)
 			) AS subresources
-		FROM usr
-		LEFT JOIN usr_policy ON usr.id = usr_policy.usr_id
-		LEFT JOIN policy_resource ON policy_resource.policy_id = usr_policy.policy_id
+		FROM (
+			SELECT usr_policy.policy_id
+			FROM usr
+			JOIN usr_policy ON usr.id = usr_policy.usr_id
+			WHERE usr.name = $1
+			UNION
+			SELECT client_policy.policy_id
+			FROM client
+			JOIN client_policy ON client_policy.client_dbid = client.id
+			WHERE client.client_id = $2
+		) policies
+		LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 		LEFT JOIN resource ON resource.id = policy_resource.resource_id
-		WHERE usr.name = $1
 	`
 	resources := []ResourceFromQuery{}
-	err := db.Select(&resources, stmt, request.Username)
+	err := db.Select(&resources, stmt, request.Username, request.ClientID)
 	if err != nil {
 		return nil, err
 	}
