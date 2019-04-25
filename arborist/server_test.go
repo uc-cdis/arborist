@@ -1617,6 +1617,61 @@ func TestServer(t *testing.T) {
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, true, result.Auth, msg)
 
+			t.Run("UsingStar", func(t *testing.T) {
+				createRoleBytes(
+					t,
+					[]byte(`{
+						"id": "roleUsingStar",
+						"permissions": [
+							{"id": "serviceStar", "action": {"service": "*", "method": "read"}}
+						]
+					}`),
+				)
+				createPolicyBytes(
+					t,
+					[]byte(fmt.Sprintf(
+						`{
+							"id": "policyUsingStar",
+							"resource_paths": ["%s"],
+							"role_ids": ["roleUsingStar"]
+						}`,
+						resourcePath,
+					)),
+				)
+				grantUserPolicy(t, username, "policyUsingStar")
+				w := httptest.NewRecorder()
+				token := TestJWT{username: username}
+				body := []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "shouldNotMatter",
+								"method": "read"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+				))
+				req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should succeed, user has authorization
+				result := struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, true, result.Auth, msg)
+			})
+
 			t.Run("Unauthorized", func(t *testing.T) {
 				w = httptest.NewRecorder()
 				token = TestJWT{username: username}
