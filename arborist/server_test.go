@@ -472,6 +472,28 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "resource creation didn't fail as expected")
 				}
 			})
+
+			t.Run("InvalidPath", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"path": "/hyphens-not-allowed"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
+
+			t.Run("InvalidName", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				// missing required field
+				body := []byte(`{"name": "hyphens-not-allowed"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "resource creation didn't fail as expected")
+				}
+			})
 		})
 
 		var resourceTag string

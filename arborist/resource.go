@@ -232,20 +232,28 @@ var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
 var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
 var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) validate() *ErrorResponse {
 	validPath := resourcePathValidRegex.MatchString(resource.Path)
 	if !validPath {
 		invalidChars := resourcePathValidChars.ReplaceAllLiteralString(resource.Path, "")
 		msg := fmt.Sprintf("input resource path contains invalid characters: %s", invalidChars)
-		return nil, newErrorResponse(msg, 400, nil)
+		return newErrorResponse(msg, 400, nil)
 	}
 	validName := resourceNameValidRegex.MatchString(resource.Name)
 	if !validName {
 		invalidChars := resourceNameValidChars.ReplaceAllLiteralString(resource.Name, "")
 		msg := fmt.Sprintf("input resource name contains invalid characters: %s", invalidChars)
-		return nil, newErrorResponse(msg, 400, nil)
+		return newErrorResponse(msg, 400, nil)
 	}
-	errResponse := resource.createRecursively(db)
+	return nil
+}
+
+func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+	errResponse := resource.validate()
+	if errResponse != nil {
+		return nil, errResponse
+	}
+	errResponse = resource.createRecursively(db)
 	if errResponse != nil {
 		return nil, errResponse
 	}
