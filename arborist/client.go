@@ -8,18 +8,18 @@ import (
 )
 
 type Client struct {
-	ClientID     string   `json:"clientID"`
+	ClientID string   `json:"clientID"`
 	Policies []string `json:"policies"`
 }
 
 type ClientFromQuery struct {
-	ClientID     string         `db:"fence_client_id"`
+	ClientID string         `db:"fence_client_id"`
 	Policies pq.StringArray `db:"policies"`
 }
 
 func (clientFromQuery *ClientFromQuery) standardize() Client {
 	client := Client{
-		ClientID:     clientFromQuery.ClientID,
+		ClientID: clientFromQuery.ClientID,
 		Policies: clientFromQuery.Policies,
 	}
 	return client
@@ -132,7 +132,7 @@ func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
 			i := 0
 			for policy := range remaining {
 				missingPolicies[i] = policy
-				i ++
+				i++
 			}
 			msg := fmt.Sprintf(
 				"failed to grant policy to client: policies does not exist: %v",
