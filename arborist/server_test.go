@@ -1834,51 +1834,12 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected error")
 				}
 			})
-		})
 
-		deleteEverything()
-
-		t.Run("RequestClient", func(t *testing.T) {
-			setupTestPolicy(t)
 			createClientBytes(t, clientBody)
-			grantClientPolicy(t, clientID, policyName)
-			w := httptest.NewRecorder()
-			token := TestJWT{clientID: clientID}
-			body := []byte(fmt.Sprintf(
-				`{
-					"user": {"token": "%s"},
-					"request": {
-						"resource": "%s",
-						"action": {
-							"service": "%s",
-							"method": "%s"
-						}
-					}
-				}`,
-				token.Encode(),
-				resourcePath,
-				serviceName,
-				methodName,
-			))
-			req := newRequest("POST", "/auth/client", bytes.NewBuffer(body))
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				httpError(t, w, "auth client failed")
-			}
-			// request should succeed, user has authorization
-			result := struct {
-				Auth bool `json:"auth"`
-			}{}
-			err = json.Unmarshal(w.Body.Bytes(), &result)
-			if err != nil {
-				httpError(t, w, "couldn't read response from auth client")
-			}
-			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, true, result.Auth, msg)
 
-			t.Run("Unauthorized", func(t *testing.T) {
+			t.Run("ClientForbidden", func(t *testing.T) {
 				w = httptest.NewRecorder()
-				token = TestJWT{clientID: clientID}
+				token = TestJWT{username: username, clientID: clientID}
 				body = []byte(fmt.Sprintf(
 					`{
 						"user": {"token": "%s"},
@@ -1891,14 +1852,14 @@ func TestServer(t *testing.T) {
 						}
 					}`,
 					token.Encode(),
-					"/wrongresource", // TODO: get errors if these contain slashes
+					resourcePath,
 					serviceName,
 					methodName,
 				))
-				req = newRequest("POST", "/auth/client", bytes.NewBuffer(body))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusOK {
-					httpError(t, w, "auth client failed")
+					httpError(t, w, "auth request failed")
 				}
 				// request should fail
 				result = struct {
@@ -1906,21 +1867,48 @@ func TestServer(t *testing.T) {
 				}{}
 				err = json.Unmarshal(w.Body.Bytes(), &result)
 				if err != nil {
-					httpError(t, w, "couldn't read response from auth client")
+					httpError(t, w, "couldn't read response from auth request")
 				}
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, false, result.Auth, msg)
 			})
 
-			t.Run("BadRequest", func(t *testing.T) {
+			grantClientPolicy(t, clientID, policyName)
+
+			t.Run("ClientBothOK", func(t *testing.T) {
 				w = httptest.NewRecorder()
-				token = TestJWT{clientID: clientID}
-				body = []byte("not real JSON")
-				req = newRequest("POST", "/auth/client", bytes.NewBuffer(body))
+				token = TestJWT{username: username, clientID: clientID}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
-					httpError(t, w, "expected error")
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
 				}
+				// request should fail
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, true, result.Auth, msg)
 			})
 		})
 

@@ -28,38 +28,9 @@ paths:
         however our usage so far is to use the permission model to capture the
         basic set of operations one might expect in RBAC (read/write, etc.)
         combined with the client service, and the path for the resource the user
-        is trying to access.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRequestBody'
-      responses:
-        200:
-          description: >-
-            Arborist successfully returned an authorization decision. NOTE
-            that a 200 status DOES NOT indicate authorization, only that the
-            input was valid. The `"auth"` field in the response indicates
-            authorization.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthRequestResponse'
-        400:
-          description: >-
-            The input was somehow invalid; for example, a given resource does
-            not exist.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserError'
-  /auth/client:
-    post:
-      tags:
-        - auth
-      description: >-
-        This is similar to /auth/request, but the user token/policy is not used,
-        instead the Client ID is the only identity checked.
+        is trying to access. If the given JWT has `azp` field, the permission of
+        the corresponding client will be also checked; only when both the user
+        and the client have permission can the response be positive.
       requestBody:
         content:
           application/json:

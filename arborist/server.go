@@ -86,7 +86,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
-	router.Handle("/auth/{identity:(?:request|client)}", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
+	router.Handle("/auth/request", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
 	router.Handle("/auth/resources", http.HandlerFunc(parseJSON(server.handleListAuthResources))).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
@@ -327,7 +327,6 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		requests = append(requests, *authRequestJSON.Request)
 	}
 	requests = append(requests, authRequestJSON.Requests...)
-	identity := mux.Vars(r)["identity"]
 
 	for _, authRequest := range requests {
 		// if no token is provided, use anonymous group to check auth
@@ -359,20 +358,10 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
 		}
-		if info.policies == nil || len(info.policies) == 0 {
-			if identity == "client" {
-				if info.clientID == "" {
-					msg := "missing both clientID and policies in request (at least one is required)"
-					_ = newErrorResponse(msg, 400, nil).write(w, r)
-					return
-				}
-			} else {
-				if info.username == "" {
-					msg := "missing both username and policies in request (at least one is required)"
-					_ = newErrorResponse(msg, 400, nil).write(w, r)
-					return
-				}
-			}
+		if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
+			msg := "missing both username and policies in request (at least one is required)"
+			_ = newErrorResponse(msg, 400, nil).write(w, r)
+			return
 		}
 
 		request := &AuthRequest{
@@ -385,12 +374,9 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			stmts:    server.stmts,
 		}
 
-		var rv *AuthResponse
-		var err error
-		if identity == "client" {
+		rv, err := authorizeUser(request)
+		if rv.Auth && request.ClientID != "" {
 			rv, err = authorizeClient(request)
-		} else {
-			rv, err = authorizeUser(request)
 		}
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize: %s", err.Error())

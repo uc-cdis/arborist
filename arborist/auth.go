@@ -232,10 +232,10 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 		`
 		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
 			SELECT array_agg(resource.path) AS allowed FROM client
-			JOIN client_policy ON client_policy.client_dbid = client.id
+			JOIN client_policy ON client_policy.client_id = client.id
 			JOIN policy_resource ON policy_resource.policy_id = client_policy.policy_id
 			JOIN resource ON resource.id = policy_resource.resource_id
-			WHERE client.client_id = $1
+			WHERE client.fence_client_id = $1
 			AND EXISTS (
 				SELECT 1 FROM policy_role
 				JOIN permission ON permission.role_id = policy_role.role_id
@@ -349,8 +349,8 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			UNION
 			SELECT client_policy.policy_id
 			FROM client
-			JOIN client_policy ON client_policy.client_dbid = client.id
-			WHERE client.client_id = $2
+			JOIN client_policy ON client_policy.client_id = client.id
+			WHERE client.fence_client_id = $2
 		) policies
 		LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 		LEFT JOIN resource ON resource.id = policy_resource.resource_id

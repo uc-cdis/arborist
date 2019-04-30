@@ -13,7 +13,7 @@ type Client struct {
 }
 
 type ClientFromQuery struct {
-	ClientID     string         `db:"client_id"`
+	ClientID     string         `db:"fence_client_id"`
 	Policies pq.StringArray `db:"policies"`
 }
 
@@ -28,12 +28,12 @@ func (clientFromQuery *ClientFromQuery) standardize() Client {
 func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) {
 	stmt := `
 		SELECT
-			client.client_id,
+			client.fence_client_id,
 			array_remove(array_agg(policy.name), NULL) AS policies
 		FROM client
-		LEFT JOIN client_policy ON client.id = client_policy.client_dbid
+		LEFT JOIN client_policy ON client.id = client_policy.client_id
 		LEFT JOIN policy ON policy.id = client_policy.policy_id
-		WHERE client.client_id = $1
+		WHERE client.fence_client_id = $1
 		GROUP BY client.id
 		LIMIT 1
 	`
@@ -52,10 +52,10 @@ func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) 
 func listClientsFromDb(db *sqlx.DB) ([]ClientFromQuery, error) {
 	stmt := `
 		SELECT
-			client.client_id,
+			client.fence_client_id,
 			array_remove(array_agg(policy.name), NULL) AS policies
 		FROM client
-		LEFT JOIN client_policy ON client.id = client_policy.client_dbid
+		LEFT JOIN client_policy ON client.id = client_policy.client_id
 		LEFT JOIN policy ON policy.id = client_policy.policy_id
 		GROUP BY client.id
 	`
@@ -81,7 +81,7 @@ func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
 
 	var clientDBID int
 	stmt := `
-		INSERT INTO client(client_id)
+		INSERT INTO client(fence_client_id)
 		VALUES ($1)
 		RETURNING id
 	`
@@ -107,7 +107,7 @@ func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
 				SELECT id, name FROM policy WHERE name = ANY($1)
 			),
 			client_policies AS (
-				INSERT INTO client_policy (client_dbid, policy_id)
+				INSERT INTO client_policy (client_id, policy_id)
 				SELECT $2, id FROM policies
 			)
 			SELECT name FROM policies
@@ -153,7 +153,7 @@ func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
 }
 
 func (client *Client) deleteInDb(db *sqlx.DB) *ErrorResponse {
-	stmt := "DELETE FROM client WHERE client_id = $1"
+	stmt := "DELETE FROM client WHERE fence_client_id = $1"
 	_, err := db.Exec(stmt, client.ClientID)
 	if err != nil {
 		// TODO: verify correct error
@@ -165,8 +165,8 @@ func (client *Client) deleteInDb(db *sqlx.DB) *ErrorResponse {
 
 func grantClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorResponse {
 	stmt := `
-		INSERT INTO client_policy(client_dbid, policy_id)
-		VALUES ((SELECT id FROM client WHERE client_id = $1), (SELECT id FROM policy WHERE name = $2))
+		INSERT INTO client_policy(client_id, policy_id)
+		VALUES ((SELECT id FROM client WHERE fence_client_id = $1), (SELECT id FROM policy WHERE name = $2))
 	`
 	_, err := db.Exec(stmt, clientID, policyName)
 	if err != nil {
@@ -202,7 +202,7 @@ func grantClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorRe
 func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
-		WHERE client_dbid = (SELECT id FROM client WHERE client_id = $1)
+		WHERE client_id = (SELECT id FROM client WHERE fence_client_id = $1)
 		AND policy_id = (SELECT id FROM policy WHERE name = $2)
 	`
 	_, err := db.Exec(stmt, clientID, policyName)
@@ -216,7 +216,7 @@ func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorR
 func revokeClientPolicyAll(db *sqlx.DB, clientID string) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
-		WHERE client_dbid = (SELECT id FROM client WHERE client_id = $1)
+		WHERE client_id = (SELECT id FROM client WHERE fence_client_id = $1)
 	`
 	_, err := db.Exec(stmt, clientID)
 	if err != nil {
