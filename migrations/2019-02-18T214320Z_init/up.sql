@@ -163,6 +163,17 @@ CREATE TABLE usr_policy (
     PRIMARY KEY(usr_id, policy_id)
 );
 
+CREATE TABLE client (
+    id serial PRIMARY KEY, -- arborist only---not fence
+    external_client_id text UNIQUE NOT NULL -- SHARED with fence
+);
+
+CREATE TABLE client_policy (
+    client_id integer REFERENCES client(id) ON DELETE CASCADE,
+    policy_id integer REFERENCES policy(id) ON DELETE CASCADE,
+    PRIMARY KEY(client_id, policy_id)
+);
+
 CREATE TABLE grp (
     id serial PRIMARY KEY,
     name text UNIQUE NOT NULL

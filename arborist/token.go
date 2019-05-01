@@ -9,6 +9,7 @@ import (
 
 type TokenInfo struct {
 	username string
+	clientID string
 	policies []string
 }
 
@@ -79,8 +80,17 @@ func (server *Server) decodeToken(token string, aud []string) (*TokenInfo, error
 			policies[i] = policyString
 		}
 	}
+	clientID := ""
+	clientIDInterface, exists := (*claims)["azp"]
+	if exists {
+		clientID, casted = clientIDInterface.(string)
+		if !casted {
+			return nil, fieldTypeError("azp")
+		}
+	}
 	info := TokenInfo{
 		username: username,
+		clientID: clientID,
 		policies: policies,
 	}
 	return &info, nil

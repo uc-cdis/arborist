@@ -7,19 +7,19 @@ import (
 
 type CachedStmts struct {
 	db    *sqlx.DB
-	stmts map[string]*sql.Stmt
+	stmts map[string]*sqlx.Stmt
 }
 
 func NewCachedStmts(db *sqlx.DB) *CachedStmts {
-	return &CachedStmts{db, make(map[string]*sql.Stmt)}
+	return &CachedStmts{db, make(map[string]*sqlx.Stmt)}
 }
 
-func (s *CachedStmts) Prepare(query string) (*sql.Stmt, error) {
+func (s *CachedStmts) Prepare(query string) (*sqlx.Stmt, error) {
 	stmt, ok := s.stmts[query]
 	if !ok {
 		// GOTCHA: It's okay not to lock this lazy initialization
 		var err error = nil
-		stmt, err = s.db.Prepare(query)
+		stmt, err = s.db.Preparex(query)
 		if err != nil {
 			return nil, err
 		}
@@ -34,4 +34,12 @@ func (s *CachedStmts) Query(query string, args ...interface{}) (*sql.Rows, error
 		return nil, err
 	}
 	return stmt.Query(args...)
+}
+
+func (s *CachedStmts) Select(query string, dest interface{}, args ...interface{}) error {
+	stmt, err := s.Prepare(query)
+	if err != nil {
+		return err
+	}
+	return stmt.Select(dest, args...)
 }
