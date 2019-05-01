@@ -594,7 +594,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Policy'
+              $ref: '#/components/schemas/GrantPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -714,7 +714,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Policy'
+              $ref: '#/components/schemas/GrantPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -832,7 +832,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Policy'
+              $ref: '#/components/schemas/GrantPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -1094,6 +1094,13 @@ components:
           items:
             type: string
           example: ["/programs/DEV/projects/test"]
+    GrantPolicy:
+      type: object
+      properties:
+        policy:
+          type: string
+          description: the policy to grant
+          example: 'policy_name'
     User:
       type: object
       properties:
