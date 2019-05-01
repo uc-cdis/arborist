@@ -256,31 +256,21 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		stmts:    server.stmts,
 	}
 
-	handle := func(rv *AuthResponse, err error) bool {
-		if err != nil {
-			msg := fmt.Sprintf("could not authorize: %s", err.Error())
-			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-			response := newErrorResponse(msg, 400, nil)
-			_ = response.write(w, r)
-			return true
-		}
-		if !rv.Auth {
-			errResponse := newErrorResponse(
-				"Unauthorized: user does not have access to this resource", 403, nil)
-			_ = errResponse.write(w, r)
-			return true
-		}
-		return false
-	}
-
 	rv, err := authorizeUser(&authRequest)
-	if handle(rv, err) {
+	if err == nil && rv.Auth && authRequest.ClientID != "" {
+		rv, err = authorizeClient(&authRequest)
+	}
+	if err != nil {
+		msg := fmt.Sprintf("could not authorize: %s", err.Error())
+		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
 		return
 	}
-
-	if authRequest.ClientID != "" {
-		rv, err = authorizeClient(&authRequest)
-		handle(rv, err)
+	if !rv.Auth {
+		errResponse := newErrorResponse(
+			"Unauthorized: user does not have access to this resource", 403, nil)
+		_ = errResponse.write(w, r)
 	}
 }
 

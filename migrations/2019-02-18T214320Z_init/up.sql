@@ -165,7 +165,7 @@ CREATE TABLE usr_policy (
 
 CREATE TABLE client (
     id serial PRIMARY KEY, -- arborist only---not fence
-    fence_client_id text UNIQUE NOT NULL -- SHARED with fence
+    external_client_id text UNIQUE NOT NULL -- SHARED with fence
 );
 
 CREATE TABLE client_policy (
