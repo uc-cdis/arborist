@@ -232,55 +232,36 @@ var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
 var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
 var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) validate() *ErrorResponse {
 	validPath := resourcePathValidRegex.MatchString(resource.Path)
 	if !validPath {
 		invalidChars := resourcePathValidChars.ReplaceAllLiteralString(resource.Path, "")
 		msg := fmt.Sprintf("input resource path contains invalid characters: %s", invalidChars)
-		return nil, newErrorResponse(msg, 400, nil)
+		return newErrorResponse(msg, 400, nil)
 	}
 	validName := resourceNameValidRegex.MatchString(resource.Name)
 	if !validName {
 		invalidChars := resourceNameValidChars.ReplaceAllLiteralString(resource.Name, "")
 		msg := fmt.Sprintf("input resource name contains invalid characters: %s", invalidChars)
-		return nil, newErrorResponse(msg, 400, nil)
+		return newErrorResponse(msg, 400, nil)
 	}
-	errResponse := resource.createRecursively(db)
+	return nil
+}
+
+func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+	errResponse := resource.validate()
 	if errResponse != nil {
 		return nil, errResponse
 	}
-	resourceFromQuery, err := resourceWithPath(db, resource.Path)
-	if err != nil {
-		return nil, newErrorResponse(err.Error(), 500, &err)
-	}
-	return resourceFromQuery, nil
-}
-
-func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
+		return nil, newErrorResponse(msg, 500, &err)
 	}
-
-	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	// -1 means replace everything
-	path := formatPathForDb(resource.Path)
-	if resource.Name == "" {
-		segments := strings.Split(path, ".")
-		resource.Name = segments[len(segments)-1]
+	errResponse = resource.createRecursively(tx)
+	if errResponse != nil {
+		return nil, errResponse
 	}
-	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
-	_, err = tx.Exec(stmt, path, resource.Description)
-	if err != nil {
-		// should add more checking here to guarantee the correct error
-		_ = tx.Rollback()
-		// this should only fail because the resource was not unique. return error
-		// accordingly
-		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
-		return newErrorResponse(msg, 409, &err)
-	}
-
 	err = tx.Commit()
 	if err != nil {
 		_ = tx.Rollback()
@@ -291,7 +272,32 @@ func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 		// database side, because of missing parent or similar; return 400.
 		errMsg := strings.TrimPrefix(err.Error(), "pq: ")
 		msg := fmt.Sprintf("couldn't create resource: %s", errMsg)
-		return newErrorResponse(msg, 400, &err)
+		return nil, newErrorResponse(msg, 400, &err)
+	}
+	resourceFromQuery, err := resourceWithPath(db, resource.Path)
+	if err != nil {
+		return nil, newErrorResponse(err.Error(), 500, &err)
+	}
+	return resourceFromQuery, nil
+}
+
+func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+	// arborist uses `/` for path separator; ltree in postgres uses `.`
+	// -1 means replace everything
+	path := formatPathForDb(resource.Path)
+	if resource.Name == "" {
+		segments := strings.Split(path, ".")
+		resource.Name = segments[len(segments)-1]
+	}
+	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
+	_, err := tx.Exec(stmt, path, resource.Description)
+	if err != nil {
+		// should add more checking here to guarantee the correct error
+		_ = tx.Rollback()
+		// this should only fail because the resource was not unique. return error
+		// accordingly
+		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
+		return newErrorResponse(msg, 409, &err)
 	}
 
 	// recursively create subresources
@@ -299,7 +305,7 @@ func (resource *ResourceIn) createRecursively(db *sqlx.DB) *ErrorResponse {
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
 		subresource.Path = resource.Path + "/" + subresource.Name
-		errResponse := subresource.createRecursively(db)
+		errResponse := subresource.createRecursively(tx)
 		if errResponse != nil {
 			return errResponse
 		}
@@ -316,9 +322,8 @@ func (resource *ResourceIn) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM resource WHERE path = $1"
 	_, err := db.Exec(stmt, formatPathForDb(resource.Path))
 	if err != nil {
-		// TODO: verify correct error
-		msg := fmt.Sprintf("failed to delete resource: resource does not exist: `%s", resource.Path)
-		return newErrorResponse(msg, 404, nil)
+		// resource already doesn't exist; this is fine
+		return nil
 	}
 	return nil
 }

@@ -114,6 +114,14 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 
+	router.Handle("/client", http.HandlerFunc(server.handleClientList)).Methods("GET")
+	router.Handle("/client", http.HandlerFunc(parseJSON(server.handleClientCreate))).Methods("POST")
+	router.Handle("/client/{clientID}", http.HandlerFunc(server.handleClientRead)).Methods("GET")
+	router.Handle("/client/{clientID}", http.HandlerFunc(server.handleClientDelete)).Methods("DELETE")
+	router.Handle("/client/{clientID}/policy", http.HandlerFunc(parseJSON(server.handleClientGrantPolicy))).Methods("POST")
+	router.Handle("/client/{clientID}/policy", http.HandlerFunc(server.handleClientRevokeAll)).Methods("DELETE")
+	router.Handle("/client/{clientID}/policy/{policyName}", http.HandlerFunc(server.handleClientRevokePolicy)).Methods("DELETE")
+
 	router.Handle("/group", http.HandlerFunc(server.handleGroupList)).Methods("GET")
 	router.Handle("/group", http.HandlerFunc(parseJSON(server.handleGroupCreate))).Methods("POST")
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupRead)).Methods("GET")
@@ -243,14 +251,20 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("REMOTE_USER", info.username)
 
-	rv, err := authorize(&AuthRequest{
-		info.username,
-		info.policies,
-		resourcePath,
-		service,
-		method,
-		server.stmts,
-	})
+	var authRequest = AuthRequest{
+		Username: info.username,
+		ClientID: info.clientID,
+		Policies: info.policies,
+		Resource: resourcePath,
+		Service:  service,
+		Method:   method,
+		stmts:    server.stmts,
+	}
+
+	rv, err := authorizeUser(&authRequest)
+	if err == nil && rv.Auth && authRequest.ClientID != "" {
+		rv, err = authorizeClient(&authRequest)
+	}
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -352,6 +366,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 		request := &AuthRequest{
 			Username: info.username,
+			ClientID: info.clientID,
 			Policies: policies,
 			Resource: authRequest.Resource,
 			Service:  authRequest.Action.Service,
@@ -359,7 +374,10 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			stmts:    server.stmts,
 		}
 
-		rv, err := authorize(request)
+		rv, err := authorizeUser(request)
+		if rv.Auth && request.ClientID != "" {
+			rv, err = authorizeClient(request)
+		}
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize: %s", err.Error())
 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -419,6 +437,7 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 
 	request := &AuthRequest{
 		Username: info.username,
+		ClientID: info.clientID,
 		Policies: info.policies,
 	}
 	if authRequest.User.Policies != nil {
@@ -883,6 +902,133 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 	username := mux.Vars(r)["username"]
 	policyName := mux.Vars(r)["policyName"]
 	errResponse := revokeUserPolicy(server.db, username, policyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleClientList(w http.ResponseWriter, r *http.Request) {
+	clientsFromQuery, err := listClientsFromDb(server.db)
+	if err != nil {
+		msg := fmt.Sprintf("clients query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	clients := []Client{}
+	for _, clientFromQuery := range clientsFromQuery {
+		clients = append(clients, clientFromQuery.standardize())
+	}
+	result := struct {
+		Clients []Client `json:"clients"`
+	}{
+		Clients: clients,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	client := &Client{}
+	err := json.Unmarshal(body, client)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse client from JSON: %s", err.Error())
+		server.logger.Info("tried to create client but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := client.createInDb(server.db)
+	if errResponse != nil {
+		if errResponse.Error.Code >= 500 {
+			server.logger.Error(errResponse.Error.Message)
+		} else {
+			server.logger.Info(errResponse.Error.Message)
+		}
+		_ = errResponse.write(w, r)
+		return
+	}
+	created := struct {
+		Created *Client `json:"created"`
+	}{
+		Created: client,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
+}
+
+func (server *Server) handleClientRead(w http.ResponseWriter, r *http.Request) {
+	clientID := mux.Vars(r)["clientID"]
+	clientFromQuery, err := clientWithClientID(server.db, clientID)
+	if clientFromQuery == nil {
+		msg := fmt.Sprintf("no client found with clientID: %s", clientID)
+		errResponse := newErrorResponse(msg, 404, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	if err != nil {
+		msg := fmt.Sprintf("client query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		server.logger.Error(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	client := clientFromQuery.standardize()
+	_ = jsonResponseFrom(client, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleClientDelete(w http.ResponseWriter, r *http.Request) {
+	clientID := mux.Vars(r)["clientID"]
+	client := Client{ClientID: clientID}
+	errResponse := client.deleteInDb(server.db)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	clientID := mux.Vars(r)["clientID"]
+	requestPolicy := struct {
+		PolicyName string `json:"policy"`
+	}{}
+	err := json.Unmarshal(body, &requestPolicy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to client but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Request) {
+	clientID := mux.Vars(r)["clientID"]
+	errResponse := revokeClientPolicyAll(server.db, clientID)
+	if errResponse != nil {
+		server.logger.Info(errResponse.Error.Message)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleClientRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	clientID := mux.Vars(r)["clientID"]
+	policyName := mux.Vars(r)["policyName"]
+	errResponse := revokeClientPolicy(server.db, clientID, policyName)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)

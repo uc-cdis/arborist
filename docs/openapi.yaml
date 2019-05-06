@@ -28,7 +28,9 @@ paths:
         however our usage so far is to use the permission model to capture the
         basic set of operations one might expect in RBAC (read/write, etc.)
         combined with the client service, and the path for the resource the user
-        is trying to access.
+        is trying to access. If the given JWT has `azp` field, the permission of
+        the corresponding client will be also checked; only when both the user
+        and the client have permission can the response be positive.
       requestBody:
         content:
           application/json:
@@ -592,7 +594,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Policy'
+              $ref: '#/components/schemas/GrantPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -630,6 +632,126 @@ paths:
           description: successfully revoked
         404:
           description: user not found
+  /client:
+    get:
+      tags:
+        - client
+      description: >-
+        List all the clients registered in arborist.
+      responses:
+        200:
+          description: list of clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientsList'
+    post:
+      tags:
+        - client
+      description: >-
+        Create a new client
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Client'
+      responses:
+        201:
+          description: created client
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Client'
+  /client/{clientID}:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+    get:
+      tags:
+        - client
+      description: >-
+        Read the information for a specific client.
+      responses:
+        200:
+          description: client information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        404:
+          description: client not found
+    delete:
+      tags:
+        - client
+      description: >-
+        Delete this client from the database.
+      responses:
+        204:
+          description: client successfully deleted
+        404:
+          description: client not found
+  /client/{clientID}/policy:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+    post:
+      tags:
+        - client
+      description: >-
+        Grant an additional policy to a client. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPolicy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: client not found, or policy not found
+    delete:
+      tags:
+        - client
+      description: >-
+        Revoke all policies for this client.
+      responses:
+        204:
+          description: successfully revoked policies
+  /client/{clientID}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - client
+      description: >-
+        Revoke this policy from this client, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: client not found
   /group:
     get:
       tags:
@@ -710,7 +832,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Policy'
+              $ref: '#/components/schemas/GrantPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -972,6 +1094,13 @@ components:
           items:
             type: string
           example: ["/programs/DEV/projects/test"]
+    GrantPolicy:
+      type: object
+      properties:
+        policy:
+          type: string
+          description: the policy to grant
+          example: 'policy_name'
     User:
       type: object
       properties:
@@ -999,6 +1128,25 @@ components:
           items:
             type: string
             example: 'username'
+    Client:
+      type: object
+      properties:
+        clientID:
+          type: string
+          example: 'x68GTbL0NHOV085t51jEuJW3vDrng3G5hr7p1B4l'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'
+    ClientsList:
+      type: object
+      properties:
+        clients:
+          type: array
+          items:
+            type: string
+            example: 'x68GTbL0NHOV085t51jEuJW3vDrng3G5hr7p1B4l'
     Group:
       type: object
       properties:
