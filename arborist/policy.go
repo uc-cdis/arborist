@@ -298,3 +298,12 @@ func (policy *Policy) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	}
 	return nil
 }
+
+func (policy *Policy) overwriteInDb(db *sqlx.DB) *ErrorResponse {
+	errResponse := policy.deleteInDb(db)
+	if errResponse != nil {
+		return errResponse
+	}
+	errResponse = policy.createInDb(db)
+	return errResponse
+}

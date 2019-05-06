@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -885,6 +886,35 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, []string{roleName}, result.Roles, msg)
 		})
 
+		t.Run("Overwrite", func(t *testing.T) {
+			createResourceBytes(t, []byte(`{"path": "/a/z"}`))
+			w := httptest.NewRecorder()
+			body := []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["/a/z"],
+					"role_ids": ["%s"]
+				}`,
+				policyName,
+				roleName,
+			))
+			req := newRequest("PUT", "/policy", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't put policy")
+			}
+			result := struct {
+				Policy struct {
+					Paths []string `json:"resource_paths"`
+				} `json:"updated"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			assert.Equal(t, []string{"/a/z"}, result.Policy.Paths)
+		})
+
 		t.Run("List", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/policy", nil)
@@ -1268,7 +1298,13 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from group read")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, testGroupUsers, result.Users, msg)
+			resultUsers := make([]string, len(result.Users))
+			copy(resultUsers, result.Users)
+			sort.Strings(resultUsers)
+			expectUsers := make([]string, len(testGroupUsers))
+			copy(expectUsers, testGroupUsers)
+			sort.Strings(expectUsers)
+			assert.Equal(t, expectUsers, resultUsers, msg)
 		})
 
 		userToRemove := testGroupUser1

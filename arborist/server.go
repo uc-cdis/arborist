@@ -91,6 +91,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyCreate))).Methods("POST")
+	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
 
@@ -481,6 +482,34 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 		Created *Policy `json:"created"`
 	}{
 		Created: policy,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
+}
+
+func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	policy := &Policy{}
+	err := json.Unmarshal(body, policy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
+		server.logger.Info("tried to create policy but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := policy.overwriteInDb(server.db)
+	if errResponse != nil {
+		if errResponse.Error.Code >= 500 {
+			server.logger.Error(errResponse.Error.Message)
+		} else {
+			server.logger.Info(errResponse.Error.Message)
+		}
+		_ = errResponse.write(w, r)
+		return
+	}
+	created := struct {
+		Updated *Policy `json:"updated"`
+	}{
+		Updated: policy,
 	}
 	_ = jsonResponseFrom(created, 201).write(w, r)
 }
