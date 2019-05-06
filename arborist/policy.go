@@ -137,14 +137,14 @@ func listPoliciesFromDb(db *sqlx.DB) ([]PolicyFromQuery, error) {
 
 // resources looks up all the resources with paths in this policy. An error, if
 // returned, resulted from the database operation.
-func (policy *Policy) resources(db *sqlx.DB) ([]ResourceFromQuery, error) {
+func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
 	queryPaths := make([]string, len(policy.ResourcePaths))
 	for i, path := range policy.ResourcePaths {
 		queryPaths[i] = formatPathForDb(path)
 	}
 	resourcesStmt := selectInStmt("resource", "ltree2text(path)", queryPaths)
-	err := db.Select(&resources, resourcesStmt)
+	err := tx.Select(&resources, resourcesStmt)
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +153,10 @@ func (policy *Policy) resources(db *sqlx.DB) ([]ResourceFromQuery, error) {
 
 // roles looks up the roles which this policy references. An error, if
 // returned, resulted from the database operation.
-func (policy *Policy) roles(db *sqlx.DB) ([]RoleFromQuery, error) {
+func (policy *Policy) roles(tx *sqlx.Tx) ([]RoleFromQuery, error) {
 	roles := []RoleFromQuery{}
 	rolesStmt := selectInStmt("role", "name", policy.RoleIDs)
-	err := db.Select(&roles, rolesStmt)
+	err := tx.Select(&roles, rolesStmt)
 	if err != nil {
 		return nil, err
 	}
@@ -178,23 +178,17 @@ func (policy *Policy) validate() *ErrorResponse {
 }
 
 // createInDb writes out the policy to the database.
-func (policy *Policy) createInDb(db *sqlx.DB) *ErrorResponse {
+func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	errResponse := policy.validate()
 	if errResponse != nil {
 		return errResponse
-	}
-
-	tx, err := db.Beginx()
-	if err != nil {
-		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
 	}
 
 	var policyID int
 	// TODO: make sure description works as expected
 	stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
 	row := tx.QueryRowx(stmt, policy.Name, policy.Description)
-	err = row.Scan(&policyID)
+	err := row.Scan(&policyID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
 		_ = tx.Rollback()
@@ -205,7 +199,7 @@ func (policy *Policy) createInDb(db *sqlx.DB) *ErrorResponse {
 	}
 
 	// `resources` is a list of looked-up resources which appear in the input policy
-	resources, err := policy.resources(db)
+	resources, err := policy.resources(tx)
 	if err != nil {
 		msg := fmt.Sprintf("database call for resources failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -242,7 +236,7 @@ func (policy *Policy) createInDb(db *sqlx.DB) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	roles, err := policy.roles(db)
+	roles, err := policy.roles(tx)
 	if err != nil {
 		msg := fmt.Sprintf("database call for roles failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -278,23 +272,24 @@ func (policy *Policy) createInDb(db *sqlx.DB) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-
 	return nil
 }
 
-func (policy *Policy) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (policy *Policy) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	stmt := "DELETE FROM policy WHERE name = $1"
-	_, err := db.Exec(stmt, policy.Name)
+	_, err := tx.Exec(stmt, policy.Name)
 	if err != nil {
 		// TODO: verify correct error
 		msg := fmt.Sprintf("failed to delete policy: policy does not exist: `%s", policy.Name)
 		return newErrorResponse(msg, 404, nil)
 	}
 	return nil
+}
+
+func (policy *Policy) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := policy.deleteInDb(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return policy.createInDb(tx)
 }
