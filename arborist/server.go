@@ -468,7 +468,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := policy.createInDb(server.db)
+	errResponse := transactify(server.db, policy.createInDb)
 	if errResponse != nil {
 		if errResponse.Error.Code >= 500 {
 			server.logger.Error(errResponse.Error.Message)
@@ -496,7 +496,7 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := policy.overwriteInDb(server.db)
+	errResponse := transactify(server.db, policy.overwriteInDb)
 	if errResponse != nil {
 		if errResponse.Error.Code >= 500 {
 			server.logger.Error(errResponse.Error.Message)
@@ -538,7 +538,7 @@ func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
 func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["policyID"]
 	policy := &Policy{Name: name}
-	errResponse := policy.deleteInDb(server.db)
+	errResponse := transactify(server.db, policy.deleteInDb)
 	if errResponse != nil {
 		server.logger.Info(errResponse.Error.Message)
 		_ = errResponse.write(w, r)

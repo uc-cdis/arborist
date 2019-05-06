@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // multiInsertStmt generates a string for a SQL command to insert multiple rows
@@ -47,4 +49,23 @@ func selectInStmt(table string, col string, values []string) string {
 	stmt_values = strings.TrimRight(stmt_values, ", ")
 	stmt := fmt.Sprintf("SELECT %s.* FROM %s INNER JOIN (VALUES %s) values(v) ON %s = v", table, table, stmt_values, col)
 	return stmt
+}
+
+func transactify(db *sqlx.DB, call func(tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
+	tx, err := db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+	errResponse := call(tx)
+	if errResponse != nil {
+		tx.Rollback()
+		return errResponse
+	}
+	err = tx.Commit()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
 }
