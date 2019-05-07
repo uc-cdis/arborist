@@ -114,6 +114,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 //
 //     formatDbPath("/a/b/c") == "a.b.c"
 func formatPathForDb(path string) string {
+	// -1 means replace everything
 	return strings.TrimLeft(strings.Replace(path, "/", ".", -1), ".")
 }
 
@@ -122,6 +123,7 @@ func formatPathForDb(path string) string {
 //
 //     formatDbPath("a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
+	// -1 means replace everything
 	return "/" + strings.Replace(path, ".", "/", -1)
 }
 
@@ -248,7 +250,7 @@ func (resource *ResourceIn) validate() *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) createInDb(db *sqlx.DB, force bool) (*ResourceFromQuery, *ErrorResponse) {
 	errResponse := resource.validate()
 	if errResponse != nil {
 		return nil, errResponse
@@ -258,7 +260,7 @@ func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorR
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return nil, newErrorResponse(msg, 500, &err)
 	}
-	errResponse = resource.createRecursively(tx)
+	errResponse = resource.createRecursively(tx, force)
 	if errResponse != nil {
 		return nil, errResponse
 	}
@@ -281,13 +283,21 @@ func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorR
 	return resourceFromQuery, nil
 }
 
-func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+func (resource *ResourceIn) createRecursively(tx *sqlx.Tx, force bool) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	// -1 means replace everything
 	path := formatPathForDb(resource.Path)
 	if resource.Name == "" {
 		segments := strings.Split(path, ".")
 		resource.Name = segments[len(segments)-1]
+	}
+	if force {
+		stmt := "DELETE FROM resource WHERE path = $1"
+		_, err := tx.Exec(stmt, path)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("failed to clear existing resource: `%s`", resource.Path)
+			return newErrorResponse(msg, 500, &err)
+		}
 	}
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
@@ -305,7 +315,7 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
 		subresource.Path = resource.Path + "/" + subresource.Name
-		errResponse := subresource.createRecursively(tx)
+		errResponse := subresource.createRecursively(tx, false)
 		if errResponse != nil {
 			return errResponse
 		}
