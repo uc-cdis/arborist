@@ -181,14 +181,14 @@ paths:
       description: >-
         Overwrite an existing resource. This endpoint requires a fully-formed
         resource model (and cannot patch over individual fields on the existing
-        resources).
+        resources). If the specified resource doesn't exist, it will be created.
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Resource'
+              $ref: '#/components/schemas/ResourceInput'
       responses:
-        200:
+        201:
           description: JSON representation of successfully-updated resource
           content:
             application/json:
@@ -203,12 +203,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserError'
-        404:
-          description: no resource exists with the given `resourcePath`
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotFound'
     delete:
       tags:
         - resource
