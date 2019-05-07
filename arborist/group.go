@@ -79,6 +79,32 @@ func listGroupsFromDb(db *sqlx.DB) ([]GroupFromQuery, error) {
 	return groups, nil
 }
 
+func (group *Group) users(tx *sqlx.Tx) ([]UserFromQuery, error) {
+	if len(group.Users) == 0 {
+		return []UserFromQuery{}, nil
+	}
+	users := []UserFromQuery{}
+	usersStmt := selectInStmt("usr", "name", group.Users)
+	err := tx.Select(&users, usersStmt)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func (group *Group) policies(tx *sqlx.Tx) ([]PolicyFromQuery, error) {
+	if len(group.Policies) == 0 {
+		return []PolicyFromQuery{}, nil
+	}
+	policies := []PolicyFromQuery{}
+	policiesStmt := selectInStmt("policy", "name", group.Policies)
+	err := tx.Select(&policies, policiesStmt)
+	if err != nil {
+		return nil, err
+	}
+	return policies, nil
+}
+
 func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -102,6 +128,48 @@ func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 		// accordingly
 		msg := fmt.Sprintf("failed to insert group: group with this name already exists: %s", group.Name)
 		return newErrorResponse(msg, 409, &err)
+	}
+
+	// add users to the group
+	if len(group.Users) > 0 {
+		users, err := group.users(tx)
+		if err != nil {
+			msg := fmt.Sprintf("database call for users failed: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+		stmt = multiInsertStmt("usr_grp(usr_id, grp_id)", len(group.Users))
+		userGroupRows := []interface{}{}
+		for _, user := range users {
+			userGroupRows = append(userGroupRows, user.ID)
+			userGroupRows = append(userGroupRows, groupID)
+		}
+		_, err = tx.Exec(stmt, userGroupRows...)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("failed to create group while adding users: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+	}
+
+	// add policies to the group
+	if len(group.Policies) > 0 {
+		policies, err := group.policies(tx)
+		if err != nil {
+			msg := fmt.Sprintf("database call for policies failed: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+		stmt = multiInsertStmt("grp_policy(grp_id, policy_id)", len(group.Policies))
+		groupPolicyRows := []interface{}{}
+		for _, policy := range policies {
+			groupPolicyRows = append(groupPolicyRows, groupID)
+			groupPolicyRows = append(groupPolicyRows, policy.ID)
+		}
+		_, err = tx.Exec(stmt, groupPolicyRows...)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("failed to create group while adding policies: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
 	}
 
 	err = tx.Commit()

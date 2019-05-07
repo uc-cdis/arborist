@@ -15,6 +15,7 @@ type User struct {
 }
 
 type UserFromQuery struct {
+	ID       int64          `db:"id"`
 	Name     string         `db:"name"`
 	Email    *string        `db:"email"`
 	Groups   pq.StringArray `db:"groups"`
@@ -36,6 +37,7 @@ func (userFromQuery *UserFromQuery) standardize() User {
 func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	stmt := `
 		SELECT
+			usr.id,
 			usr.name,
 			usr.email,
 			array_remove(array_agg(grp.name), NULL) AS groups,
@@ -64,6 +66,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 	stmt := `
 		SELECT
+			usr.id,
 			usr.name,
 			usr.email,
 			array_remove(array_agg(grp.name), NULL) AS groups,
