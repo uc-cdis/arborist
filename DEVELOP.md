@@ -118,6 +118,16 @@ correctly. The crucial points are
 Test a migration by applying `up.sql` and `down.sql` sequentially to ensure
 both work as expected.
 
+### Working with the Database
+
+- The schema has some triggers to prevent the built-in groups, `anonymous` and
+  `logged-in`, from being deleted. If for some reason you want to clear out all
+  the groups, use this:
+
+```sql
+DELETE FROM grp WHERE (name != 'anonymous' AND name != 'logged-in')
+```
+
 ## Testing
 
 For testing an HTTP server, we use the `httptest` module to "record" requests
