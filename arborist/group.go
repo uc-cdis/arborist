@@ -153,7 +153,7 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorRe
 				"failed to grant policy to group: policy does not exist: %s",
 				policyName,
 			)
-			return newErrorResponse(msg, 404, nil)
+			return newErrorResponse(msg, 400, nil)
 		}
 		if err != nil {
 			msg := "policy query failed"

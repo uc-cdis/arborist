@@ -158,7 +158,7 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorResp
 				"failed to grant policy to user: policy does not exist: %s",
 				policyName,
 			)
-			return newErrorResponse(msg, 404, nil)
+			return newErrorResponse(msg, 400, nil)
 		}
 		if err != nil {
 			msg := "policy query failed"
@@ -212,7 +212,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorRespon
 				"failed to add user to group: user does not exist: %s",
 				username,
 			)
-			return newErrorResponse(msg, 404, nil)
+			return newErrorResponse(msg, 400, nil)
 		}
 		if err != nil {
 			msg := "user query failed"

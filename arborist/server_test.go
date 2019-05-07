@@ -543,11 +543,24 @@ func TestServer(t *testing.T) {
 			})
 		})
 
+		// We're going to create a resource and save the tag into this variable
+		// so we can test looking it up using the tag.
 		var resourceTag string
+
+		t.Run("CreateBadJSON", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("POST", "/resource", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				httpError(t, w, "expected 400 from request missing JSON")
+			}
+		})
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			body := []byte(`{"path": "/a"}`)
+			path := "/a"
+			name := "a"
+			body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
 			req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
@@ -566,10 +579,20 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, "a", result.Resource.Name, msg)
-			assert.Equal(t, "/a", result.Resource.Path, msg)
+			assert.Equal(t, name, result.Resource.Name, msg)
+			assert.Equal(t, path, result.Resource.Path, msg)
 			assert.NotEqual(t, "", result.Resource.Tag, msg)
 			resourceTag = result.Resource.Tag
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "expected error from creating resource that already exists")
+				}
+			})
 
 			// Test that errors are returned if a resource is input with
 			// invalid characters. (Postgres ltree module only allows
@@ -907,6 +930,38 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
+
+			t.Run("RoleNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				createResourceBytes(t, []byte(`{"path": "/test_resource"}`))
+				body := []byte(`{
+					"id": "testPolicyRoleNotExist",
+					"resource_paths": ["/test_resource"],
+					"role_ids": ["does_not_exist"]
+				}`)
+				req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error creating policy with nonexistent role")
+				}
+			})
+
+			t.Run("ResourceNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{
+						"id": "testPolicyResourceNotExist",
+						"resource_paths": ["/does/not/exist"],
+						"role_ids": ["%s"]
+					}`,
+					roleName,
+				))
+				req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error creating policy with nonexistent resource")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
@@ -987,6 +1042,15 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't delete policy")
 			}
+
+			t.Run("NotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := newRequest("DELETE", "/policy/does-not-exist", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "expected 204 trying delete nonexistent policy")
+				}
+			})
 		})
 
 		t.Run("CheckDeleted", func(t *testing.T) {
@@ -1056,6 +1120,23 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from user creation")
 			}
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{
+						"name": "%s",
+						"email": "%s"
+					}`,
+					username,
+					userEmail,
+				))
+				req := newRequest("POST", "/user", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "expected 409 from trying to create same user again")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
@@ -1133,8 +1214,8 @@ func TestServer(t *testing.T) {
 					bytes.NewBuffer([]byte(`{"policy": "nonexistent"}`)),
 				)
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusNotFound {
-					httpError(t, w, "didn't get 404 for nonexistent policy")
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "didn't get 400 for nonexistent policy")
 				}
 			})
 
@@ -1193,6 +1274,15 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't delete user")
 			}
+
+			t.Run("NotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := newRequest("DELETE", "/user/foo", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "expected 204 from trying to delete nonexistent user")
+				}
+			})
 		})
 
 		t.Run("DeleteNotExist", func(t *testing.T) {
@@ -1531,6 +1621,28 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "couldn't add user to group")
 				}
 			}
+
+			t.Run("UserNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
+				body := []byte(`{"username": "does-not-exist"}`)
+				req := newRequest("POST", groupUserURL, bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from trying to add nonexistent user to group")
+				}
+			})
+
+			t.Run("GroupNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				groupUserURL := "/group/does-not-exist/user"
+				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testGroupUser1))
+				req := newRequest("POST", groupUserURL, bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "expected 404 from trying to add user to nonexistent group")
+				}
+			})
 		})
 
 		t.Run("CheckUsersAdded", func(t *testing.T) {
@@ -1639,8 +1751,8 @@ func TestServer(t *testing.T) {
 					bytes.NewBuffer([]byte(`{"policy": "nonexistent"}`)),
 				)
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusNotFound {
-					httpError(t, w, "didn't get 404 for nonexistent policy")
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "didn't get 400 for nonexistent policy")
 				}
 			})
 
@@ -1654,8 +1766,11 @@ func TestServer(t *testing.T) {
 				)
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusNotFound {
-					httpError(t, w, "didn't get 404 for nonexistent user")
+					httpError(t, w, "didn't get 404 for nonexistent group")
 				}
+			})
+
+			t.Run("InvalidJSON", func(t *testing.T) {
 			})
 		})
 
@@ -1861,14 +1976,33 @@ func TestServer(t *testing.T) {
 			})
 
 			t.Run("BadRequest", func(t *testing.T) {
-				w = httptest.NewRecorder()
-				token = TestJWT{username: username}
-				body = []byte("not real JSON")
-				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
-					httpError(t, w, "expected error")
-				}
+
+				t.Run("NotJSON", func(t *testing.T) {
+					w = httptest.NewRecorder()
+					token = TestJWT{username: username}
+					body = []byte("not real JSON")
+					req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error")
+					}
+				})
+
+				t.Run("MissingFields", func(t *testing.T) {
+					w = httptest.NewRecorder()
+					token = TestJWT{username: username}
+					body = []byte(fmt.Sprintf(
+						`{
+							"user": {"token": "%s"}
+						}`,
+						token.Encode(),
+					))
+					req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error from request missing fields")
+					}
+				})
 			})
 
 			createClientBytes(t, clientBody)
@@ -2297,6 +2431,31 @@ func TestServer(t *testing.T) {
 					msg := fmt.Sprintf("got response body: %s", w.Body.String())
 					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
 				})
+			})
+
+			t.Run("BadRequest", func(t *testing.T) {
+				t.Run("NotJSON", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte("not real JSON")
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusBadRequest {
+						httpError(t, w, "expected error")
+					}
+				})
+
+				/*
+					t.Run("MissingFields", func(t *testing.T) {
+						w := httptest.NewRecorder()
+						body := []byte(`{}`)
+						req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+						handler.ServeHTTP(w, req)
+						fmt.Println(w.Body.String())
+						if w.Code != http.StatusBadRequest {
+							httpError(t, w, "expected error from request missing fields")
+						}
+					})
+				*/
 			})
 
 			policyName := "client_policy"

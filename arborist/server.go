@@ -150,6 +150,11 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 // handler signature.
 func parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil {
+			response := newErrorResponse("expected JSON body in the request", 400, nil)
+			_ = response.write(w, r)
+			return
+		}
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
@@ -319,6 +324,11 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	}
 	requests = append(requests, authRequestJSON.Requests...)
 
+	if len(requests) == 0 {
+		_ = newErrorResponse("auth request missing resources", 400, nil).write(w, r)
+		return
+	}
+
 	for _, authRequest := range requests {
 		// if no token is provided, use anonymous group to check auth
 		if isAnonymous {
@@ -390,11 +400,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Request, body []byte) {
 	authRequest := struct {
-		User struct {
-			Token     string   `json:"token"`
-			Policies  []string `json:"policies,omitempty"`
-			Audiences []string `json:"aud,omitempty"`
-		} `json:"user"`
+		User AuthRequestJSON_User `json:"user"`
 	}{}
 	err := json.Unmarshal(body, &authRequest)
 	if err != nil {
@@ -404,6 +410,16 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		_ = response.write(w, r)
 		return
 	}
+	// TODO
+	// make sure not empty
+	/*
+		if (authRequest.User == AuthRequestJSON_User{}) {
+			server.logger.Info("auth resources request missing user field", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+	*/
 	var aud []string
 	if authRequest.User.Audiences == nil {
 		aud = []string{"openid"}
@@ -602,12 +618,6 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	if resource.Path == "" {
 		server.handleSubresourceCreate(w, r, body)
-		return
-
-		err := missingRequiredField("resource", "path")
-		server.logger.Info(err.Error())
-		response := newErrorResponse(err.Error(), 400, &err)
-		_ = response.write(w, r)
 		return
 	}
 	resourceFromQuery, errResponse := resource.createInDb(server.db)
