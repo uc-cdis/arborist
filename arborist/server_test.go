@@ -1671,6 +1671,56 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, expectUsers, resultUsers, msg)
 		})
 
+		t.Run("CreateWithUsers", func(t *testing.T) {
+			groupName := "test-group-with-users"
+
+			// create a group with some users in it
+			w := httptest.NewRecorder()
+			body := []byte(fmt.Sprintf(
+				`{"name": "%s", "users": ["%s", "%s"]}`,
+				groupName,
+				testGroupUser1,
+				testGroupUser2,
+			))
+			req := newRequest("POST", "/group", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create group")
+			}
+			result := struct {
+				Created struct {
+					Users []string `json:"users"`
+				} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group creation")
+			}
+			sort.Strings(result.Created.Users)
+			expectUsers := []string{testGroupUser1, testGroupUser2}
+			sort.Strings(expectUsers)
+			msg := fmt.Sprintf("didn't get expected users; got response body: %s", w.Body.String())
+			assert.Equal(t, expectUsers, result.Created.Users, msg)
+
+			// check that users were added correctly using read request
+			w = httptest.NewRecorder()
+			req = newRequest("GET", fmt.Sprintf("/group/%s", groupName), nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read group")
+			}
+			resultRead := struct {
+				Users []string `json:"users"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &resultRead)
+			if err != nil {
+				httpError(t, w, "couldn't read response from group read")
+			}
+			sort.Strings(resultRead.Users)
+			msg = fmt.Sprintf("group doesn't have users; got response body: %s", w.Body.String())
+			assert.Equal(t, expectUsers, resultRead.Users, msg)
+		})
+
 		userToRemove := testGroupUser1
 
 		t.Run("RemoveUser", func(t *testing.T) {
