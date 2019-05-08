@@ -41,6 +41,13 @@ func (role *Role) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (role *Role) validate() *ErrorResponse {
+	if len(role.Permissions) == 0 {
+		return newErrorResponse("role has no permissions", 400, nil)
+	}
+	return nil
+}
+
 // The `description` field uses `*string` to represent nullability.
 type RoleFromQuery struct {
 	ID          int64          `db:"id"`
@@ -126,6 +133,11 @@ func listRolesFromDb(db *sqlx.DB) ([]RoleFromQuery, error) {
 }
 
 func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
+	errResponse := role.validate()
+	if errResponse != nil {
+		return errResponse
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
@@ -155,6 +167,7 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 	}
 
 	// create permissions as necessary
+	// permissions are unique per combination of role_id + name
 	permissionTable := "permission(role_id, name, service, method, constraints, description)"
 	stmt = multiInsertStmt(permissionTable, len(role.Permissions))
 	stmt += " ON CONFLICT DO NOTHING"

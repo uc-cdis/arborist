@@ -799,6 +799,16 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected conflict error from trying to create role again")
 				}
 			})
+
+			t.Run("MissingPermissions", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"id": "no-permissions", "permissions": []}`)
+				req := newRequest("POST", "/role", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error from trying to create role with no permissions")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
