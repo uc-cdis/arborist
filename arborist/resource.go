@@ -250,54 +250,24 @@ func (resource *ResourceIn) validate() *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB, force bool) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	errResponse := resource.validate()
 	if errResponse != nil {
-		return nil, errResponse
+		return errResponse
 	}
-	tx, err := db.Beginx()
-	if err != nil {
-		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return nil, newErrorResponse(msg, 500, &err)
-	}
-	errResponse = resource.createRecursively(tx, force)
+	errResponse = resource.createRecursively(tx)
 	if errResponse != nil {
-		return nil, errResponse
+		return errResponse
 	}
-	err = tx.Commit()
-	if err != nil {
-		_ = tx.Rollback()
-		// TODO: more specific error handling (make sure resource really is
-		// invalid)
-
-		// assume that this error is because the resource failed validation on
-		// database side, because of missing parent or similar; return 400.
-		errMsg := strings.TrimPrefix(err.Error(), "pq: ")
-		msg := fmt.Sprintf("couldn't create resource: %s", errMsg)
-		return nil, newErrorResponse(msg, 400, &err)
-	}
-	resourceFromQuery, err := resourceWithPath(db, resource.Path)
-	if err != nil {
-		return nil, newErrorResponse(err.Error(), 500, &err)
-	}
-	return resourceFromQuery, nil
+	return nil
 }
 
-func (resource *ResourceIn) createRecursively(tx *sqlx.Tx, force bool) *ErrorResponse {
+func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := formatPathForDb(resource.Path)
 	if resource.Name == "" {
 		segments := strings.Split(path, ".")
 		resource.Name = segments[len(segments)-1]
-	}
-	if force {
-		stmt := "DELETE FROM resource WHERE path = $1"
-		_, err := tx.Exec(stmt, path)
-		if err != nil {
-			_ = tx.Rollback()
-			msg := fmt.Sprintf("failed to clear existing resource: `%s`", resource.Path)
-			return newErrorResponse(msg, 500, &err)
-		}
 	}
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
@@ -315,7 +285,7 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx, force bool) *ErrorRes
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
 		subresource.Path = resource.Path + "/" + subresource.Name
-		errResponse := subresource.createRecursively(tx, false)
+		errResponse := subresource.createRecursively(tx)
 		if errResponse != nil {
 			return errResponse
 		}
@@ -324,16 +294,24 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx, force bool) *ErrorRes
 	return nil
 }
 
-func (resource *ResourceIn) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	if resource.Path == "" {
 		msg := "resource missing required field `path`"
 		return newErrorResponse(msg, 400, nil)
 	}
 	stmt := "DELETE FROM resource WHERE path = $1"
-	_, err := db.Exec(stmt, formatPathForDb(resource.Path))
+	_, err := tx.Exec(stmt, formatPathForDb(resource.Path))
 	if err != nil {
 		// resource already doesn't exist; this is fine
 		return nil
 	}
 	return nil
+}
+
+func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.deleteInDb(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return resource.createInDb(tx)
 }

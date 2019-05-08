@@ -639,9 +639,21 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		server.handleSubresourceCreate(w, r, body)
 		return
 	}
-	resourceFromQuery, errResponse := resource.createInDb(server.db, r.Method == "PUT")
+	var errResponse *ErrorResponse
+	if r.Method == "PUT" {
+		errResponse = transactify(server.db, resource.overwriteInDb)
+	} else {
+		errResponse = transactify(server.db, resource.createInDb)
+	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
+	if err != nil {
+		errResponse := newErrorResponse(err.Error(), 500, &err)
+		server.logger.Error(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -674,9 +686,22 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	}
 	parentPath := parseResourcePath(r)
 	resource.Path = parentPath + "/" + resource.Name
-	resourceFromQuery, errResponse := resource.createInDb(server.db, r.Method == "PUT")
+
+	var errResponse *ErrorResponse
+	if r.Method == "PUT" {
+		errResponse = transactify(server.db, resource.overwriteInDb)
+	} else {
+		errResponse = transactify(server.db, resource.createInDb)
+	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
+	if err != nil {
+		errResponse := newErrorResponse(err.Error(), 500, &err)
+		server.logger.Error(errResponse.Error.Message)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -733,7 +758,7 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
 	path := parseResourcePath(r)
 	resource := ResourceIn{Path: path}
-	errResponse := resource.deleteInDb(server.db)
+	errResponse := transactify(server.db, resource.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
