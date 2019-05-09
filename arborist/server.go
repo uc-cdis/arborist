@@ -446,10 +446,8 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		request.Policies = authRequest.User.Policies
 	}
 
-	resourcesFromQuery, err := authorizedResources(server.db, request)
-	if err != nil {
-		server.logger.Info(err.Error())
-		errResponse := newErrorResponse(err.Error(), 401, &err)
+	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
+	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -942,6 +940,7 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
+	fmt.Println(username)
 	service := ""
 	serviceQS, ok := r.URL.Query()["service"]
 	if ok {
@@ -957,10 +956,8 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 		Service:  service,
 		Method:   method,
 	}
-	resourcesFromQuery, err := authorizedResources(server.db, request)
-	if err != nil {
-		server.logger.Error(err.Error())
-		errResponse := newErrorResponse(err.Error(), 500, &err)
+	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
+	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
 	}

@@ -287,7 +287,7 @@ func evaluate(exp Expression, args []string, rows *sql.Rows) (bool, error) {
 	return rv, nil
 }
 
-func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, error) {
+func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
@@ -326,42 +326,71 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		resources := []ResourceFromQuery{}
 		err := db.Select(&resources, stmt)
 		if err != nil {
-			return nil, err
+			return nil, newErrorResponse("resources query failed", 500, &err)
 		}
 		return resources, nil
 	}
-	// no policies specified, use username.
-	stmt := `
-		SELECT
-			resource.id,
-			resource.name,
-			resource.description,
-			resource.path,
-			array(
-				SELECT child.path
-				FROM resource AS child
-				WHERE child.path ~ (
-					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
-				)
-			) AS subresources
-		FROM (
-			SELECT usr_policy.policy_id
-			FROM usr
-			JOIN usr_policy ON usr.id = usr_policy.usr_id
-			WHERE usr.name = $1
-			UNION
-			SELECT client_policy.policy_id
-			FROM client
-			JOIN client_policy ON client_policy.client_id = client.id
-			WHERE client.external_client_id = $2
-		) policies
-		LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-		LEFT JOIN resource ON resource.id = policy_resource.resource_id
-	`
 	resources := []ResourceFromQuery{}
-	err := db.Select(&resources, stmt, request.Username, request.ClientID)
+	var err error
+	if request.ClientID == "" {
+		if request.Username == "" {
+			return nil, newErrorResponse("missing username in auth request", 400, nil)
+		}
+		stmt := `
+			SELECT
+				resource.id,
+				resource.name,
+				resource.description,
+				resource.path,
+				array(
+					SELECT child.path
+					FROM resource AS child
+					WHERE child.path ~ (
+						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+					)
+				) AS subresources
+			FROM (
+				SELECT usr_policy.policy_id
+				FROM usr
+				JOIN usr_policy ON usr.id = usr_policy.usr_id
+				WHERE usr.name = $1
+			) policies
+			LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			LEFT JOIN resource ON resource.id = policy_resource.resource_id
+		`
+		err = db.Select(&resources, stmt, request.Username)
+	} else {
+		stmt := `
+			SELECT
+				resource.id,
+				resource.name,
+				resource.description,
+				resource.path,
+				array(
+					SELECT child.path
+					FROM resource AS child
+					WHERE child.path ~ (
+						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+					)
+				) AS subresources
+			FROM (
+				SELECT usr_policy.policy_id
+				FROM usr
+				JOIN usr_policy ON usr.id = usr_policy.usr_id
+				WHERE usr.name = $1
+				UNION
+				SELECT client_policy.policy_id
+				FROM client
+				JOIN client_policy ON client_policy.client_id = client.id
+				WHERE client.external_client_id = $2
+			) policies
+			LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			LEFT JOIN resource ON resource.id = policy_resource.resource_id
+		`
+		err = db.Select(&resources, stmt, request.Username, request.ClientID)
+	}
 	if err != nil {
-		return nil, err
+		return nil, newErrorResponse("resources query failed", 500, &err)
 	}
 	return resources, nil
 }
