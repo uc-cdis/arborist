@@ -292,6 +292,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
 		for _, policy := range request.Policies {
+			// FIXME (rudyardrichter, 2019-05-09): this could be a SQL
+			// vulnerability if passed arbitrary inputs. As it is this only
+			// gets passed the policies from decoded validated tokens.
 			values += fmt.Sprintf("('%s'), ", policy)
 		}
 		values = strings.TrimRight(values, ", ")
