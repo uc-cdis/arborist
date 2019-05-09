@@ -62,6 +62,7 @@ func transactify(db *sqlx.DB, call func(tx *sqlx.Tx) *ErrorResponse) *ErrorRespo
 	}
 	errResponse := call(tx)
 	if errResponse != nil {
+		errResponse.log.Info("rolling back transaction")
 		tx.Rollback()
 		return errResponse
 	}

@@ -326,7 +326,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		resources := []ResourceFromQuery{}
 		err := db.Select(&resources, stmt)
 		if err != nil {
-			return nil, newErrorResponse("resources query failed", 500, &err)
+			return nil, newErrorResponse("resources query (using policies) failed", 500, &err)
 		}
 		return resources, nil
 	}
@@ -359,6 +359,15 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			LEFT JOIN resource ON resource.id = policy_resource.resource_id
 		`
 		err = db.Select(&resources, stmt, request.Username)
+		if err != nil {
+			errResponse := newErrorResponse(
+				"resources query (using username) failed",
+				500,
+				&err,
+			)
+			return nil, errResponse
+		}
+		return resources, nil
 	} else {
 		stmt := `
 			SELECT
@@ -388,9 +397,14 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			LEFT JOIN resource ON resource.id = policy_resource.resource_id
 		`
 		err = db.Select(&resources, stmt, request.Username, request.ClientID)
+		if err != nil {
+			errResponse := newErrorResponse(
+				"resources query (using username + client) failed",
+				500,
+				&err,
+			)
+			return nil, errResponse
+		}
+		return resources, nil
 	}
-	if err != nil {
-		return nil, newErrorResponse("resources query failed", 500, &err)
-	}
-	return resources, nil
 }

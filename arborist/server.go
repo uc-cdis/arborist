@@ -480,7 +480,7 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("policies query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -504,11 +504,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 	}
 	errResponse := transactify(server.db, policy.createInDb)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -532,11 +528,7 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 	}
 	errResponse := transactify(server.db, policy.overwriteInDb)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -554,14 +546,14 @@ func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
 	if policyFromQuery == nil {
 		msg := fmt.Sprintf("no policy found with id: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 	if err != nil {
 		msg := fmt.Sprintf("policy query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -574,7 +566,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 	policy := &Policy{Name: name}
 	errResponse := transactify(server.db, policy.deleteInDb)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -590,7 +582,7 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		msg := fmt.Sprintf("resources query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -621,11 +613,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	resourceFromQuery, errResponse := resource.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -659,11 +647,7 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	resource.Path = parentPath + "/" + resource.Name
 	resourceFromQuery, errResponse := resource.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -688,7 +672,7 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		msg := fmt.Sprintf("resource query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -708,7 +692,7 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		msg := fmt.Sprintf("resource query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -721,7 +705,7 @@ func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Reques
 	resource := ResourceIn{Path: path}
 	errResponse := resource.deleteInDb(server.db)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -733,7 +717,7 @@ func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("roles query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -761,11 +745,7 @@ func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, b
 	}
 	errResponse := role.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -783,14 +763,14 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	if roleFromQuery == nil {
 		msg := fmt.Sprintf("no role found with id: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 	if err != nil {
 		msg := fmt.Sprintf("role query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -803,7 +783,7 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 	role := &Role{Name: name}
 	errResponse := role.deleteInDb(server.db)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -815,7 +795,7 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -843,11 +823,7 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 	}
 	errResponse := user.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -865,14 +841,14 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 	if userFromQuery == nil {
 		msg := fmt.Sprintf("no user found with username: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 	if err != nil {
 		msg := fmt.Sprintf("user query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -885,7 +861,7 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	user := User{Name: name}
 	errResponse := user.deleteInDb(server.db)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -907,7 +883,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 	}
 	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -919,7 +895,7 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 	username := mux.Vars(r)["username"]
 	errResponse := revokeUserPolicyAll(server.db, username)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -931,7 +907,7 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 	policyName := mux.Vars(r)["policyName"]
 	errResponse := revokeUserPolicy(server.db, username, policyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -987,7 +963,7 @@ func (server *Server) handleClientList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("clients query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1015,11 +991,7 @@ func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request,
 	}
 	errResponse := client.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1037,14 +1009,14 @@ func (server *Server) handleClientRead(w http.ResponseWriter, r *http.Request) {
 	if clientFromQuery == nil {
 		msg := fmt.Sprintf("no client found with clientID: %s", clientID)
 		errResponse := newErrorResponse(msg, 404, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 	if err != nil {
 		msg := fmt.Sprintf("client query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1057,7 +1029,7 @@ func (server *Server) handleClientDelete(w http.ResponseWriter, r *http.Request)
 	client := Client{ClientID: clientID}
 	errResponse := client.deleteInDb(server.db)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1079,7 +1051,7 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 	}
 	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1090,7 +1062,7 @@ func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Reque
 	clientID := mux.Vars(r)["clientID"]
 	errResponse := revokeClientPolicyAll(server.db, clientID)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1102,7 +1074,7 @@ func (server *Server) handleClientRevokePolicy(w http.ResponseWriter, r *http.Re
 	policyName := mux.Vars(r)["policyName"]
 	errResponse := revokeClientPolicy(server.db, clientID, policyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1114,7 +1086,7 @@ func (server *Server) handleGroupList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("groups query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1142,11 +1114,7 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 	}
 	errResponse := group.createInDb(server.db)
 	if errResponse != nil {
-		if errResponse.Error.Code >= 500 {
-			server.logger.Error(errResponse.Error.Message)
-		} else {
-			server.logger.Info(errResponse.Error.Message)
-		}
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1164,14 +1132,14 @@ func (server *Server) handleGroupRead(w http.ResponseWriter, r *http.Request) {
 	if groupFromQuery == nil {
 		msg := fmt.Sprintf("no group found with name: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 	if err != nil {
 		msg := fmt.Sprintf("group query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1184,7 +1152,7 @@ func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) 
 	group := Group{Name: groupName}
 	errResponse := group.deleteInDb(server.db)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1206,7 +1174,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 	}
 	errResponse := addUserToGroup(server.db, requestUser.Username, groupName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1218,7 +1186,7 @@ func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Reque
 	username := mux.Vars(r)["username"]
 	errResponse := removeUserFromGroup(server.db, username, groupName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1240,7 +1208,7 @@ func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Requ
 	}
 	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -1252,7 +1220,7 @@ func (server *Server) handleGroupRevokePolicy(w http.ResponseWriter, r *http.Req
 	policyName := mux.Vars(r)["policyName"]
 	errResponse := revokeGroupPolicy(server.db, groupName, policyName)
 	if errResponse != nil {
-		server.logger.Info(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}

@@ -54,27 +54,35 @@ func (response *jsonResponse) write(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-type Error struct {
+type HTTPError struct {
 	Message string `json:"message"`
 	Code    int    `json:"code"`
 }
 
 type ErrorResponse struct {
-	Error Error `json:"error"`
+	HTTPError HTTPError `json:"error"`
 	// err stores an internal representation of an error in case it needs to be
-	// tracked along with the http-ish version in `Error`.
+	// tracked along with the http-ish version in `HTTPError`.
 	err error
+	// log embeds a LogCache so we can log things to the response and write it
+	// out later to the server's logger.
+	log LogCache
 }
 
 func newErrorResponse(message string, code int, err *error) *ErrorResponse {
 	response := &ErrorResponse{
-		Error: Error{
+		HTTPError: HTTPError{
 			Message: message,
 			Code:    code,
 		},
 	}
 	if err != nil {
 		response.err = *err
+	}
+	if code >= 500 {
+		response.log.Error(message)
+	} else {
+		response.log.Info(message)
 	}
 	return response
 }
@@ -98,7 +106,7 @@ func (errorResponse *ErrorResponse) write(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(errorResponse.Error.Code)
+	w.WriteHeader(errorResponse.HTTPError.Code)
 	_, err = w.Write(bytes)
 	if err != nil {
 		return err
