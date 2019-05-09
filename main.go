@@ -45,7 +45,7 @@ func main() {
 		panic(err)
 	}
 	defer db.Close()
-	logFlags := log.Ldate | log.Ltime | log.Llongfile
+	logFlags := log.Ldate | log.Ltime
 	logger := log.New(os.Stdout, "", logFlags)
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	arboristServer, err := arborist.NewServer().

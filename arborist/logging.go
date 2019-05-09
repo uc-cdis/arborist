@@ -3,6 +3,9 @@ package arborist
 import (
 	"fmt"
 	"log"
+	"os"
+	"runtime"
+	"strings"
 )
 
 type Logger interface {
@@ -87,11 +90,17 @@ func (cache *LogCache) write(logger Logger) {
 
 func logMsg(lvl LogLevel, format string, a ...interface{}) string {
 	var msg string
-	if len(a) > 0 {
-		msg = fmt.Sprintf(format, a...)
-		msg = fmt.Sprintf("%s: %s", lvl, msg)
+	if len(a) == 0 {
+		msg = format
 	} else {
-		msg = fmt.Sprintf("%s: %s", lvl, format)
+		msg = fmt.Sprintf(format, a...)
+	}
+	// get the call from 2 stack frames above this
+	_, fn, line, ok := runtime.Caller(2)
+	split := strings.Split(fn, string(os.PathSeparator))
+	fn = split[len(split)-1]
+	if ok {
+		msg = fmt.Sprintf("%s:%d: %s", fn, line, msg)
 	}
 	return msg
 }
