@@ -317,8 +317,8 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 					)
 				) AS subresources
 			FROM resource
-			LEFT JOIN policy_resource ON resource.id = policy_resource.resource_id
-			LEFT JOIN usr_policy ON usr_policy.policy_id = policy_resource.policy_id
+			INNER JOIN policy_resource ON resource.id = policy_resource.resource_id
+			INNER JOIN usr_policy ON usr_policy.policy_id = policy_resource.policy_id
 			WHERE (policy_resource.policy_id IN (%s))
 			`,
 			selectPolicyWhereName,
@@ -355,8 +355,8 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				JOIN usr_policy ON usr.id = usr_policy.usr_id
 				WHERE usr.name = $1
 			) policies
-			LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			LEFT JOIN resource ON resource.id = policy_resource.resource_id
+			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			INNER JOIN resource ON resource.id = policy_resource.resource_id
 		`
 		err = db.Select(&resources, stmt, request.Username)
 		if err != nil {
