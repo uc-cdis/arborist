@@ -264,14 +264,13 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rv, err := authorizeUser(&authRequest)
-	
+
 	if rv.Auth {
 		server.logger.Debug("user is authorized")
 	}
-	
+
 	if err == nil && rv.Auth && authRequest.ClientID != "" {
 		rv, err = authorizeClient(&authRequest)
-
 		if rv.Auth {
 			server.logger.Debug("client is authorized")
 		}
@@ -386,8 +385,18 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		}
 
 		rv, err := authorizeUser(request)
+		if rv.Auth {
+			server.logger.Debug("user is authorized")
+		} else {
+			server.logger.Debug("user is unauthorized")
+		}
 		if rv.Auth && request.ClientID != "" {
 			rv, err = authorizeClient(request)
+			if rv.Auth {
+				server.logger.Debug("client is authorized")
+			} else {
+				server.logger.Debug("client is unauthorized")
+			}
 		}
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize: %s", err.Error())
