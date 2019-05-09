@@ -1244,6 +1244,30 @@ func TestServer(t *testing.T) {
 			})
 		})
 
+		t.Run("ListResources", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/resources", username)
+			req := newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't list user's authed resources")
+			}
+			result := struct {
+				Resources []string `json:"resources"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user resources")
+			}
+			msg := fmt.Sprintf(
+				"didn't get expected resources; got response body: %s",
+				w.Body.String(),
+			)
+			assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+
+			// TODO (rudyardrichter, 2019-05-09): also test response with tag
+		})
+
 		t.Run("RevokePolicy", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)

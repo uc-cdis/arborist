@@ -114,6 +114,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user/{username}/policy", http.HandlerFunc(parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
+	router.Handle("/user/{username}/resources", http.HandlerFunc(server.handleUserListResources)).Methods("GET")
 
 	router.Handle("/client", http.HandlerFunc(server.handleClientList)).Methods("GET")
 	router.Handle("/client", http.HandlerFunc(parseJSON(server.handleClientCreate))).Methods("POST")
@@ -937,6 +938,51 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
+	username := mux.Vars(r)["username"]
+	service := ""
+	serviceQS, ok := r.URL.Query()["service"]
+	if ok {
+		service = serviceQS[0]
+	}
+	method := ""
+	methodQS, ok := r.URL.Query()["method"]
+	if ok {
+		method = methodQS[0]
+	}
+	request := &AuthRequest{
+		Username: username,
+		Service:  service,
+		Method:   method,
+	}
+	resourcesFromQuery, err := authorizedResources(server.db, request)
+	if err != nil {
+		server.logger.Error(err.Error())
+		errResponse := newErrorResponse(err.Error(), 500, &err)
+		_ = errResponse.write(w, r)
+		return
+	}
+	useTags := false
+	_, ok = r.URL.Query()["tags"]
+	if ok {
+		useTags = true
+	}
+	resources := make([]string, len(resourcesFromQuery))
+	for i := range resourcesFromQuery {
+		if useTags {
+			resources[i] = resourcesFromQuery[i].Tag
+		} else {
+			resources[i] = resourcesFromQuery[i].standardize().Path
+		}
+	}
+	result := struct {
+		Resources []string `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleClientList(w http.ResponseWriter, r *http.Request) {
