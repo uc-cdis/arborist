@@ -31,6 +31,30 @@ _ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 
 That's it!
 
+Let's consider the case where we've encountered some error while handling a
+request. In general, functions called from the server handlers should return an
+`*ErrorResponse` with a non-nil value when some error has occurred (user-induced
+or otherwise). The basic pattern for server handlers using these is something
+like the following:
+
+```go
+func (server *Server) handleSomething(w http.ResponseWriter, r *http.Request) {
+    errResponse := utilityFunction()
+    if errResponse != nil {
+        errResponse.log.write(server.logger)
+        _ = errResponse.write(w, r)
+        return
+    }
+    // handling normal flow here...
+    return
+}
+```
+
+In the functions which return an `ErrorResponse`, you can "log" things using
+`ErrorResponse.log`, which implements the logging interface and saves all the
+logs until we call `ErrorResponse.log.write(Logger)`, where it writes out all
+the saved logs into the provided logger.
+
 ### Structs
 
 As mentioned in the previous section, for most models used in arborist there's a
