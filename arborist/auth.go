@@ -240,8 +240,8 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 				SELECT 1 FROM policy_role
 				JOIN permission ON permission.role_id = policy_role.role_id
 				WHERE policy_role.policy_id = client_policy.policy_id
-				AND permission.service = $2
-				AND permission.method = $3
+				AND (permission.service = $2 OR permission.service = '*')
+				AND (permission.method = $3 OR permission.method = '*')
 			)
 		) _, unnest($4::text[]);
 		`,
