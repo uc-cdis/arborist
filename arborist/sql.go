@@ -53,7 +53,10 @@ func selectInStmt(table string, col string, values []string) string {
 
 // transactify lets you pass a `sqlx.DB` to a function which uses a `sqlx.Tx`,
 // and handles opening and committing the transaction. The function passed to
-// transactify can chain multiple other functions together into one transaction.
+// transactify can chain multiple other functions together into one
+// transaction. If a non-nil error response is returned from the called
+// function, the transaction is rolled back. It's up to the called function to
+// error out early if that's preferred; the rolling-back happens at the end.
 func transactify(db *sqlx.DB, call func(tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
