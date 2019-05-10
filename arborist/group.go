@@ -105,13 +105,7 @@ func (group *Group) policies(tx *sqlx.Tx) ([]PolicyFromQuery, error) {
 	return policies, nil
 }
 
-func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
-	tx, err := db.Beginx()
-	if err != nil {
-		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-
+func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	// First, insert permissions if they don't exist yet. If they don't exist
 	// then use the contents of this group to create them; if they exist already
 	// then IGNORE the contents, and use what's in the database. In postgres we
@@ -120,10 +114,9 @@ func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 	var groupID int
 	stmt := "INSERT INTO grp(name) VALUES ($1) RETURNING id"
 	row := tx.QueryRowx(stmt, group.Name)
-	err = row.Scan(&groupID)
+	err := row.Scan(&groupID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
-		_ = tx.Rollback()
 		// this should only fail because the group was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert group: group with this name already exists: %s", group.Name)
@@ -145,7 +138,6 @@ func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 		}
 		_, err = tx.Exec(stmt, userGroupRows...)
 		if err != nil {
-			_ = tx.Rollback()
 			msg := fmt.Sprintf("failed to create group while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
@@ -166,34 +158,34 @@ func (group *Group) createInDb(db *sqlx.DB) *ErrorResponse {
 		}
 		_, err = tx.Exec(stmt, groupPolicyRows...)
 		if err != nil {
-			_ = tx.Rollback()
 			msg := fmt.Sprintf("failed to create group while adding policies: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-
 	return nil
 }
 
-func (group *Group) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (group *Group) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	if group.Name == AnonymousGroup || group.Name == LoggedInGroup {
 		return newErrorResponse("can't delete built-in groups", 400, nil)
 	}
 	stmt := "DELETE FROM grp WHERE name = $1"
-	_, err := db.Exec(stmt, group.Name)
+	_, err := tx.Exec(stmt, group.Name)
 	if err != nil {
 		// TODO: verify correct error
 		// group does not exist; that's fine
 		return nil
 	}
 	return nil
+}
+
+func (group *Group) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := group.deleteInDb(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return group.createInDb(tx)
 }
 
 func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorResponse {

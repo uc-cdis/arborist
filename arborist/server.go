@@ -125,7 +125,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/client/{clientID}/policy/{policyName}", http.HandlerFunc(server.handleClientRevokePolicy)).Methods("DELETE")
 
 	router.Handle("/group", http.HandlerFunc(server.handleGroupList)).Methods("GET")
-	router.Handle("/group", http.HandlerFunc(server.parseJSON(server.handleGroupCreate))).Methods("POST")
+	router.Handle("/group", http.HandlerFunc(server.parseJSON(server.handleGroupCreate))).Methods("POST", "PUT")
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupRead)).Methods("GET")
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupDelete)).Methods("DELETE")
 	router.Handle("/group/{groupName}/user", http.HandlerFunc(server.parseJSON(server.handleGroupAddUser))).Methods("POST")
@@ -1148,7 +1148,12 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := group.createInDb(server.db)
+	var errResponse *ErrorResponse
+	if r.Method == "PUT" {
+		errResponse = transactify(server.db, group.overwriteInDb)
+	} else {
+		errResponse = transactify(server.db, group.createInDb)
+	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1186,7 +1191,7 @@ func (server *Server) handleGroupRead(w http.ResponseWriter, r *http.Request) {
 func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) {
 	groupName := mux.Vars(r)["groupName"]
 	group := Group{Name: groupName}
-	errResponse := group.deleteInDb(server.db)
+	errResponse := transactify(server.db, group.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
