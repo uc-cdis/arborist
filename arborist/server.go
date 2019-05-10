@@ -86,51 +86,51 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
-	router.Handle("/auth/request", http.HandlerFunc(parseJSON(server.handleAuthRequest))).Methods("POST")
-	router.Handle("/auth/resources", http.HandlerFunc(parseJSON(server.handleListAuthResources))).Methods("POST")
+	router.Handle("/auth/request", http.HandlerFunc(server.parseJSON(server.handleAuthRequest))).Methods("POST")
+	router.Handle("/auth/resources", http.HandlerFunc(server.parseJSON(server.handleListAuthResources))).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
-	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyCreate))).Methods("POST")
-	router.Handle("/policy", http.HandlerFunc(parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
+	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyCreate))).Methods("POST")
+	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
-	router.Handle("/resource", http.HandlerFunc(parseJSON(server.handleResourceCreate))).Methods("POST")
+	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST")
 	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
-	router.Handle("/resource"+resourcePath, http.HandlerFunc(parseJSON(server.handleSubresourceCreate))).Methods("POST")
+	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleSubresourceCreate))).Methods("POST")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceDelete)).Methods("DELETE")
 
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
-	router.Handle("/role", http.HandlerFunc(parseJSON(server.handleRoleCreate))).Methods("POST")
+	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
-	router.Handle("/user", http.HandlerFunc(parseJSON(server.handleUserCreate))).Methods("POST")
+	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
-	router.Handle("/user/{username}/policy", http.HandlerFunc(parseJSON(server.handleUserGrantPolicy))).Methods("POST")
+	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 	router.Handle("/user/{username}/resources", http.HandlerFunc(server.handleUserListResources)).Methods("GET")
 
 	router.Handle("/client", http.HandlerFunc(server.handleClientList)).Methods("GET")
-	router.Handle("/client", http.HandlerFunc(parseJSON(server.handleClientCreate))).Methods("POST")
+	router.Handle("/client", http.HandlerFunc(server.parseJSON(server.handleClientCreate))).Methods("POST")
 	router.Handle("/client/{clientID}", http.HandlerFunc(server.handleClientRead)).Methods("GET")
 	router.Handle("/client/{clientID}", http.HandlerFunc(server.handleClientDelete)).Methods("DELETE")
-	router.Handle("/client/{clientID}/policy", http.HandlerFunc(parseJSON(server.handleClientGrantPolicy))).Methods("POST")
+	router.Handle("/client/{clientID}/policy", http.HandlerFunc(server.parseJSON(server.handleClientGrantPolicy))).Methods("POST")
 	router.Handle("/client/{clientID}/policy", http.HandlerFunc(server.handleClientRevokeAll)).Methods("DELETE")
 	router.Handle("/client/{clientID}/policy/{policyName}", http.HandlerFunc(server.handleClientRevokePolicy)).Methods("DELETE")
 
 	router.Handle("/group", http.HandlerFunc(server.handleGroupList)).Methods("GET")
-	router.Handle("/group", http.HandlerFunc(parseJSON(server.handleGroupCreate))).Methods("POST")
+	router.Handle("/group", http.HandlerFunc(server.parseJSON(server.handleGroupCreate))).Methods("POST")
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupRead)).Methods("GET")
 	router.Handle("/group/{groupName}", http.HandlerFunc(server.handleGroupDelete)).Methods("DELETE")
-	router.Handle("/group/{groupName}/user", http.HandlerFunc(parseJSON(server.handleGroupAddUser))).Methods("POST")
+	router.Handle("/group/{groupName}/user", http.HandlerFunc(server.parseJSON(server.handleGroupAddUser))).Methods("POST")
 	router.Handle("/group/{groupName}/user/{username}", http.HandlerFunc(server.handleGroupRemoveUser)).Methods("DELETE")
-	router.Handle("/group/{groupName}/policy", http.HandlerFunc(parseJSON(server.handleGroupGrantPolicy))).Methods("POST")
+	router.Handle("/group/{groupName}/policy", http.HandlerFunc(server.parseJSON(server.handleGroupGrantPolicy))).Methods("POST")
 	router.Handle("/group/{groupName}/policy/{policyName}", http.HandlerFunc(server.handleGroupRevokePolicy)).Methods("DELETE")
 
 	router.NotFoundHandler = http.HandlerFunc(handleNotFound)
@@ -149,10 +149,11 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 // handler function as input, which should include the body in `[]byte`
 // form as an additional argument, and returns a function with the usual
 // handler signature.
-func parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
+func (server *Server) parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Body == nil {
 			response := newErrorResponse("expected JSON body in the request", 400, nil)
+			response.log.write(server.logger)
 			_ = response.write(w, r)
 			return
 		}
@@ -160,6 +161,7 @@ func parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) fun
 		if err != nil {
 			msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
 			response := newErrorResponse(msg, 400, nil)
+			response.log.write(server.logger)
 			_ = response.write(w, r)
 			return
 		}
@@ -264,23 +266,28 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rv, err := authorizeUser(&authRequest)
-
-	if rv.Auth {
-		server.logger.Debug("user is authorized")
-	}
-
-	if err == nil && rv.Auth && authRequest.ClientID != "" {
-		rv, err = authorizeClient(&authRequest)
-		if rv.Auth {
-			server.logger.Debug("client is authorized")
-		}
-	}
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
 		return
+	}
+	if rv.Auth {
+		server.logger.Debug("user is authorized")
+	}
+	if err == nil && rv.Auth && authRequest.ClientID != "" {
+		rv, err = authorizeClient(&authRequest)
+		if err != nil {
+			msg := fmt.Sprintf("could not authorize: %s", err.Error())
+			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		if rv.Auth {
+			server.logger.Debug("client is authorized")
+		}
 	}
 	if !rv.Auth {
 		errResponse := newErrorResponse(

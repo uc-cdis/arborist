@@ -96,10 +96,12 @@ func logMsg(lvl LogLevel, format string, a ...interface{}) string {
 		msg = fmt.Sprintf(format, a...)
 	}
 	// get the call from 2 stack frames above this
+	// (one call up is the LogCache method, so go one more above that)
 	_, fn, line, ok := runtime.Caller(2)
-	split := strings.Split(fn, string(os.PathSeparator))
-	fn = split[len(split)-1]
 	if ok {
+		// shorten the filepath to only the basename
+		split := strings.Split(fn, string(os.PathSeparator))
+		fn = split[len(split)-1]
 		msg = fmt.Sprintf("%s:%d: %s", fn, line, msg)
 	}
 	return msg

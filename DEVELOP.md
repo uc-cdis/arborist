@@ -51,9 +51,10 @@ func (server *Server) handleSomething(w http.ResponseWriter, r *http.Request) {
 ```
 
 In the functions which return an `ErrorResponse`, you can "log" things using
-`ErrorResponse.log`, which implements the logging interface and saves all the
-logs until we call `ErrorResponse.log.write(Logger)`, where it writes out all
-the saved logs into the provided logger.
+`ErrorResponse.log`, which implements the logging interface (see `logging.go`)
+and saves all the logs until we call `ErrorResponse.log.write(Logger)`, where
+it writes out all the saved logs into the provided logger. This occurs as in the
+pattern above where we write the response's logs into the server logger.
 
 ### Structs
 
