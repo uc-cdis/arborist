@@ -1159,6 +1159,11 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 		_ = errResponse.write(w, r)
 		return
 	}
+	if r.Method == "PUT" {
+		server.logger.Info("overwrote group %s", group.Name)
+	} else {
+		server.logger.Info("created group %s", group.Name)
+	}
 	created := struct {
 		Created *Group `json:"created"`
 	}{
