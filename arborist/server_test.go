@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -132,10 +133,23 @@ func (testJWT *TestJWT) Encode() string {
 	return result
 }
 
+var logTo = flag.String(
+	"log",
+	"buffer",
+	"where to write logs to (default is buffer flushed on errors)",
+)
+
 func TestServer(t *testing.T) {
+	flag.Parse()
 	logBuffer := bytes.NewBuffer([]byte{})
-	logFlags := log.Ldate | log.Ltime | log.Llongfile
-	logger := log.New(logBuffer, "", logFlags)
+	logFlags := log.Ldate | log.Ltime
+	var logDest io.Writer
+	if *logTo == "stdout" {
+		logDest = os.Stdout
+	} else {
+		logDest = logBuffer
+	}
+	logger := log.New(logDest, "", logFlags)
 
 	jwtApp := &mockJWTApp{}
 
@@ -159,7 +173,7 @@ func TestServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := server.MakeRouter(logBuffer)
+	handler := server.MakeRouter(logDest)
 
 	// some test data to work with
 	resourcePath := "/example"

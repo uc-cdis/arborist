@@ -533,6 +533,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("created policy %s", policy.Name)
 	created := struct {
 		Created *Policy `json:"created"`
 	}{
@@ -557,12 +558,13 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
-	created := struct {
+	server.logger.Info("overwrote policy %s", policy.Name)
+	updated := struct {
 		Updated *Policy `json:"updated"`
 	}{
 		Updated: policy,
 	}
-	_ = jsonResponseFrom(created, 201).write(w, r)
+	_ = jsonResponseFrom(updated, 201).write(w, r)
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
@@ -595,6 +597,7 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("deleted policy %s", name)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -643,6 +646,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	created := resourceFromQuery.standardize()
+	server.logger.Info("created resource %s (%s)", created.Path, created.Tag)
 	result := struct {
 		Created *ResourceOut `json:"created"`
 	}{
@@ -677,6 +681,7 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 	created := resourceFromQuery.standardize()
+	server.logger.Info("created subresource %s (%s)", created.Path, created.Tag)
 	result := struct {
 		Created *ResourceOut `json:"created"`
 	}{
@@ -734,6 +739,7 @@ func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Reques
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("deleted resource %s", resource.Path)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -774,6 +780,7 @@ func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, b
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("created role %s", role.Name)
 	created := struct {
 		Created *Role `json:"created"`
 	}{
@@ -812,6 +819,7 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("deleted role %s", role.Name)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -852,6 +860,7 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("created user %s", user.Name)
 	created := struct {
 		Created *User `json:"created"`
 	}{
@@ -890,6 +899,7 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("deleted user %s", name)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -924,6 +934,7 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("revoked all policies for user %s", username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -936,12 +947,12 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("revoked policy %s for user %s", policyName, username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
-	fmt.Println(username)
 	service := ""
 	serviceQS, ok := r.URL.Query()["service"]
 	if ok {

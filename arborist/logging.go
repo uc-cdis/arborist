@@ -9,6 +9,7 @@ import (
 )
 
 type Logger interface {
+	Print(string, ...interface{})
 	Debug(string, ...interface{})
 	Info(string, ...interface{})
 	Warning(string, ...interface{})
@@ -19,50 +20,59 @@ type LogHandler struct {
 	logger *log.Logger
 }
 
+func (handler *LogHandler) Print(format string, a ...interface{}) {
+	handler.logger.Print(sprintf(format, a...))
+}
+
 func (handler *LogHandler) Debug(format string, a ...interface{}) {
-	if len(a) > 0 {
-		msg := fmt.Sprintf(format, a...)
-		handler.logger.Printf("DEBUG: %s", msg)
-	} else {
-		handler.logger.Printf("DEBUG: %s", format)
-	}
+	handler.logger.Print(logMsg(LogLevelDebug, format, a...))
 }
 
 func (handler *LogHandler) Info(format string, a ...interface{}) {
-	if len(a) > 0 {
-		msg := fmt.Sprintf(format, a...)
-		handler.logger.Printf("INFO: %s", msg)
-	} else {
-		handler.logger.Printf("INFO: %s", format)
-	}
+	handler.logger.Print(logMsg(LogLevelInfo, format, a...))
 }
 
 func (handler *LogHandler) Warning(format string, a ...interface{}) {
-	if len(a) > 0 {
-		msg := fmt.Sprintf(format, a...)
-		handler.logger.Printf("WARNING: %s", msg)
-	} else {
-		handler.logger.Printf("WARNING: %s", format)
-	}
+	handler.logger.Print(logMsg(LogLevelWarning, format, a...))
 }
 
 func (handler *LogHandler) Error(format string, a ...interface{}) {
-	if len(a) > 0 {
-		msg := fmt.Sprintf(format, a...)
-		handler.logger.Printf("ERROR: %s", msg)
-	} else {
-		handler.logger.Printf("ERROR: %s", format)
-	}
+	handler.logger.Print(logMsg(LogLevelError, format, a...))
 }
 
 type LogLevel string
 
 const (
-	LogLevelDebug   = "DEBUG"
-	LogLevelInfo    = "INFO"
-	LogLevelWarning = "WARNING"
-	LogLevelError   = "ERROR"
+	LogLevelDebug   LogLevel = "DEBUG"
+	LogLevelInfo    LogLevel = "INFO"
+	LogLevelWarning LogLevel = "WARNING"
+	LogLevelError   LogLevel = "ERROR"
 )
+
+func sprintf(format string, a ...interface{}) string {
+	var msg string
+	if len(a) == 0 {
+		msg = format
+	} else {
+		msg = fmt.Sprintf(format, a...)
+	}
+	return msg
+}
+
+func logMsg(lvl LogLevel, format string, a ...interface{}) string {
+	msg := sprintf(format, a...)
+	msg = fmt.Sprintf("%s: %s", lvl, msg)
+	// get the call from 2 stack frames above this
+	// (one call up is the LogCache method, so go one more above that)
+	_, fn, line, ok := runtime.Caller(2)
+	if ok {
+		// shorten the filepath to only the basename
+		split := strings.Split(fn, string(os.PathSeparator))
+		fn = split[len(split)-1]
+		msg = fmt.Sprintf("%s:%d: %s", fn, line, msg)
+	}
+	return msg
+}
 
 type Log struct {
 	lvl LogLevel
@@ -75,36 +85,8 @@ type LogCache struct {
 
 func (cache *LogCache) write(logger Logger) {
 	for _, log := range cache.logs {
-		switch log.lvl {
-		case LogLevelDebug:
-			logger.Debug(log.msg)
-		case LogLevelInfo:
-			logger.Info(log.msg)
-		case LogLevelWarning:
-			logger.Warning(log.msg)
-		case LogLevelError:
-			logger.Error(log.msg)
-		}
+		logger.Print(log.msg)
 	}
-}
-
-func logMsg(lvl LogLevel, format string, a ...interface{}) string {
-	var msg string
-	if len(a) == 0 {
-		msg = format
-	} else {
-		msg = fmt.Sprintf(format, a...)
-	}
-	// get the call from 2 stack frames above this
-	// (one call up is the LogCache method, so go one more above that)
-	_, fn, line, ok := runtime.Caller(2)
-	if ok {
-		// shorten the filepath to only the basename
-		split := strings.Split(fn, string(os.PathSeparator))
-		fn = split[len(split)-1]
-		msg = fmt.Sprintf("%s:%d: %s", fn, line, msg)
-	}
-	return msg
 }
 
 func (cache *LogCache) Debug(format string, a ...interface{}) {
