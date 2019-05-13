@@ -307,8 +307,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			SELECT
 				resource.id,
 				resource.name,
-				resource.description,
 				resource.path,
+				resource.tag,
+				resource.description,
 				array(
 					SELECT child.path
 					FROM resource AS child
@@ -340,8 +341,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			SELECT
 				resource.id,
 				resource.name,
-				resource.description,
 				resource.path,
+				resource.tag,
+				resource.description,
 				array(
 					SELECT child.path
 					FROM resource AS child
@@ -373,8 +375,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			SELECT
 				resource.id,
 				resource.name,
-				resource.description,
 				resource.path,
+				resource.tag,
+				resource.description,
 				array(
 					SELECT child.path
 					FROM resource AS child

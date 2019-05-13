@@ -296,6 +296,22 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	getResourceWithPath := func(t *testing.T, path string) arborist.ResourceOut {
+		url := fmt.Sprintf("/resource%s", path)
+		w := httptest.NewRecorder()
+		req := newRequest("GET", url, nil)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			httpError(t, w, fmt.Sprintf("couldn't find resource %s", path))
+		}
+		result := arborist.ResourceOut{}
+		err := json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from resource get")
+		}
+		return result
+	}
+
 	createRoleBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/role", bytes.NewBuffer(body))
@@ -2495,7 +2511,6 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusOK {
 					httpError(t, w, "auth resources request failed")
 				}
-				// in this case, since the user has zero access yet, should be empty
 				result := struct {
 					Resources []string `json:"resources"`
 				}{}
@@ -2505,6 +2520,25 @@ func TestServer(t *testing.T) {
 				}
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+				// check the response returning tags is also correct
+				w = httptest.NewRecorder()
+				req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth resources request failed")
+				}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth resources")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, 1, len(result.Resources), msg)
+				if len(result.Resources) != 1 {
+					t.Fatal()
+				}
+				tag := result.Resources[0]
+				resource := getResourceWithPath(t, resourcePath)
+				assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
 
 				t.Run("Policies", func(t *testing.T) {
 					w := httptest.NewRecorder()
