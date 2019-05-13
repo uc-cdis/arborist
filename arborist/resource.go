@@ -114,6 +114,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 //
 //     formatDbPath("/a/b/c") == "a.b.c"
 func formatPathForDb(path string) string {
+	// -1 means replace everything
 	return strings.TrimLeft(strings.Replace(path, "/", ".", -1), ".")
 }
 
@@ -122,6 +123,7 @@ func formatPathForDb(path string) string {
 //
 //     formatDbPath("a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
+	// -1 means replace everything
 	return "/" + strings.Replace(path, ".", "/", -1)
 }
 
@@ -248,42 +250,20 @@ func (resource *ResourceIn) validate() *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) createInDb(db *sqlx.DB) (*ResourceFromQuery, *ErrorResponse) {
+func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	errResponse := resource.validate()
 	if errResponse != nil {
-		return nil, errResponse
-	}
-	tx, err := db.Beginx()
-	if err != nil {
-		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return nil, newErrorResponse(msg, 500, &err)
+		return errResponse
 	}
 	errResponse = resource.createRecursively(tx)
 	if errResponse != nil {
-		return nil, errResponse
+		return errResponse
 	}
-	err = tx.Commit()
-	if err != nil {
-		_ = tx.Rollback()
-		// TODO: more specific error handling (make sure resource really is
-		// invalid)
-
-		// assume that this error is because the resource failed validation on
-		// database side, because of missing parent or similar; return 400.
-		errMsg := strings.TrimPrefix(err.Error(), "pq: ")
-		msg := fmt.Sprintf("couldn't create resource: %s", errMsg)
-		return nil, newErrorResponse(msg, 400, &err)
-	}
-	resourceFromQuery, err := resourceWithPath(db, resource.Path)
-	if err != nil {
-		return nil, newErrorResponse(err.Error(), 500, &err)
-	}
-	return resourceFromQuery, nil
+	return nil
 }
 
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	// -1 means replace everything
 	path := formatPathForDb(resource.Path)
 	if resource.Name == "" {
 		segments := strings.Split(path, ".")
@@ -314,16 +294,24 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	if resource.Path == "" {
 		msg := "resource missing required field `path`"
 		return newErrorResponse(msg, 400, nil)
 	}
 	stmt := "DELETE FROM resource WHERE path = $1"
-	_, err := db.Exec(stmt, formatPathForDb(resource.Path))
+	_, err := tx.Exec(stmt, formatPathForDb(resource.Path))
 	if err != nil {
 		// resource already doesn't exist; this is fine
 		return nil
 	}
 	return nil
+}
+
+func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.deleteInDb(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return resource.createInDb(tx)
 }
