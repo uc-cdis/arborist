@@ -96,10 +96,10 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
-	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST")
+	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
-	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleSubresourceCreate))).Methods("POST")
+	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleSubresourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceDelete)).Methods("DELETE")
 
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
@@ -639,8 +639,20 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		server.handleSubresourceCreate(w, r, body)
 		return
 	}
-	resourceFromQuery, errResponse := resource.createInDb(server.db)
+	var errResponse *ErrorResponse
+	if r.Method == "PUT" {
+		errResponse = transactify(server.db, resource.overwriteInDb)
+	} else {
+		errResponse = transactify(server.db, resource.createInDb)
+	}
 	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
+	if err != nil {
+		errResponse := newErrorResponse(err.Error(), 500, &err)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
@@ -674,8 +686,21 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	}
 	parentPath := parseResourcePath(r)
 	resource.Path = parentPath + "/" + resource.Name
-	resourceFromQuery, errResponse := resource.createInDb(server.db)
+
+	var errResponse *ErrorResponse
+	if r.Method == "PUT" {
+		errResponse = transactify(server.db, resource.overwriteInDb)
+	} else {
+		errResponse = transactify(server.db, resource.createInDb)
+	}
 	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
+	if err != nil {
+		errResponse := newErrorResponse(err.Error(), 500, &err)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
@@ -733,7 +758,7 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
 	path := parseResourcePath(r)
 	resource := ResourceIn{Path: path}
-	errResponse := resource.deleteInDb(server.db)
+	errResponse := transactify(server.db, resource.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)

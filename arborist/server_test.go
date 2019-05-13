@@ -720,6 +720,66 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusOK {
 				httpError(t, w, "couldn't find subresource")
 			}
+
+			// re-POST the same x with different subresources should fail
+			w = httptest.NewRecorder()
+			body = []byte(`{
+				"name": "x",
+				"subresources": [
+					{
+						"name": "b",
+						"subresources": [{"name": "c"}]
+					}
+				]
+			}`)
+			req = newRequest("POST", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusConflict {
+				httpError(t, w, "didn't conflict")
+			}
+
+			// use PUT (force-create) shall recreate the whole tree under x
+			w = httptest.NewRecorder()
+			req = newRequest("PUT", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource")
+			}
+			expected = struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &expected)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+
+			// previous child resources should be gone
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "could find subresource")
+			}
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/y/z", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNotFound {
+				httpError(t, w, "could find subresource")
+			}
+
+			// now check that the new child resources exist
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/b", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
+			}
+			w = httptest.NewRecorder()
+			req = newRequest("GET", "/resource/x/b/c", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't find subresource")
+			}
 		})
 
 		t.Run("ListSubresources", func(t *testing.T) {
