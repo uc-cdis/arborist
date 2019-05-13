@@ -653,7 +653,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
 	if err != nil {
 		errResponse := newErrorResponse(err.Error(), 500, &err)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
@@ -701,7 +701,7 @@ func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Req
 	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
 	if err != nil {
 		errResponse := newErrorResponse(err.Error(), 500, &err)
-		server.logger.Error(errResponse.Error.Message)
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
