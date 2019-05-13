@@ -897,6 +897,32 @@ components:
                   method
           required:
             - token
+          requests:
+            type: array
+            items:
+              type: object
+              description: >-
+                Same as the `request` field. Use `requests` to send multiple
+                auth requests. Arborist returns positive authorization if every
+                request in the list succeeds.
+              properties:
+                resource:
+                  type: string
+                  example: '/programs/DEV/projects/test'
+                action:
+                  type: object
+                  properties:
+                    service:
+                      type: string
+                      example: 'fence'
+                    method:
+                      type: string
+                      example: 'read-storage'
+                  required:
+                    - service
+                      method
+              required:
+                - token
     AuthRequestResponse:
       type: object
       properties:
