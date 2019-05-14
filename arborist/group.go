@@ -35,7 +35,7 @@ func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
 	stmt := `
 		SELECT
 			grp.name,
-			array_remove(array_agg(usr.name), NULL) AS users,
+			array_remove(array_agg(DISTINCT usr.name), NULL) AS users,
 			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM grp
 		LEFT JOIN grp_policy ON grp_policy.grp_id = grp.id

@@ -29,7 +29,7 @@ func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) 
 	stmt := `
 		SELECT
 			client.external_client_id,
-			array_remove(array_agg(policy.name), NULL) AS policies
+			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM client
 		LEFT JOIN client_policy ON client.id = client_policy.client_id
 		LEFT JOIN policy ON policy.id = client_policy.policy_id
@@ -53,7 +53,7 @@ func listClientsFromDb(db *sqlx.DB) ([]ClientFromQuery, error) {
 	stmt := `
 		SELECT
 			client.external_client_id,
-			array_remove(array_agg(policy.name), NULL) AS policies
+			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM client
 		LEFT JOIN client_policy ON client.id = client_policy.client_id
 		LEFT JOIN policy ON policy.id = client_policy.policy_id

@@ -40,8 +40,8 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 			usr.id,
 			usr.name,
 			usr.email,
-			array_remove(array_agg(grp.name), NULL) AS groups,
-			array_remove(array_agg(policy.name), NULL) AS policies
+			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
+			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr.id = usr_grp.usr_id
 		LEFT JOIN grp ON grp.id = usr_grp.grp_id
@@ -69,8 +69,8 @@ func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 			usr.id,
 			usr.name,
 			usr.email,
-			array_remove(array_agg(grp.name), NULL) AS groups,
-			array_remove(array_agg(policy.name), NULL) AS policies
+			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
+			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr.id = usr_grp.usr_id
 		LEFT JOIN grp ON grp.id = usr_grp.grp_id
