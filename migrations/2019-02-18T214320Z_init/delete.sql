@@ -10,4 +10,4 @@ DELETE FROM grp_policy;
 DELETE FROM policy;
 DELETE FROM client;
 DELETE FROM usr;
-DELETE FROM grp;
+DELETE FROM grp WHERE (name != 'anonymous' AND name != 'logged-in');
