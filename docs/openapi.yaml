@@ -9,12 +9,10 @@ info:
 tags:
   - name: auth
     description: make requests to determine authorization
-  - name: engine
-    description: render the global state for everything currently stored in arborist
   - name: resource
-    description: manage resources registered in the engine
+    description: manage resources in the arborist database
   - name: role
-    description: manage roles registered in the engine
+    description: manage roles in the arborist database
   - name: policy
     description: manage policies to grant authorization
 paths:
@@ -30,7 +28,9 @@ paths:
         however our usage so far is to use the permission model to capture the
         basic set of operations one might expect in RBAC (read/write, etc.)
         combined with the client service, and the path for the resource the user
-        is trying to access.
+        is trying to access. If the given JWT has `azp` field, the permission of
+        the corresponding client will be also checked; only when both the user
+        and the client have permission can the response be positive.
       requestBody:
         content:
           application/json:
@@ -85,61 +85,19 @@ paths:
         401:
           description: >-
             Token failed to validate (authentication error)
-  /auth/proxy:
+  /health:
     get:
       tags:
-        - auth
+        - health
       description: >-
-        The proxy endpoint works differently from the other auth endpoints.
-        Whereas the other endpoints will return a 200 code as long as the
-        request was understood (and allowed), whether or not the auth request
-        should be appproved or denied, this endpoint will return a code and
-        error JSON as if to the end user making the request that is checked,
-        whether or not the request is valid.
-      parameters:
-        - in: header
-          name: Authorization
-          description: user's JWT
-          schema:
-            type: string
-          required: true
-        - in: query
-          name: resource
-          schema:
-            type: string
-          required: true
-        - in: query
-          name: service
-          schema:
-            type: string
-          required: true
-        - in: query
-          name: method
-          schema:
-            type: string
-          required: true
+        Check that the arborist instance is healthy and the database is
+        available.
       responses:
         200:
-          description: request is authorized
-        401:
-          description: authentication failed (the token was invalid)
-        403:
-          description: authorization failed (user denied access)
-  /engine/:
-    get:
-      tags:
-        - engine
-      description: >-
-        Return the entire model which arborist has in memory, serialized into
-        JSON.
-      responses:
-        200:
-          description: arborist engine
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Engine'
-  /resource/:
+          description: Healthy
+        500:
+          description: Unhealthy (database ping failed)
+  /resource:
     get:
       tags:
         - resource
@@ -169,10 +127,9 @@ paths:
         schema:
           type: string
         description: >-
-          The full path for a resource registered in the engine, which includes
-          slashes. For example, if a resource was created which has the path
-          `/a/b/c`, then the endpoint `/resource/a/b/c` can now be used to access
-          this resource.
+          The full path for a resource, which includes slashes. For example, if
+          a resource was created which has the path `/a/b/c`, then the endpoint
+          `/resource/a/b/c` can now be used to access this resource.
     get:
       tags:
         - resource
@@ -195,13 +152,13 @@ paths:
         - resource
       description: >-
         Add a new subresource, *underneath* an existing resource. The path *is
-        allowed to be empty*, in which case `resourcePath` is empty, the resource
-        is created under the root resource, as `/new_resource`.
+        allowed to be empty*; when `resourcePath` is empty, the resource is
+        created under the root resource, as `/new_resource`.
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Resource'
+              $ref: '#/components/schemas/ResourceInput'
       responses:
         201:
           description: JSON representation of successfully-created resource
@@ -224,14 +181,14 @@ paths:
       description: >-
         Overwrite an existing resource. This endpoint requires a fully-formed
         resource model (and cannot patch over individual fields on the existing
-        resources).
+        resources). If the specified resource doesn't exist, it will be created.
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Resource'
+              $ref: '#/components/schemas/ResourceInput'
       responses:
-        200:
+        201:
           description: JSON representation of successfully-updated resource
           content:
             application/json:
@@ -246,12 +203,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserError'
-        404:
-          description: no resource exists with the given `resourcePath`
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotFound'
     delete:
       tags:
         - resource
@@ -264,7 +215,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
-  /role/:
+  /role:
     get:
       tags:
         - role
@@ -408,7 +359,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
-  /policy/:
+  /policy:
     get:
       tags:
         - policy
@@ -463,7 +414,7 @@ paths:
         description: The ID for a policy registered in arborist.
     get:
       tags:
-        - role
+        - policy
       description: >-
         Output the information for a specific policy.
       responses:
@@ -560,6 +511,351 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
+  /user:
+    get:
+      tags:
+        - user
+      description: >-
+        List all the users registered in arborist.
+      responses:
+        200:
+          description: list of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersList'
+    post:
+      tags:
+        - user
+      description: >-
+        Create a new user
+      responses:
+        201:
+          description: created user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/User'
+  /user/{username}:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    get:
+      tags:
+        - user
+      description: >-
+        Read the information for a specific user.
+      responses:
+        200:
+          description: user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        404:
+          description: user not found
+    delete:
+      tags:
+        - user
+      description: >-
+        Delete this user from the database.
+      responses:
+        204:
+          description: user successfully deleted
+        404:
+          description: user not found
+  /user/{username}/policy:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    post:
+      tags:
+        - user
+      description: >-
+        Grant an additional policy to a user. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPolicy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: user not found, or policy not found
+    delete:
+      tags:
+        - user
+      description: >-
+        Revoke all policies for this user.
+      responses:
+        204:
+          description: successfully revoked policies
+  /user/{username}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - user
+      description: >-
+        Revoke this policy from this user, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: user not found
+  /client:
+    get:
+      tags:
+        - client
+      description: >-
+        List all the clients registered in arborist.
+      responses:
+        200:
+          description: list of clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientsList'
+    post:
+      tags:
+        - client
+      description: >-
+        Create a new client
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Client'
+      responses:
+        201:
+          description: created client
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Client'
+  /client/{clientID}:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+    get:
+      tags:
+        - client
+      description: >-
+        Read the information for a specific client.
+      responses:
+        200:
+          description: client information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        404:
+          description: client not found
+    delete:
+      tags:
+        - client
+      description: >-
+        Delete this client from the database.
+      responses:
+        204:
+          description: client successfully deleted
+        404:
+          description: client not found
+  /client/{clientID}/policy:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+    post:
+      tags:
+        - client
+      description: >-
+        Grant an additional policy to a client. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPolicy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: client not found, or policy not found
+    delete:
+      tags:
+        - client
+      description: >-
+        Revoke all policies for this client.
+      responses:
+        204:
+          description: successfully revoked policies
+  /client/{clientID}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: clientID
+        required: true
+        schema:
+          type: string
+        description: the client ID for a client registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - client
+      description: >-
+        Revoke this policy from this client, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: client not found
+  /group:
+    get:
+      tags:
+        - group
+      description: >-
+        List all the groups registered in arborist.
+      responses:
+        200:
+          description: list of groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  example: 'group'
+    post:
+      tags:
+        - group
+      description: >-
+        Create a new group
+      responses:
+        201:
+          description: created group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Group'
+  /group/{groupName}:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+    get:
+      tags:
+        - group
+      description: >-
+        Read the information for a specific group.
+      responses:
+        200:
+          description: group information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        404:
+          description: group not found
+    delete:
+      tags:
+        - group
+      description: >-
+        Delete this group from the database.
+      responses:
+        204:
+          description: group successfully deleted
+        404:
+          description: group not found
+  /group/{groupName}/policy:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+    post:
+      tags:
+        - group
+      description: >-
+        Grant an additional policy to a group. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPolicy'
+      responses:
+        204:
+          description: successfully granted additional policy
+        404:
+          description: group not found, or policy not found
+  /group/{groupName}/policy/{policyName}:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+      - in: path
+        name: policyName
+        required: true
+        schema:
+          type: string
+        description: the name for a policy
+    delete:
+      tags:
+        - group
+      description: >-
+        Revoke this policy from this group, so they will no longer have access.
+      responses:
+        204:
+          description: successfully revoked
+        404:
+          description: group not found
 components:
   schemas:
     AuthRequestBody:
@@ -571,11 +867,18 @@ components:
             jwt:
               type: string
               description: >-
-                A JWT belonging to a user, as defined by RFC 7519. It must contain a
-                field `context.user.policies` listing the policies granted to the user.
+                A JWT belonging to a user, as defined by RFC 7519. It must
+                contain a field `context.user.policies` listing the policies
+                granted to the user.
               example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
         request:
           type: object
+          description: >-
+              The action and resource a user is trying to access. Instead of
+              `request` the API also accepts `requests` which should be an array
+              of these objects. When using `requests`, arborist will return true
+              if the user has access for every request in the list, though they
+              may be granted via different policies.
           properties:
             resource:
               type: string
@@ -594,6 +897,32 @@ components:
                   method
           required:
             - token
+          requests:
+            type: array
+            items:
+              type: object
+              description: >-
+                Same as the `request` field. Use `requests` to send multiple
+                auth requests. Arborist returns positive authorization if every
+                request in the list succeeds.
+              properties:
+                resource:
+                  type: string
+                  example: '/programs/DEV/projects/test'
+                action:
+                  type: object
+                  properties:
+                    service:
+                      type: string
+                      example: 'fence'
+                    method:
+                      type: string
+                      example: 'read-storage'
+                  required:
+                    - service
+                      method
+              required:
+                - token
     AuthRequestResponse:
       type: object
       properties:
@@ -675,8 +1004,39 @@ components:
           type: array
           description: nested Resource items
           items:
-            $ref: '#/components/schemas/Resource'
-          example:  { "name": "programs", "path": "/programs", "description": "", "subresources": [ { "name": "DEV", "path": "/programs/DEV", "description": "", "subresources": [ { "name": "projects", "path": "/programs/DEV/projects", "description": "", "subresources": [ { "name": "test", "path": "/programs/DEV/projects/test", "description": "", "subresources": [] } ] } ] } ] }
+            type: string
+          example:  ["/programs/DEV-1", "/programs/DEV-2"]
+    ResourceInput:
+      type: object
+      description: >-
+        Input resources require *either* the `name` field, if the resource is
+        input as the immediate child of another resource node, or the `path`
+        field if submitted at the root resource endpoint. Note that the name
+        and path are only allowed to contain alphanumeric characters and
+        underscores.
+      properties:
+        name:
+          type: string
+          description: >-
+            The name (final path segment) of this particular resource. The names
+            are not globally unique; they must be unique only within the
+            "directory" of the tree they live in.  example: "programs"
+        path:
+          type: string
+          description: >-
+            The full path to this resource, which is formed from the list of resource
+            names starting from the root and continuing down to this one, joined by slashes.
+            Note that the path is generated by arborist and should not be included in the
+            input value.
+          example: "/programs"
+        description:
+          type: string
+        subresources:
+          type: array
+          description: nested Resource items
+          items:
+            type: string
+          example:  ["/programs/DEV-1", "/programs/DEV-2"]
     Roles:
       type: object
       properties:
@@ -754,24 +1114,72 @@ components:
           items:
             type: string
           example: ["/programs/DEV/projects/test"]
-    Engine:
+    GrantPolicy:
       type: object
       properties:
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Permission'
-        roles:
-          type: array
-          items:
-            $ref: '#/components/schemas/Role'
-        resources:
-          type: array
-          items:
-            $ref: '#/components/schemas/Resource'
-        timestamp:
+        policy:
           type: string
-          description: >-
-            the timestamp in ISO 8601 format for when this information was
-            generated
-          example: '2019-01-23T19:01:28Z'
+          description: the policy to grant
+          example: 'policy_name'
+    User:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 'username'
+        email:
+          type: string
+          example: 'user@example.net'
+        groups:
+          type: array
+          items:
+            type: string
+            example: 'group'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'
+    UsersList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: string
+            example: 'username'
+    Client:
+      type: object
+      properties:
+        clientID:
+          type: string
+          example: 'x68GTbL0NHOV085t51jEuJW3vDrng3G5hr7p1B4l'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'
+    ClientsList:
+      type: object
+      properties:
+        clients:
+          type: array
+          items:
+            type: string
+            example: 'x68GTbL0NHOV085t51jEuJW3vDrng3G5hr7p1B4l'
+    Group:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 'example_group'
+        users:
+          type: array
+          items:
+            type: string
+            example: 'username'
+        policies:
+          type: array
+          items:
+            type: string
+            example: 'policy'

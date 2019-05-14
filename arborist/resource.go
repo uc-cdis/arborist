@@ -1,183 +1,317 @@
 package arborist
 
 import (
-	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
-// pathString defines the conversion from a list of individual resource names,
-// for instance `["root", "program", "project"]`, to the full path
-// `"/root/program/project"`.
-func pathString(segments []string) string {
-	return strings.Join([]string{"/", strings.Join(segments, "/")}, "")
+// A note on the fields here: either the resource must have been created
+// through the subresources field of a parent resource, in which case the path
+// is formed from the parent path joined with this resource's name, or with an
+// explicit full path here.
+
+type ResourceIn struct {
+	Name         string       `json:"name"`
+	Path         string       `json:"path"`
+	Description  string       `json:"description"`
+	Subresources []ResourceIn `json:"subresources"`
 }
 
-func parentPathString(path string) string {
-	segments := strings.Split(path, "/")
-	parentSegments := segments[1 : len(segments)-1]
-	return pathString(parentSegments)
+type ResourceOut struct {
+	Name         string   `json:"name"`
+	Path         string   `json:"path"`
+	Tag          string   `json:"tag"`
+	Description  string   `json:"description"`
+	Subresources []string `json:"subresources"`
 }
 
-// Resource defines a resource in the RBAC model, which is some entity to which
-// access should be controlled (such as a "project"). Policies bind Roles, which
-// allow for some permissions, to a set of Resources.
-//
-// Resources are uniquely identified by their full path (the sequence of names
-// starting from the root resource, continuing down to this one, joined by
-// '/'), rather than their "name", which may be the same across different
-// resources.
-//
-// Example serialization to JSON:
-//
-// {
-//     "name": "resource-foo",
-//     "path": "/service-x/resource-foo",
-//     "description": "some_resource",
-//     "subresources": [
-//         "description": "some_subresource",
-//         "name": "bar",
-//         "path": "/service-x/resource-foo/bar",
-//         "subresources": [
-//             ...
-//         ]
-//     ]
-// }
-type Resource struct {
-	// The final name of the resource. Not globally unique.
-	name string
-	// The path for the resource, which is a list of strings used like a
-	// filepath, and formatted similarly with slashes delimiting each node in
-	// the path. Globally unique.
-	path string
-	// The individual resource names in the path.
-	pathSegments []string
-	// Some text describing the purpose of this resource.
-	description string
-	// Pointer to the parent node in the resource hierarchy. For example, if
-	// the resource is `/projects/foo/bar`, the parent is `/projects/foo`.
-	parent *Resource
-	// Set of pointers to child nodes. Basically, thinking of this resource as
-	// a directory, the subresources are the immediate contents of this
-	// directory.
-	subresources map[*Resource]struct{}
-}
-
-func validateResourceName(name string) error {
-	if !utf8.Valid([]byte(name)) {
-		return nameError(name, "resource", "only UTF8 allowed")
+// NOTE: the resource unmarshalling, because the resources can be specified
+// with either the name + endpoint path, or the full path in the JSON input, is
+// not able to validate all cases precisely. The unmarshalling will pass as
+// long as either the name or the path is provided, which may require
+// additional validation where this is called.
+func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
 	}
 
-	if strings.Contains(name, "/") {
-		return nameError(name, "resource", "can't use reserved character '/'")
+	// delete fields which should be ignored in user input
+	delete(fields, "tag")
+
+	optionalFieldsPath := map[string]struct{}{
+		"name":         struct{}{},
+		"tag":          struct{}{},
+		"description":  struct{}{},
+		"subresources": struct{}{},
+	}
+	errPath := validateJSON("resource", resource, fields, optionalFieldsPath)
+	optionalFieldsName := map[string]struct{}{
+		"path":         struct{}{},
+		"tag":          struct{}{},
+		"description":  struct{}{},
+		"subresources": struct{}{},
+	}
+	errName := validateJSON("resource", resource, fields, optionalFieldsName)
+	if errPath != nil && errName != nil {
+		return errPath
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the Resource to.
+	type loader ResourceIn
+	err = json.Unmarshal(data, (*loader)(resource))
+	if err != nil {
+		return err
+	}
+
+	if resource.Subresources == nil {
+		resource.Subresources = []ResourceIn{}
 	}
 
 	return nil
 }
 
-// NewResource sets up a new resource. If the parent is given then this
-// resource is attached as a subresource, and its path will be computed
-// accordingly (appending the name for this resource as the new last segment
-// after the path of the parent node). Returns an error if the name is invalid
-// as according to `validateResourceName`.
+// ResourceFromQuery is used for reading resources out of the database.
 //
-// NOTE: a resource may point to a parent resource, but until the engine runes
-// `addResource` (or the parent is otherwise modified), the parent resource
-// will not have a pointer to this resource as a subresource.
-func NewResource(
-	name string,
-	description string,
-	parent *Resource,
-	subresources map[*Resource]struct{},
-) (*Resource, error) {
-	if err := validateResourceName(name); err != nil {
+// The `description` field uses `*string` to represent nullability.
+type ResourceFromQuery struct {
+	ID           int64          `db:"id"`
+	Name         string         `db:"name"`
+	Tag          string         `db:"tag"`
+	Description  *string        `db:"description"`
+	Path         string         `db:"path"`
+	Subresources pq.StringArray `db:"subresources"`
+}
+
+// standardize takes a resource returned from a query and turns it into the
+// standard form.
+func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
+	subresources := []string{}
+	for _, subresource := range resourceFromQuery.Subresources {
+		subresources = append(subresources, formatDbPath(subresource))
+	}
+	resource := ResourceOut{
+		Name:         resourceFromQuery.Name,
+		Path:         formatDbPath(resourceFromQuery.Path),
+		Tag:          resourceFromQuery.Tag,
+		Subresources: subresources,
+	}
+	if resourceFromQuery.Description != nil {
+		resource.Description = *resourceFromQuery.Description
+	}
+	return resource
+}
+
+// formatPathForDb takes a path from a resource in the database and transforms
+// it to the front-end version of the resource path. Inverse of `formatDbPath`.
+//
+//     formatDbPath("/a/b/c") == "a.b.c"
+func formatPathForDb(path string) string {
+	// -1 means replace everything
+	return strings.TrimLeft(strings.Replace(path, "/", ".", -1), ".")
+}
+
+// formatDbPath takes a path from a resource in the database and transforms it
+// to the front-end version of the resource path. Inverse of `formatPathForDb`.
+//
+//     formatDbPath("a.b.c") == "/a/b/c"
+func formatDbPath(path string) string {
+	// -1 means replace everything
+	return "/" + strings.Replace(path, ".", "/", -1)
+}
+
+// resourceWithPath looks up a resource matching the given path. The database
+// schema guarantees such a resource to be unique. Any error returned is
+// because of internal database failure.
+func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
+	path = formatPathForDb(path)
+	resources := []ResourceFromQuery{}
+	stmt := `
+		SELECT
+			parent.id,
+			parent.name,
+			parent.path,
+			parent.tag,
+			parent.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM resource AS parent
+		WHERE parent.path = text2ltree(CAST ($1 AS TEXT))
+		GROUP BY parent.id
+		LIMIT 1
+	`
+	err := db.Select(&resources, stmt, path)
+	if len(resources) == 0 {
+		// not found
+		return nil, nil
+	}
+	if err != nil {
+		// query broken
 		return nil, err
 	}
+	resource := resources[0]
+	return &resource, nil
+}
 
-	var pathSegments []string
-	if parent != nil {
-		// For this case we have to copy the values out of the parent path
-		// into this one.
-		pathSegments = make([]string, len(parent.pathSegments)+1)
-		for i, p := range parent.pathSegments {
-			pathSegments[i] = p
+// resourceWithPath looks up a resource matching the given path. The database
+// schema guarantees such a resource to be unique. Any error returned is
+// because of internal database failure.
+func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
+	resources := []ResourceFromQuery{}
+	stmt := `
+		SELECT
+			parent.id,
+			parent.name,
+			parent.path,
+			parent.tag,
+			parent.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM resource AS parent
+		WHERE parent.tag = $1
+	`
+	err := db.Select(&resources, stmt, tag)
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	resource := resources[0]
+	return &resource, nil
+}
+
+func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
+	stmt := `
+		SELECT
+			parent.id,
+			parent.name,
+			parent.path,
+			parent.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM resource AS parent
+		GROUP BY parent.id
+	`
+	var resources []ResourceFromQuery
+	err := db.Select(&resources, stmt)
+	if err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+// Regexes used to validate input resource paths. The `ltree` module for
+// postgres currently only allows alphanumeric characters and underscores. We
+// also have to pass through slashes in the path since these will be translated
+// to the correct format for the database later.
+var resourcePathValidRegex = regexp.MustCompile(`^[/a-zA-Z0-9_]*$`)
+var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
+
+// Resource names are the same, except they can't contain slashes at all.
+var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
+var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
+
+func (resource *ResourceIn) validate() *ErrorResponse {
+	validPath := resourcePathValidRegex.MatchString(resource.Path)
+	if !validPath {
+		invalidChars := resourcePathValidChars.ReplaceAllLiteralString(resource.Path, "")
+		msg := fmt.Sprintf("input resource path contains invalid characters: %s", invalidChars)
+		return newErrorResponse(msg, 400, nil)
+	}
+	validName := resourceNameValidRegex.MatchString(resource.Name)
+	if !validName {
+		invalidChars := resourceNameValidChars.ReplaceAllLiteralString(resource.Name, "")
+		msg := fmt.Sprintf("input resource name contains invalid characters: %s", invalidChars)
+		return newErrorResponse(msg, 400, nil)
+	}
+	return nil
+}
+
+func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.validate()
+	if errResponse != nil {
+		return errResponse
+	}
+	errResponse = resource.createRecursively(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return nil
+}
+
+func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+	// arborist uses `/` for path separator; ltree in postgres uses `.`
+	path := formatPathForDb(resource.Path)
+	if resource.Name == "" {
+		segments := strings.Split(path, ".")
+		resource.Name = segments[len(segments)-1]
+	}
+	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
+	_, err := tx.Exec(stmt, path, resource.Description)
+	if err != nil {
+		// should add more checking here to guarantee the correct error
+		_ = tx.Rollback()
+		// this should only fail because the resource was not unique. return error
+		// accordingly
+		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
+		return newErrorResponse(msg, 409, &err)
+	}
+
+	// recursively create subresources
+	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
+	for _, subresource := range resource.Subresources {
+		// fill out subresource paths based on the current name
+		subresource.Path = resource.Path + "/" + subresource.Name
+		errResponse := subresource.createRecursively(tx)
+		if errResponse != nil {
+			return errResponse
 		}
-		pathSegments[len(parent.pathSegments)] = name
-	} else {
-		pathSegments = []string{name}
 	}
 
-	path := pathString(pathSegments)
-
-	if subresources == nil {
-		subresources = make(map[*Resource]struct{})
-	}
-
-	resource := &Resource{
-		name:         name,
-		path:         path,
-		pathSegments: pathSegments,
-		description:  description,
-		parent:       parent,
-		subresources: subresources,
-	}
-
-	if parent != nil {
-		parent.addSubresource(resource)
-	}
-
-	return resource, nil
+	return nil
 }
 
-func (resource *Resource) addSubresource(sub *Resource) {
-	resource.subresources[sub] = struct{}{}
-	sub.parent = resource
-}
-
-func (resource *Resource) rmSubresource(sub *Resource) {
-	delete(resource.subresources, sub)
-	sub.parent = nil
-}
-
-func (resource *Resource) equals(other *Resource) bool {
-	pathLen := len(resource.path)
-	otherPathLen := len(other.path)
-	if pathLen != otherPathLen {
-		return false
+func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
+	if resource.Path == "" {
+		msg := "resource missing required field `path`"
+		return newErrorResponse(msg, 400, nil)
 	}
-	for i := 0; i < pathLen; i++ {
-		if resource.path[i] != other.path[i] {
-			return false
-		}
+	stmt := "DELETE FROM resource WHERE path = $1"
+	_, err := tx.Exec(stmt, formatPathForDb(resource.Path))
+	if err != nil {
+		// resource already doesn't exist; this is fine
+		return nil
 	}
-	return true
+	return nil
 }
 
-// Traverse does a basic BFS starting at the given resource and traversing
-// through all the subresources starting from that resource, writing the output
-// to a channel. It receives a channel (`done`) which can indicate to cut off
-// the output and return early.
-//
-// NOTE that the traversal order is not guaranteed to be anything in particular.
-func (resource *Resource) traverse(ctx context.Context) <-chan *Resource {
-	result := make(chan *Resource)
-
-	go func() {
-		var head *Resource
-		defer close(result)
-		queue := []*Resource{resource}
-		for len(queue) > 0 {
-			head, queue = queue[0], queue[1:]
-			select {
-			case result <- head:
-			case <-ctx.Done():
-				return
-			}
-			for subnode := range head.subresources {
-				queue = append(queue, subnode)
-			}
-		}
-	}()
-
-	return result
+func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.deleteInDb(tx)
+	if errResponse != nil {
+		return errResponse
+	}
+	return resource.createInDb(tx)
 }

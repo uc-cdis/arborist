@@ -9,5 +9,19 @@ git:
 
 sudo: false
 
+addons:
+  postgresql: "9.5"
+
+env:
+  global:
+    - PGHOST=localhost
+    - PGPORT=5432
+    - PGUSER=postgres
+    - PGDATABASE=arborist_test
+
+install:
+  - createdb
+  - ./migrations/latest
+
 script:
-  - go test -v ./...
+  - go test -v ./arborist/
