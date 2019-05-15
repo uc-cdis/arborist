@@ -182,6 +182,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		server.logger.Error("database ping failed; returning unhealthy")
 		response := newErrorResponse("database unavailable", 500, nil)
 		_ = response.write(w, r)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
