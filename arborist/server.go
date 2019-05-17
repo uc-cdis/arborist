@@ -391,7 +391,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			Method:   authRequest.Action.Method,
 			stmts:    server.stmts,
 		}
-		server.logger.Info("handling auth request: %v", request)
+		server.logger.Info("handling auth request: %#v", request)
 		rv, err := authorizeUser(request)
 		if err == nil && rv.Auth {
 			server.logger.Debug("user is authorized")
