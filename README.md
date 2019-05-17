@@ -153,7 +153,8 @@ following:
        (`/group/anonymous/policy` and `/group/logged-in/policy` endpoints)
     2. Now users even without a JWT have access using the policies granted to
        the `anonymous` group, and all users with just a JWT have access to the
-       policies for the `logged-in` group.
+       policies for the `logged-in` group. (All users are implicitly considered
+       part of the `logged-in` group.)
   - Specifying permissions for individual users directly:
     1. Grant an individual user a policy (`/user/{username}/policy` endpoint).
     2. Now that user has access.

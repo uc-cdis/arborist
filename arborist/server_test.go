@@ -1245,7 +1245,7 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, username, result.Name, msg)
 			assert.Equal(t, userEmail, result.Email, msg)
 			assert.Equal(t, []string{}, result.Policies, msg)
-			assert.Equal(t, []string{}, result.Groups, msg)
+			assert.Equal(t, []string{arborist.LoggedInGroup}, result.Groups, msg)
 		})
 
 		// do some preliminary setup so we have a policy to work with
