@@ -60,6 +60,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 		return nil, err
 	}
 	user := users[0]
+	user.Groups = append(user.Groups, LoggedInGroup)
 	return &user, nil
 }
 
