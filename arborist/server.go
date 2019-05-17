@@ -391,16 +391,16 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			Method:   authRequest.Action.Method,
 			stmts:    server.stmts,
 		}
-
+		server.logger.Info("handling auth request: %v", request)
 		rv, err := authorizeUser(request)
-		if rv.Auth {
+		if err == nil && rv.Auth {
 			server.logger.Debug("user is authorized")
 		} else {
 			server.logger.Debug("user is unauthorized")
 		}
-		if rv.Auth && request.ClientID != "" {
+		if err == nil && rv.Auth && request.ClientID != "" {
 			rv, err = authorizeClient(request)
-			if rv.Auth {
+			if err == nil && rv.Auth {
 				server.logger.Debug("client is authorized")
 			} else {
 				server.logger.Debug("client is unauthorized")
