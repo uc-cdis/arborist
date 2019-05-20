@@ -354,6 +354,13 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				FROM usr
 				JOIN usr_policy ON usr.id = usr_policy.usr_id
 				WHERE usr.name = $1
+				UNION
+				SELECT grp_policy.policy_id
+				FROM grp
+				JOIN grp_policy ON grp_policy.grp_id = grp.id
+				JOIN usr_grp ON usr_grp.grp_id = grp.id
+				JOIN usr ON usr.id = usr_grp.usr_id
+				WHERE usr.name = $1
 			) policies
 			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 			INNER JOIN resource ON resource.id = policy_resource.resource_id
@@ -392,6 +399,13 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				FROM client
 				JOIN client_policy ON client_policy.client_id = client.id
 				WHERE client.external_client_id = $2
+				UNION
+				SELECT grp_policy.policy_id
+				FROM grp
+				JOIN grp_policy ON grp_policy.grp_id = grp.id
+				JOIN usr_grp ON usr_grp.grp_id = grp.id
+				JOIN usr ON usr.id = usr_grp.usr_id
+				WHERE usr.name = $1
 			) policies
 			LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 			LEFT JOIN resource ON resource.id = policy_resource.resource_id

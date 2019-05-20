@@ -204,6 +204,9 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorRespon
 	if groupName == AnonymousGroup || groupName == LoggedInGroup {
 		return newErrorResponse("can't add users to built-in groups", 400, nil)
 	}
+	if username == "" {
+		return newErrorResponse("missing `username` argument", 400, nil)
+	}
 	stmt := `
 		INSERT INTO usr_grp(usr_id, grp_id)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2))
@@ -213,7 +216,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorRespon
 		user, err := userWithName(db, username)
 		if user == nil {
 			msg := fmt.Sprintf(
-				"failed to add user to group: user does not exist: %s",
+				"failed to add user to group: user does not exist: `%s`",
 				username,
 			)
 			return newErrorResponse(msg, 400, nil)

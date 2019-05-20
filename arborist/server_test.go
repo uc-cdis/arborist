@@ -321,6 +321,22 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	createGroupBytes := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/group", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			httpError(t, w, "couldn't create group")
+		}
+		result := struct {
+			_ interface{} `json:"created"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from group creation")
+		}
+	}
+
 	resourcePathA := resourcePath + "/A"
 	resourcePathB := resourcePath + "/B"
 
@@ -384,21 +400,19 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	/*
-		addUserToGroup := func(t *testing.T, username string, groupName string) {
-			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/group/%s/user", groupName)
-			req := newRequest(
-				"POST",
-				url,
-				bytes.NewBuffer([]byte(fmt.Sprintf(`{"name": "%s"}`, username))),
-			)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusNoContent {
-				httpError(t, w, "couldn't add user to group")
-			}
+	addUserToGroup := func(t *testing.T, username string, groupName string) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/group/%s/user", groupName)
+		req := newRequest(
+			"POST",
+			url,
+			bytes.NewBuffer([]byte(fmt.Sprintf(`{"username": "%s"}`, username))),
+		)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			httpError(t, w, "couldn't add user to group")
 		}
-	*/
+	}
 
 	grantGroupPolicy := func(t *testing.T, groupName string, policyName string) {
 		w := httptest.NewRecorder()
@@ -2621,10 +2635,10 @@ func TestServer(t *testing.T) {
 			resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, clientResourcePath))
 			policyBody := []byte(fmt.Sprintf(
 				`{
-						"id": "%s",
-						"resource_paths": ["%s"],
-						"role_ids": ["%s"]
-					}`,
+					"id": "%s",
+					"resource_paths": ["%s"],
+					"role_ids": ["%s"]
+				}`,
 				policyName,
 				clientResourcePath,
 				roleName,
@@ -2664,7 +2678,6 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusOK {
 					httpError(t, w, "auth resources request failed")
 				}
-				// in this case, since the user has zero access yet, should be empty
 				result := struct {
 					Resources []string `json:"resources"`
 				}{}
@@ -2674,6 +2687,58 @@ func TestServer(t *testing.T) {
 				}
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Contains(t, result.Resources, clientResourcePath, msg)
+				assert.Contains(t, result.Resources, resourcePath, msg)
+			})
+
+			groupName := "test_resources_group"
+			policyName = "group_policy"
+			groupResourcePath := "/group_resource"
+			resourceBody = []byte(fmt.Sprintf(`{"path": "%s"}`, groupResourcePath))
+			policyBody = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["%s"],
+					"role_ids": ["%s"]
+				}`,
+				policyName,
+				groupResourcePath,
+				roleName,
+			))
+			groupBody := []byte(fmt.Sprintf(
+				`{
+					"name": "%s",
+					"resource_paths": ["%s"],
+					"role_ids": ["%s"],
+					"users": []
+				}`,
+				groupName,
+				groupResourcePath,
+				roleName,
+			))
+			createGroupBytes(t, groupBody)
+			createResourceBytes(t, resourceBody)
+			createPolicyBytes(t, policyBody)
+			grantGroupPolicy(t, groupName, policyName)
+			addUserToGroup(t, username, groupName)
+
+			t.Run("Group", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				token := TestJWT{username: username, clientID: clientID}
+				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+				req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth resources request failed")
+				}
+				result := struct {
+					Resources []string `json:"resources"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth resources")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Contains(t, result.Resources, groupResourcePath, msg)
 				assert.Contains(t, result.Resources, resourcePath, msg)
 			})
 		})
