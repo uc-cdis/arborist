@@ -483,16 +483,24 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		resources = append(resources, resourceFromQuery.standardize())
 	}
 
-	resourcePaths := make([]string, len(resources))
-	for i := range resources {
-		resourcePaths[i] = resources[i].Path
+	useTags := false
+	_, ok := r.URL.Query()["tags"]
+	if ok {
+		useTags = true
 	}
 
 	response := struct {
 		Resources []string `json:"resources"`
-	}{
-		Resources: resourcePaths,
+	}{}
+	resultList := make([]string, len(resources))
+	for i := range resources {
+		if useTags {
+			resultList[i] = resources[i].Tag
+		} else {
+			resultList[i] = resources[i].Path
+		}
 	}
+	response.Resources = resultList
 
 	_ = jsonResponseFrom(response, http.StatusOK).write(w, r)
 }
