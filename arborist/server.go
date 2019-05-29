@@ -661,7 +661,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	} else {
 		errResponse = transactify(server.db, resource.createInDb)
 	}
-	if errResponse != nil {
+	if errResponse != nil && errResponse.HTTPError.Code != 409 {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
@@ -673,14 +673,19 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		_ = errResponse.write(w, r)
 		return
 	}
-	created := resourceFromQuery.standardize()
-	server.logger.Info("created resource %s (%s)", created.Path, created.Tag)
-	result := struct {
-		Created *ResourceOut `json:"created"`
-	}{
-		Created: &created,
+	out := resourceFromQuery.standardize()
+	if errResponse != nil {
+		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
+		_ = jsonResponseFrom(out, 409).write(w, r)
+	} else {
+		server.logger.Info("created resource %s (%s)", out.Path, out.Tag)
+		result := struct {
+			Created *ResourceOut `json:"created"`
+		}{
+			Created: &out,
+		}
+		_ = jsonResponseFrom(result, 201).write(w, r)
 	}
-	_ = jsonResponseFrom(result, 201).write(w, r)
 }
 
 func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
