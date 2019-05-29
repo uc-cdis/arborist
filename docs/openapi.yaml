@@ -126,6 +126,7 @@ paths:
         required: true
         schema:
           type: string
+        allowReserved: true
         description: >-
           The full path for a resource, which includes slashes. For example, if
           a resource was created which has the path `/a/b/c`, then the endpoint
@@ -777,6 +778,11 @@ paths:
         - group
       description: >-
         Create a new group
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Group'
       responses:
         201:
           description: created group
@@ -874,12 +880,10 @@ components:
         user:
           type: object
           properties:
-            jwt:
+            token:
               type: string
               description: >-
-                A JWT belonging to a user, as defined by RFC 7519. It must
-                contain a field `context.user.policies` listing the policies
-                granted to the user.
+                A JWT token belonging to a user, as defined by RFC 7519.
               example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
         request:
           type: object
