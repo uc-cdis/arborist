@@ -676,7 +676,14 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	out := resourceFromQuery.standardize()
 	if errResponse != nil {
 		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
-		_ = jsonResponseFrom(out, 409).write(w, r)
+		result := struct {
+			Error  HTTPError    `json:"error"`
+			Exists *ResourceOut `json:"exists"`
+		}{
+			Error:  errResponse.HTTPError,
+			Exists: &out,
+		}
+		_ = jsonResponseFrom(result, 409).write(w, r)
 	} else {
 		server.logger.Info("created resource %s (%s)", out.Path, out.Tag)
 		result := struct {
