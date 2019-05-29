@@ -99,7 +99,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
-	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleSubresourceCreate))).Methods("POST", "PUT")
+	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceDelete)).Methods("DELETE")
 
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
@@ -645,8 +645,15 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if resource.Path == "" {
-		server.handleSubresourceCreate(w, r, body)
-		return
+		if resource.Name == "" {
+			err := missingRequiredField("resource", "name")
+			server.logger.Info(err.Error())
+			response := newErrorResponse(err.Error(), 400, &err)
+			_ = response.write(w, r)
+			return
+		}
+		parentPath := parseResourcePath(r)
+		resource.Path = parentPath + "/" + resource.Name
 	}
 	var errResponse *ErrorResponse
 	if r.Method == "PUT" {
@@ -668,54 +675,6 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	created := resourceFromQuery.standardize()
 	server.logger.Info("created resource %s (%s)", created.Path, created.Tag)
-	result := struct {
-		Created *ResourceOut `json:"created"`
-	}{
-		Created: &created,
-	}
-	_ = jsonResponseFrom(result, 201).write(w, r)
-}
-
-func (server *Server) handleSubresourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
-	resource := &ResourceIn{}
-	err := json.Unmarshal(body, resource)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse resource from JSON: %s", err.Error())
-		server.logger.Info("tried to create resource but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
-	if resource.Name == "" {
-		err := missingRequiredField("resource", "name")
-		server.logger.Info(err.Error())
-		response := newErrorResponse(err.Error(), 400, &err)
-		_ = response.write(w, r)
-		return
-	}
-	parentPath := parseResourcePath(r)
-	resource.Path = parentPath + "/" + resource.Name
-
-	var errResponse *ErrorResponse
-	if r.Method == "PUT" {
-		errResponse = transactify(server.db, resource.overwriteInDb)
-	} else {
-		errResponse = transactify(server.db, resource.createInDb)
-	}
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
-	if err != nil {
-		errResponse := newErrorResponse(err.Error(), 500, &err)
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	created := resourceFromQuery.standardize()
-	server.logger.Info("created subresource %s (%s)", created.Path, created.Tag)
 	result := struct {
 		Created *ResourceOut `json:"created"`
 	}{
