@@ -673,6 +673,16 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		_ = errResponse.write(w, r)
 		return
 	}
+	if resourceFromQuery == nil {
+		msg := fmt.Sprintf(
+			"couldn't return resource for %s, but it may have been created OK",
+			resource.Path,
+		)
+		errResponse := newErrorResponse(msg, 500, &err)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
 	out := resourceFromQuery.standardize()
 	if errResponse != nil {
 		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
