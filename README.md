@@ -1,5 +1,7 @@
 # Arborist
 
+[![Coverage Status](https://coveralls.io/repos/github/uc-cdis/arborist/badge.svg?branch=feat/coveralls)](https://coveralls.io/github/uc-cdis/arborist?branch=feat/coveralls)
+
 Arborist a role-based access control (RBAC) policy engine, designed for use with
 the [Gen3 stack](https://gen3.org/). Arborist tracks resources requiring access
 control, along with actions which users may perform to operate on these
