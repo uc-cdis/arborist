@@ -631,6 +631,8 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
+var regSlashes *regexp.Regexp = regexp.MustCompile(`/+`)
+
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
 	resource := &ResourceIn{}
 	err := json.Unmarshal(body, resource)
@@ -654,6 +656,10 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		}
 		parentPath := parseResourcePath(r)
 		resource.Path = parentPath + "/" + resource.Name
+	} else {
+		// the resource creation is ok with having duplicate slashes but it'll
+		// mess with the query later, so let's clean it up now
+		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
 	}
 	var errResponse *ErrorResponse
 	if r.Method == "PUT" {
@@ -662,6 +668,13 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		errResponse = transactify(server.db, resource.createInDb)
 	}
 	if errResponse != nil && errResponse.HTTPError.Code != 409 {
+		// `transactify` returns 500 if there was a SQL error. Here we'll assume
+		// that this would be because of an invalid resource input from the caller.
+		// This could definitely do with some better error handling to make sure
+		// this is accurate.
+		if errResponse.HTTPError.Code == 500 {
+			errResponse.HTTPError.Code = 400
+		}
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
