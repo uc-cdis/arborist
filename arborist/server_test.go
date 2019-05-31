@@ -670,6 +670,45 @@ func TestServer(t *testing.T) {
 					}
 				})
 			})
+
+			t.Run("MissingParent", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"path": "/parent/doesnt/exist"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected error from creating resource before parent exists")
+				}
+			})
+
+			t.Run("RedundantSlashes", func(t *testing.T) {
+				createResourceBytes(t, []byte(`{"path": "/too"}`))
+				createResourceBytes(t, []byte(`{"path": "/too/many"}`))
+				w := httptest.NewRecorder()
+				path := "/too//many////slashes"
+				body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't create resource")
+				}
+				// make one-off struct to read the response into
+				result := struct {
+					Resource struct {
+						Name string `json:"name"`
+						Path string `json:"path"`
+						Tag  string `json:"tag"`
+					} `json:"created"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from resource creation")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, "slashes", result.Resource.Name, msg)
+				assert.Equal(t, "/too/many/slashes", result.Resource.Path, msg)
+				assert.NotEqual(t, "", result.Resource.Tag, msg)
+			})
 		})
 
 		t.Run("ReadByTag", func(t *testing.T) {
