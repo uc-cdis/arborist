@@ -701,6 +701,16 @@ func TestServer(t *testing.T) {
 					resource.Description,
 					"resource description doesn't match",
 				)
+
+				t.Run("ParentsAlreadyExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(`{"path": "/parent/doesnt/exist"}`)
+					req := newRequest("POST", "/resource?p", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusConflict {
+						httpError(t, w, "expected conflict from creating resource again")
+					}
+				})
 			})
 
 			t.Run("RedundantSlashes", func(t *testing.T) {
