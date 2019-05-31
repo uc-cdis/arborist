@@ -262,13 +262,17 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
+func (resource *ResourceIn) fillOutName() {
+	if resource.Name == "" {
+		segments := strings.Split(resource.Path, "/")
+		resource.Name = segments[len(segments)-1]
+	}
+}
+
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := formatPathForDb(resource.Path)
-	if resource.Name == "" {
-		segments := strings.Split(path, ".")
-		resource.Name = segments[len(segments)-1]
-	}
+	resource.fillOutName()
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
 	if err != nil {
@@ -284,7 +288,9 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
-		subresource.Path = resource.Path + "/" + subresource.Name
+		if subresource.Path == "" {
+			subresource.Path = resource.Path + "/" + subresource.Name
+		}
 		errResponse := subresource.createRecursively(tx)
 		if errResponse != nil {
 			return errResponse

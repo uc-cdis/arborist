@@ -634,6 +634,7 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 var regSlashes *regexp.Regexp = regexp.MustCompile(`/+`)
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	// parse & validate resource input
 	resource := &ResourceIn{}
 	err := json.Unmarshal(body, resource)
 	if err != nil {
@@ -646,6 +647,9 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		_ = response.write(w, r)
 		return
 	}
+
+	// resources can input only `name` instead of `path` in the JSON body, and
+	// use the path in the URL instead, so fill out the path if necessary.
 	if resource.Path == "" {
 		if resource.Name == "" {
 			err := missingRequiredField("resource", "name")
@@ -661,6 +665,32 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		// mess with the query later, so let's clean it up now
 		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
 	}
+
+	// check if the `p` flag is added in which case we want to create the
+	// parent resources. to do that, swap out the current resource with the
+	// top-level parent, and fill out that resource, starting at the top level,
+	// with everything below.
+	_, createParents := r.URL.Query()["p"]
+	if createParents {
+		fullResourceIn := ResourceIn{}
+		server.logger.Info("creating parent resources for %s", resource.Path)
+		segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
+		currentResource := &fullResourceIn
+		for i := range segments {
+			currentResource.Path = "/" + strings.Join(segments[:i+1], "/")
+			if i < len(segments)-1 {
+				currentResource.Subresources = []ResourceIn{ResourceIn{}}
+				currentResource = &currentResource.Subresources[0]
+			} else {
+				currentResource.Subresources = []ResourceIn{}
+			}
+		}
+		// copy the input fields in, since we've made new resources the final
+		// one doesn't have any description etc. that may have been in the input
+		*currentResource = *resource
+		resource = &fullResourceIn
+	}
+
 	var errResponse *ErrorResponse
 	if r.Method == "PUT" {
 		errResponse = transactify(server.db, resource.overwriteInDb)

@@ -681,6 +681,28 @@ func TestServer(t *testing.T) {
 				}
 			})
 
+			t.Run("CreateParents", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"path": "/parent/doesnt/exist",
+					"description": "we did it"
+				}`)
+				req := newRequest("POST", "/resource?p", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "could't create resource with parents")
+				}
+				getResourceWithPath(t, "/parent")
+				getResourceWithPath(t, "/parent/doesnt")
+				resource := getResourceWithPath(t, "/parent/doesnt/exist")
+				assert.Equal(
+					t,
+					"we did it",
+					resource.Description,
+					"resource description doesn't match",
+				)
+			})
+
 			t.Run("RedundantSlashes", func(t *testing.T) {
 				createResourceBytes(t, []byte(`{"path": "/too"}`))
 				createResourceBytes(t, []byte(`{"path": "/too/many"}`))
