@@ -702,13 +702,23 @@ func TestServer(t *testing.T) {
 					"resource description doesn't match",
 				)
 
-				t.Run("ParentsAlreadyExist", func(t *testing.T) {
+				t.Run("AlreadyExists", func(t *testing.T) {
 					w := httptest.NewRecorder()
 					body := []byte(`{"path": "/parent/doesnt/exist"}`)
 					req := newRequest("POST", "/resource?p", bytes.NewBuffer(body))
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusConflict {
 						httpError(t, w, "expected conflict from creating resource again")
+					}
+				})
+
+				t.Run("SomeParentsExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(`{"path": "/parent/sometimes/exist"}`)
+					req := newRequest("POST", "/resource?p", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusCreated {
+						httpError(t, w, "couldn't create resource")
 					}
 				})
 			})

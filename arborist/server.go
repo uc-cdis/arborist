@@ -668,25 +668,16 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		// check if the `p` flag is added in which case we want to create the
 		// parent resources first.
 		_, createParentsFlag := r.URL.Query()["p"]
-		createParents := func(tx *sqlx.Tx) *ErrorResponse {
+		if createParentsFlag {
 			server.logger.Info("creating parent resources for %s", resource.Path)
 			segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
 			for i := 0; i < len(segments)-1; i++ {
 				path := "/" + strings.Join(segments[:i+1], "/")
 				toCreate := ResourceIn{Path: path}
-				errResponse := toCreate.createRecursively(tx)
-				if errResponse != nil && errResponse.HTTPError.Code != 409 {
-					return errResponse
-				}
-				server.logger.Info(fmt.Sprintf("created %s", path))
+				_ = transactify(server.db, toCreate.createRecursively)
 			}
-			return resource.createInDb(tx)
 		}
-		if createParentsFlag {
-			errResponse = transactify(server.db, createParents)
-		} else {
-			errResponse = transactify(server.db, resource.createInDb)
-		}
+		errResponse = transactify(server.db, resource.createInDb)
 	}
 	if errResponse != nil && errResponse.HTTPError.Code != 409 {
 		// `transactify` returns 500 if there was a SQL error. Here we'll assume
