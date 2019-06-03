@@ -661,53 +661,20 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
 	}
 
-	// if it exists already, return 409.
-	if r.Method != "PUT" {
-		resourceFromQuery, _ := resourceWithPath(server.db, resource.Path)
-		if resourceFromQuery != nil {
-			exists := resourceFromQuery.standardize()
-			msg := fmt.Sprintf("resource with this path already exists: %s", exists.Path)
-			errResponse := newErrorResponse(msg, 400, nil)
-			server.logger.Info(
-				"not creating resource %s (%s), already exists",
-				exists.Path,
-				exists.Tag,
-			)
-			result := struct {
-				Error  HTTPError   `json:"error"`
-				Exists ResourceOut `json:"exists"`
-			}{
-				Error:  errResponse.HTTPError,
-				Exists: exists,
-			}
-			_ = jsonResponseFrom(result, 409).write(w, r)
-			return
-		}
-	}
-
 	// check if the `p` flag is added in which case we want to create the
-	// parent resources. to do that, swap out the current resource with the
-	// top-level parent, and fill out that resource, starting at the top level,
-	// with everything below.
-	_, createParents := r.URL.Query()["p"]
-	if createParents {
-		fullResourceIn := ResourceIn{}
+	// parent resources first.
+	_, createParentsFlag := r.URL.Query()["p"]
+	createParents := func(tx *sqlx.Tx) *ErrorResponse {
 		server.logger.Info("creating parent resources for %s", resource.Path)
 		segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
-		currentResource := &fullResourceIn
-		for i := range segments {
-			currentResource.Path = "/" + strings.Join(segments[:i+1], "/")
-			if i < len(segments)-1 {
-				currentResource.Subresources = []ResourceIn{ResourceIn{}}
-				currentResource = &currentResource.Subresources[0]
-			} else {
-				currentResource.Subresources = []ResourceIn{}
-			}
+		for i := 0; i < len(segments)-1; i++ {
+			toCreate := ResourceIn{Path: "/" + strings.Join(segments[:i+1], "/")}
+			_ = toCreate.createRecursively(tx)
 		}
-		// copy the input fields in, since we've made new resources the final
-		// one doesn't have any description etc. that may have been in the input
-		*currentResource = *resource
-		resource = &fullResourceIn
+		return nil
+	}
+	if createParentsFlag {
+		transactify(server.db, createParents)
 	}
 
 	errResponse = nil
@@ -747,7 +714,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	out := resourceFromQuery.standardize()
 	if errResponse != nil {
-		// otherwise, must be 409.
+		// otherwise, must be 409 (already handled non-409 errors).
 		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
 		result := struct {
 			Error  HTTPError    `json:"error"`
