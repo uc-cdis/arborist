@@ -262,17 +262,13 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) fillOutName() {
+func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+	// arborist uses `/` for path separator; ltree in postgres uses `.`
+	path := formatPathForDb(resource.Path)
 	if resource.Name == "" {
 		segments := strings.Split(resource.Path, "/")
 		resource.Name = segments[len(segments)-1]
 	}
-}
-
-func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
-	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	path := formatPathForDb(resource.Path)
-	resource.fillOutName()
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
 	if err != nil {
