@@ -159,6 +159,16 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResourceInput'
+      parameters:
+        - in: path
+          name: p
+          description: >-
+            Ordinarily arborist will return an error if parent resources of a
+            resource you're trying to create do not exist yet. If the `p`
+            parameter is included, it behaves like `mkdir -p` and creates all
+            parent resources as necessary.
+          type: integer
+          required: false
       responses:
         201:
           description: JSON representation of successfully-created resource
