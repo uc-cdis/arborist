@@ -675,7 +675,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 				path := "/" + strings.Join(segments[:i+1], "/")
 				toCreate := ResourceIn{Path: path}
 				errResponse := toCreate.createRecursively(tx)
-				if errResponse != nil {
+				if errResponse != nil && errResponse.HTTPError.Code != 409 {
 					return errResponse
 				}
 				server.logger.Info(fmt.Sprintf("created %s", path))
