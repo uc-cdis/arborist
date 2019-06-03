@@ -661,27 +661,32 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
 	}
 
-	// check if the `p` flag is added in which case we want to create the
-	// parent resources first.
-	_, createParentsFlag := r.URL.Query()["p"]
-	createParents := func(tx *sqlx.Tx) *ErrorResponse {
-		server.logger.Info("creating parent resources for %s", resource.Path)
-		segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
-		for i := 0; i < len(segments)-1; i++ {
-			toCreate := ResourceIn{Path: "/" + strings.Join(segments[:i+1], "/")}
-			_ = toCreate.createRecursively(tx)
-		}
-		return nil
-	}
-	if createParentsFlag {
-		transactify(server.db, createParents)
-	}
-
 	errResponse = nil
 	if r.Method == "PUT" {
 		errResponse = transactify(server.db, resource.overwriteInDb)
 	} else {
-		errResponse = transactify(server.db, resource.createInDb)
+		// check if the `p` flag is added in which case we want to create the
+		// parent resources first.
+		_, createParentsFlag := r.URL.Query()["p"]
+		createParents := func(tx *sqlx.Tx) *ErrorResponse {
+			server.logger.Info("creating parent resources for %s", resource.Path)
+			segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
+			for i := 0; i < len(segments)-1; i++ {
+				path := "/" + strings.Join(segments[:i+1], "/")
+				toCreate := ResourceIn{Path: path}
+				errResponse := toCreate.createRecursively(tx)
+				if errResponse != nil {
+					return errResponse
+				}
+				server.logger.Info(fmt.Sprintf("created %s", path))
+			}
+			return resource.createInDb(tx)
+		}
+		if createParentsFlag {
+			errResponse = transactify(server.db, createParents)
+		} else {
+			errResponse = transactify(server.db, resource.createInDb)
+		}
 	}
 	if errResponse != nil && errResponse.HTTPError.Code != 409 {
 		// `transactify` returns 500 if there was a SQL error. Here we'll assume
