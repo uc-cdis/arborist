@@ -636,15 +636,10 @@ var regSlashes *regexp.Regexp = regexp.MustCompile(`/+`)
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
 	// parse & validate resource input
 	resource := &ResourceIn{}
-	err := json.Unmarshal(body, resource)
-	if err != nil {
-		msg := "could not parse resource from JSON; make sure input has correct types"
-		server.logger.Info(
-			"tried to create resource but input was invalid; offending JSON: %s",
-			loggableJSON(body),
-		)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
+	errResponse := unmarshal(body, resource)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
 		return
 	}
 
@@ -664,6 +659,30 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		// the resource creation is ok with having duplicate slashes but it'll
 		// mess with the query later, so let's clean it up now
 		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
+	}
+
+	// if it exists already, return 409.
+	if r.Method != "PUT" {
+		resourceFromQuery, _ := resourceWithPath(server.db, resource.Path)
+		if resourceFromQuery != nil {
+			exists := resourceFromQuery.standardize()
+			msg := fmt.Sprintf("resource with this path already exists: %s", exists.Path)
+			errResponse := newErrorResponse(msg, 400, nil)
+			server.logger.Info(
+				"not creating resource %s (%s), already exists",
+				exists.Path,
+				exists.Tag,
+			)
+			result := struct {
+				Error  HTTPError   `json:"error"`
+				Exists ResourceOut `json:"exists"`
+			}{
+				Error:  errResponse.HTTPError,
+				Exists: exists,
+			}
+			_ = jsonResponseFrom(result, 409).write(w, r)
+			return
+		}
 	}
 
 	// check if the `p` flag is added in which case we want to create the
@@ -691,7 +710,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		resource = &fullResourceIn
 	}
 
-	var errResponse *ErrorResponse
+	errResponse = nil
 	if r.Method == "PUT" {
 		errResponse = transactify(server.db, resource.overwriteInDb)
 	} else {
@@ -728,6 +747,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 	}
 	out := resourceFromQuery.standardize()
 	if errResponse != nil {
+		// otherwise, must be 409.
 		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
 		result := struct {
 			Error  HTTPError    `json:"error"`

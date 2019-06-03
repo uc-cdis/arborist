@@ -1,6 +1,8 @@
 package arborist
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 )
@@ -94,5 +96,28 @@ func validateJSON(
 		return containsUnexpectedFields(structName, unexpectedFields)
 	}
 
+	return nil
+}
+
+func unmarshal(body []byte, x interface{}) *ErrorResponse {
+	var structValue reflect.Value = reflect.ValueOf(x)
+	if structValue.Kind() == reflect.Ptr {
+		structValue = structValue.Elem()
+	}
+	var structType reflect.Type = structValue.Type()
+	err := json.Unmarshal(body, x)
+	if err != nil {
+		msg := fmt.Sprintf(
+			"could not parse %s from JSON; make sure input has correct types",
+			structType,
+		)
+		response := newErrorResponse(msg, 400, &err)
+		response.log.Info(
+			"tried to create %s but input was invalid; offending JSON: %s",
+			structType,
+			loggableJSON(body),
+		)
+		return response
+	}
 	return nil
 }
