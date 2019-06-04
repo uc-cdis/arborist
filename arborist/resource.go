@@ -273,27 +273,15 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	_, err := tx.Exec(stmt, path, resource.Description)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
+		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
+		// since this is probably called with `transactify`
 		_ = tx.Rollback()
 		// this should only fail because the resource was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
 		return newErrorResponse(msg, 409, &err)
 	}
-
-	// recursively create subresources
-	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
-	for _, subresource := range resource.Subresources {
-		// fill out subresource paths based on the current name
-		if subresource.Path == "" {
-			subresource.Path = resource.Path + "/" + subresource.Name
-		}
-		errResponse := subresource.createRecursively(tx)
-		if errResponse != nil {
-			return errResponse
-		}
-	}
-
-	return nil
+	return resource.createSubresources(tx)
 }
 
 func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
@@ -311,9 +299,44 @@ func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 }
 
 func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := resource.deleteInDb(tx)
-	if errResponse != nil {
-		return errResponse
+	// arborist uses `/` for path separator; ltree in postgres uses `.`
+	path := formatPathForDb(resource.Path)
+	if resource.Name == "" {
+		segments := strings.Split(resource.Path, "/")
+		resource.Name = segments[len(segments)-1]
 	}
-	return resource.createInDb(tx)
+	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+	_, err := tx.Exec(stmt, path, resource.Description)
+	if err != nil {
+		// should add more checking here to guarantee the correct error
+		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
+		// since this is probably called with `transactify`
+		_ = tx.Rollback()
+		// this should only fail because the resource was not unique. return error
+		// accordingly
+		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
+		return newErrorResponse(msg, 409, &err)
+	}
+
+	// delete subresources (going to re-create with the ones in this request)
+	stmt = "DELETE FROM resource WHERE path <@ $1 AND path != $1"
+	_, _ = tx.Exec(stmt, path)
+
+	// recursively create subresources
+	return resource.createSubresources(tx)
+}
+
+func (resource *ResourceIn) createSubresources(tx *sqlx.Tx) *ErrorResponse {
+	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
+	for _, subresource := range resource.Subresources {
+		// fill out subresource paths based on the current name
+		if subresource.Path == "" {
+			subresource.Path = resource.Path + "/" + subresource.Name
+		}
+		errResponse := subresource.createRecursively(tx)
+		if errResponse != nil {
+			return errResponse
+		}
+	}
+	return nil
 }
