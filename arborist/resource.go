@@ -305,8 +305,9 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 		segments := strings.Split(resource.Path, "/")
 		resource.Name = segments[len(segments)-1]
 	}
-	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2) ON CONFLICT DO NOTHING"
-	_, err := tx.Exec(stmt, path, resource.Description)
+	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
+	_, err := tx.Exec(stmt, path)
+	fmt.Println(err)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
 		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
@@ -317,6 +318,10 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
 		return newErrorResponse(msg, 409, &err)
 	}
+
+	// update description
+	stmt = "UPDATE resource SET description = $2 WHERE path = $1"
+	_, err = tx.Exec(stmt, path, resource.Description)
 
 	// delete subresources (going to re-create with the ones in this request)
 	stmt = "DELETE FROM resource WHERE path <@ $1 AND path != $1"

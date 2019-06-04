@@ -1,0 +1,13 @@
+DELETE FROM policy_role;
+DELETE FROM policy_resource;
+DELETE FROM permission;
+DELETE FROM resource WHERE (name != 'root');
+DELETE FROM role;
+DELETE FROM usr_grp;
+DELETE FROM client_policy;
+DELETE FROM usr_policy;
+DELETE FROM grp_policy;
+DELETE FROM policy;
+DELETE FROM client;
+DELETE FROM usr;
+DELETE FROM grp WHERE (name != 'anonymous' AND name != 'logged-in');
