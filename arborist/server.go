@@ -643,23 +643,8 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// resources can input only `name` instead of `path` in the JSON body, and
-	// use the path in the URL instead, so fill out the path if necessary.
-	if resource.Path == "" {
-		if resource.Name == "" {
-			err := missingRequiredField("resource", "name")
-			server.logger.Info(err.Error())
-			response := newErrorResponse(err.Error(), 400, &err)
-			_ = response.write(w, r)
-			return
-		}
-		parentPath := parseResourcePath(r)
-		resource.Path = parentPath + "/" + resource.Name
-	} else {
-		// the resource creation is ok with having duplicate slashes but it'll
-		// mess with the query later, so let's clean it up now
-		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
-	}
+	parentPath := parseResourcePath(r)
+	resource.addPath(parentPath)
 
 	// check if the `p` flag is added in which case we want to create the
 	// parent resources first.
