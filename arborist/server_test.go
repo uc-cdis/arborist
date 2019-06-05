@@ -924,7 +924,7 @@ func TestServer(t *testing.T) {
 		t.Run("Overwrite", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			body := []byte(`{
-				"name": "Gödel",
+				"name": "Godel",
 				"subresources": [
 					{
 						"name": "Escher",
@@ -944,7 +944,8 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
-			bachTag := getTagForResource("Gödel.Escher.Bach")
+			escherTag := getTagForResource("Godel.Escher")
+			bachTag := getTagForResource("Godel.Escher.Bach")
 			// now PUT over the same resource, but keep the subresources
 			w = httptest.NewRecorder()
 			body = []byte(`{
@@ -959,7 +960,9 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't update resource using PUT")
 			}
+			newEscherTag := getTagForResource("Godel.Escher")
 			newBachTag := getTagForResource("Godel.Escher.Bach")
+			assert.Equal(t, escherTag, newEscherTag, "subresource tag changed after PUT")
 			assert.Equal(t, bachTag, newBachTag, "subresource tag changed after PUT")
 			getResourceWithPath(t, "/Godel/completeness_theorem")
 		})

@@ -204,6 +204,7 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 			parent.id,
 			parent.name,
 			parent.path,
+			parent.tag,
 			parent.description,
 			array(
 				SELECT child.path
