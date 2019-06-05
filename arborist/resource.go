@@ -329,7 +329,6 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 	path := formatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
 	_, err := tx.Exec(stmt, path)
-	fmt.Println(err)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
 		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
@@ -362,7 +361,6 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 			)
 		`
 		stmt = fmt.Sprintf(stmtFormat, strings.Join(subPathsKeep, ", "))
-		fmt.Println(stmt)
 		_, _ = tx.Exec(stmt, path)
 	} else {
 		stmt := `
