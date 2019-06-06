@@ -177,6 +177,7 @@ func TestServer(t *testing.T) {
 
 	// some test data to work with
 	resourcePath := "/example"
+	resourceDbPath := "example"
 	resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath))
 	serviceName := "zxcv"
 	roleName := "hjkl"
@@ -313,9 +314,12 @@ func TestServer(t *testing.T) {
 	}
 
 	getTagForResource := func(path string) string {
-		var tag string
-		db.QueryRowx("SELECT tag FROM resource WHERE path = $1", path).StructScan(&tag)
-		return tag
+		var tags []string
+		db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", path)
+		if len(tags) == 0 {
+			return ""
+		}
+		return tags[0]
 	}
 
 	createRoleBytes := func(t *testing.T, body []byte) {
@@ -2259,6 +2263,39 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, true, result.Auth, msg)
+
+			t.Run("Tag", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				tag := getTagForResource(resourceDbPath)
+				body := []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"tag": "%s",
+							"action": {"service": "%s", "method": "%s"}
+						}
+					}`,
+					token.Encode(),
+					tag,
+					serviceName,
+					methodName,
+				))
+				req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should succeed, user has authorization
+				result := struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, true, result.Auth, msg)
+			})
 
 			t.Run("Unauthorized", func(t *testing.T) {
 				w = httptest.NewRecorder()

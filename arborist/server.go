@@ -371,8 +371,8 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		}
 
 		// check that the request has minimum necessary information
-		if authRequest.Resource == "" {
-			msg := "missing resource in auth request"
+		if authRequest.Resource == "" && authRequest.Tag == "" {
+			msg := "missing resource and tag in auth request (at least one is required)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
 		}
@@ -387,6 +387,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			ClientID: info.clientID,
 			Policies: policies,
 			Resource: authRequest.Resource,
+			Tag:      authRequest.Tag,
 			Service:  authRequest.Action.Service,
 			Method:   authRequest.Action.Method,
 			stmts:    server.stmts,
