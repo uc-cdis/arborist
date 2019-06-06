@@ -643,40 +643,26 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// resources can input only `name` instead of `path` in the JSON body, and
-	// use the path in the URL instead, so fill out the path if necessary.
-	if resource.Path == "" {
-		if resource.Name == "" {
-			err := missingRequiredField("resource", "name")
-			server.logger.Info(err.Error())
-			response := newErrorResponse(err.Error(), 400, &err)
-			_ = response.write(w, r)
-			return
+	parentPath := parseResourcePath(r)
+	resource.addPath(parentPath)
+
+	// check if the `p` flag is added in which case we want to create the
+	// parent resources first.
+	_, createParentsFlag := r.URL.Query()["p"]
+	if createParentsFlag {
+		server.logger.Info("creating parent resources for %s", resource.Path)
+		segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
+		for i := 0; i < len(segments)-1; i++ {
+			path := "/" + strings.Join(segments[:i+1], "/")
+			toCreate := ResourceIn{Path: path}
+			_ = transactify(server.db, toCreate.createRecursively)
 		}
-		parentPath := parseResourcePath(r)
-		resource.Path = parentPath + "/" + resource.Name
-	} else {
-		// the resource creation is ok with having duplicate slashes but it'll
-		// mess with the query later, so let's clean it up now
-		resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
 	}
 
 	errResponse = nil
 	if r.Method == "PUT" {
 		errResponse = transactify(server.db, resource.overwriteInDb)
 	} else {
-		// check if the `p` flag is added in which case we want to create the
-		// parent resources first.
-		_, createParentsFlag := r.URL.Query()["p"]
-		if createParentsFlag {
-			server.logger.Info("creating parent resources for %s", resource.Path)
-			segments := strings.Split(strings.TrimLeft(resource.Path, "/"), "/")
-			for i := 0; i < len(segments)-1; i++ {
-				path := "/" + strings.Join(segments[:i+1], "/")
-				toCreate := ResourceIn{Path: path}
-				_ = transactify(server.db, toCreate.createRecursively)
-			}
-		}
 		errResponse = transactify(server.db, resource.createInDb)
 	}
 	if errResponse != nil && errResponse.HTTPError.Code != 409 {

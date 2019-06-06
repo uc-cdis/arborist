@@ -312,6 +312,12 @@ func TestServer(t *testing.T) {
 		return result
 	}
 
+	getTagForResource := func(path string) string {
+		var tag string
+		db.QueryRowx("SELECT tag FROM resource WHERE path = $1", path).StructScan(&tag)
+		return tag
+	}
+
 	createRoleBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/role", bytes.NewBuffer(body))
@@ -913,6 +919,52 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "a", result.Name, msg)
 			assert.Equal(t, "/a", result.Path, msg)
 			assert.Equal(t, []string{"/a/b"}, result.Subresources, msg)
+		})
+
+		t.Run("Overwrite", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"name": "Godel",
+				"subresources": [
+					{
+						"name": "Escher",
+						"subresources": [{"name": "Bach"}]
+					}
+				]
+			}`)
+			req := newRequest("PUT", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create resource using PUT")
+			}
+			expected := struct {
+				_ interface{} `json:"created"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &expected)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			escherTag := getTagForResource("Godel.Escher")
+			bachTag := getTagForResource("Godel.Escher.Bach")
+			// now PUT over the same resource, but keep the subresources
+			w = httptest.NewRecorder()
+			body = []byte(`{
+				"name": "Godel",
+				"subresources": [
+					{"name": "Escher", "subresources": [{"name": "Bach"}]},
+					{"name": "completeness_theorem"}
+				]
+			}`)
+			req = newRequest("PUT", "/resource", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't update resource using PUT")
+			}
+			newEscherTag := getTagForResource("Godel.Escher")
+			newBachTag := getTagForResource("Godel.Escher.Bach")
+			assert.Equal(t, escherTag, newEscherTag, "subresource tag changed after PUT")
+			assert.Equal(t, bachTag, newBachTag, "subresource tag changed after PUT")
+			getResourceWithPath(t, "/Godel/completeness_theorem")
 		})
 
 		t.Run("Delete", func(t *testing.T) {

@@ -204,6 +204,7 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 			parent.id,
 			parent.name,
 			parent.path,
+			parent.tag,
 			parent.description,
 			array(
 				SELECT child.path
@@ -265,22 +266,18 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := formatPathForDb(resource.Path)
-	if resource.Name == "" {
-		segments := strings.Split(resource.Path, "/")
-		resource.Name = segments[len(segments)-1]
-	}
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
+		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
+		// since this is probably called with `transactify`
 		_ = tx.Rollback()
 		// this should only fail because the resource was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
 		return newErrorResponse(msg, 409, &err)
 	}
-
-	// recursively create subresources
 	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
 	for _, subresource := range resource.Subresources {
 		// fill out subresource paths based on the current name
@@ -292,7 +289,6 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 			return errResponse
 		}
 	}
-
 	return nil
 }
 
@@ -310,10 +306,83 @@ func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := resource.deleteInDb(tx)
-	if errResponse != nil {
-		return errResponse
+// addPathAndName fills out the path or name using the parent path. Resources
+// can input only `name` instead of `path` in the JSON body, and use the path
+// in the URL instead, so this fills out the path if necessary.
+func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
+	if resource.Path == "" {
+		if resource.Name == "" {
+			err := missingRequiredField("resource", "name")
+			errResponse := newErrorResponse(err.Error(), 400, &err)
+			errResponse.log.Info(err.Error())
+			return errResponse
+		}
+		resource.Path = parent + "/" + resource.Name
 	}
-	return resource.createInDb(tx)
+	// the resource creation is ok with having duplicate slashes but it'll
+	// mess with the queries using this resource, so let's clean it up now
+	resource.Path = regSlashes.ReplaceAllLiteralString(resource.Path, "/")
+	return nil
+}
+
+func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+	// arborist uses `/` for path separator; ltree in postgres uses `.`
+	path := formatPathForDb(resource.Path)
+	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
+	_, err := tx.Exec(stmt, path)
+	if err != nil {
+		// should add more checking here to guarantee the correct error
+		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
+		// since this is probably called with `transactify`
+		_ = tx.Rollback()
+		// this should only fail because the resource was not unique. return error
+		// accordingly
+		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
+		return newErrorResponse(msg, 409, &err)
+	}
+
+	// update description
+	stmt = "UPDATE resource SET description = $2 WHERE path = $1"
+	_, err = tx.Exec(stmt, path, resource.Description)
+
+	// delete the subresources not in the new request
+	if len(resource.Subresources) > 0 {
+		subPathsKeep := []string{}
+		for _, subresource := range resource.Subresources {
+			subresource.addPath(resource.Path)
+			subpath := fmt.Sprintf("'%s'", formatPathForDb(subresource.Path))
+			subPathsKeep = append(subPathsKeep, subpath)
+		}
+		stmtFormat := `
+			DELETE FROM resource
+			WHERE (
+				path != $1
+				AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
+				AND path NOT IN (%s)
+			)
+		`
+		stmt = fmt.Sprintf(stmtFormat, strings.Join(subPathsKeep, ", "))
+		_, _ = tx.Exec(stmt, path)
+	} else {
+		stmt := `
+			DELETE FROM resource
+			WHERE path != $1 AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
+		`
+		_, _ = tx.Exec(stmt, path)
+	}
+
+	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
+	for _, subresource := range resource.Subresources {
+		// fill out subresource paths based on the current name
+		errResponse := subresource.addPath(resource.Path)
+		if errResponse != nil {
+			return errResponse
+		}
+		errResponse = subresource.overwriteInDb(tx)
+		if errResponse != nil {
+			return errResponse
+		}
+	}
+
+	return nil
 }
