@@ -1,10 +1,10 @@
 UPDATE db_version SET (id, version) = (0, '2019-02-18T214320Z_init');
 
-DROP TRIGGER resource_has_parent_check;
-DROP TRIGGER resource_path_compute_name_insert;
-DROP TRIGGER resource_path_compute_name_update;
-DROP FUNCTION resource_path_insert;
-DROP FUNCTION resource_path_update;
+DROP TRIGGER resource_has_parent_check ON resource;
+DROP TRIGGER resource_path_compute_name_insert ON resource;
+DROP TRIGGER resource_path_compute_name_update ON resource;
+DROP FUNCTION resource_path_insert();
+DROP FUNCTION resource_path_update();
 
 CREATE OR REPLACE FUNCTION resource_path() RETURNS TRIGGER LANGUAGE plpgsql AS
 $$
@@ -30,6 +30,11 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+-- Add the trigger to fill in resource name from the path automatically.
+CREATE TRIGGER resource_path_compute_name
+    BEFORE INSERT OR UPDATE ON resource
+    FOR EACH ROW EXECUTE PROCEDURE resource_path();
 
 CREATE CONSTRAINT TRIGGER resource_has_parent_check
     AFTER INSERT OR UPDATE ON resource
