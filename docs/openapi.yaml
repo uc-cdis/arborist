@@ -897,6 +897,15 @@ components:
             resource:
               type: string
               example: '/programs/DEV/projects/test'
+              description: >-
+                The full path for a resource a user is trying to access. Either
+                this or the tag is required.
+            tag:
+              type: string
+              example: '2iEb_M'
+              description: >-
+                The tag for a resource a user is trying to access. Either this
+                or the resource path is required.
             action:
               type: object
               properties:
