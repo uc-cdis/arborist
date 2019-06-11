@@ -706,15 +706,16 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 			Exists: &out,
 		}
 		_ = jsonResponseFrom(result, 409).write(w, r)
-	} else {
-		server.logger.Info("created resource %s (%s)", out.Path, out.Tag)
-		result := struct {
-			Created *ResourceOut `json:"created"`
-		}{
-			Created: &out,
-		}
-		_ = jsonResponseFrom(result, 201).write(w, r)
+		return
 	}
+
+	server.logger.Info("created resource %s (%s)", out.Path, out.Tag)
+	result := struct {
+		Created *ResourceOut `json:"created"`
+	}{
+		Created: &out,
+	}
+	_ = jsonResponseFrom(result, 201).write(w, r)
 }
 
 func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
