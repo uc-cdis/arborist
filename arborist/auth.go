@@ -55,7 +55,6 @@ type Constraints = map[string]string
 
 type AuthRequestJSON_Request struct {
 	Resource    string      `json:"resource"`
-	Tag         string      `json:"tag"`
 	Action      Action      `json:"action"`
 	Constraints Constraints `json:"constraints,omitempty"`
 }
@@ -70,18 +69,12 @@ func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	optionalFieldsTag := map[string]struct{}{
-		"constraints": struct{}{},
-		"resource":    struct{}{},
-	}
-	errTag := validateJSON("auth request", requestJSON, fields, optionalFieldsTag)
 	optionalFieldsPath := map[string]struct{}{
 		"constraints": struct{}{},
-		"tag":         struct{}{},
 	}
-	errPath := validateJSON("auth request", requestJSON, fields, optionalFieldsPath)
-	if errTag != nil && errPath != nil {
-		return errPath
+	err = validateJSON("auth request", requestJSON, fields, optionalFieldsPath)
+	if err != nil {
+		return err
 	}
 
 	// Trick to use `json.Unmarshal` inside here, making a type alias which we
@@ -100,7 +93,6 @@ type AuthRequest struct {
 	ClientID string
 	Policies []string
 	Resource string
-	Tag      string
 	Service  string
 	Method   string
 	stmts    *CachedStmts
@@ -186,6 +178,14 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	var resources []string
 	var rows *sql.Rows
 	var err error
+	var tag string
+
+	// See if the resource field is a path or a tag.
+	if !strings.HasPrefix(request.Resource, "/") {
+		tag = request.Resource
+		request.Resource = ""
+	}
+
 	if request.Resource != "" {
 		exp, args, resources, err = parse(request.Resource)
 		rows, err = request.stmts.Query(
@@ -228,8 +228,8 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			pq.Array(request.Policies), // $5
 			pq.Array(resources),        // $6
 		)
-	} else if request.Tag != "" {
-		exp, args, resources, err = parse(request.Tag)
+	} else if tag != "" {
+		exp, args, resources, err = parse(tag)
 		rows, err = request.stmts.Query(
 			`
 			SELECT coalesce(request <@ allowed, FALSE) FROM (
@@ -272,7 +272,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			pq.Array(resources),        // $6
 		)
 	} else {
-		err = errors.New("missing both resource and tag in auth request")
+		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
 		return nil, err

@@ -2271,7 +2271,7 @@ func TestServer(t *testing.T) {
 					`{
 						"user": {"token": "%s"},
 						"request": {
-							"tag": "%s",
+							"resource": "%s",
 							"action": {"service": "%s", "method": "%s"}
 						}
 					}`,
@@ -2984,7 +2984,7 @@ func TestServer(t *testing.T) {
 				req := newRequest("GET", authUrl, nil)
 				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
+				if w.Code != http.StatusForbidden {
 					httpError(t, w, "auth proxy request succeeded when it should not have")
 				}
 			})
