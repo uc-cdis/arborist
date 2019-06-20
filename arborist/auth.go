@@ -3,6 +3,7 @@ package arborist
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -67,10 +68,11 @@ func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	optionalFields := map[string]struct{}{
+
+	optionalFieldsPath := map[string]struct{}{
 		"constraints": struct{}{},
 	}
-	err = validateJSON("auth request", requestJSON, fields, optionalFields)
+	err = validateJSON("auth request", requestJSON, fields, optionalFieldsPath)
 	if err != nil {
 		return err
 	}
@@ -171,23 +173,37 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 // connected with `and`, `or` or `not`. The priority of these boolean operators
 // is: `not > and > or`. When in doubt, use parenthesises to specify explicitly.
 func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
-	exp, args, resources, err := parse(request.Resource)
-	rows, err := request.stmts.Query(
-		`
-		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
-			SELECT (
+	var exp Expression
+	var args []string
+	var resources []string
+	var rows *sql.Rows
+	var err error
+	var tag string
+
+	// See if the resource field is a path or a tag.
+	if !strings.HasPrefix(request.Resource, "/") {
+		tag = request.Resource
+		request.Resource = ""
+	}
+
+	if request.Resource != "" {
+		exp, args, resources, err = parse(request.Resource)
+		rows, err = request.stmts.Query(
+			`
+			SELECT coalesce(text2ltree(request) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
-					SELECT policy_id FROM usr_policy
-					WHERE usr_id = usr.id
+					SELECT usr_policy.policy_id FROM usr
+					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+					WHERE usr.name = $1
 					UNION
-					SELECT policy_id FROM grp_policy
-					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					LEFT JOIN usr_grp ON grp_policy.grp_id = usr_grp.grp_id
-					WHERE (
-						usr_grp.usr_id = usr.id
-						OR grp.name = 'anonymous'
-						OR grp.name = 'logged-in'
-					)
+					SELECT grp_policy.policy_id FROM usr
+					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
@@ -203,17 +219,61 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($5)
 					)
 				)
-			) FROM usr
-			WHERE usr.name = $1
-		) _, unnest($6::text[])
-		`,
-		request.Username,           // $1
-		request.Service,            // $2
-		request.Method,             // $3
-		len(request.Policies) == 0, // $4
-		pq.Array(request.Policies), // $5
-		pq.Array(resources),        // $6
-	)
+			) _, unnest($6::text[]) AS request
+			`,
+			request.Username,           // $1
+			request.Service,            // $2
+			request.Method,             // $3
+			len(request.Policies) == 0, // $4
+			pq.Array(request.Policies), // $5
+			pq.Array(resources),        // $6
+		)
+	} else if tag != "" {
+		exp, args, resources, err = parse(tag)
+		rows, err = request.stmts.Query(
+			`
+			SELECT coalesce(request <@ allowed, FALSE) FROM (
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT usr_policy.policy_id FROM usr
+					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM usr
+					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+				) AS policies
+				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
+				) AND (
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
+				)
+			) _,
+			(SELECT resource.path AS request FROM unnest($6::text[]) JOIN resource ON resource.tag = "unnest") asdf
+			`,
+			request.Username,           // $1
+			request.Service,            // $2
+			request.Method,             // $3
+			len(request.Policies) == 0, // $4
+			pq.Array(request.Policies), // $5
+			pq.Array(resources),        // $6
+		)
+	} else {
+		err = errors.New("missing resource in auth request")
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -370,12 +370,6 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
-		// check that the request has minimum necessary information
-		if authRequest.Resource == "" {
-			msg := "missing resource in auth request"
-			_ = newErrorResponse(msg, 400, nil).write(w, r)
-			return
-		}
 		if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
