@@ -476,6 +476,24 @@ func TestServer(t *testing.T) {
 		_ = db.MustExec("DELETE FROM usr")
 	}
 
+	checkAuthSuccess := func(t *testing.T, body []byte) {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			httpError(t, w, "auth request failed")
+		}
+		result := struct {
+			Auth bool `json:"auth"`
+		}{}
+		err := json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from auth request")
+		}
+		msg := fmt.Sprintf("got response body: %s", w.Body.String())
+		assert.Equal(t, true, result.Auth, msg)
+	}
+
 	// testSetup should be used for any setup or teardown that should go in all
 	// the tests. Use like this:
 	//
@@ -2672,6 +2690,46 @@ func TestServer(t *testing.T) {
 			}
 			msg = fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, true, result.Auth, msg)
+
+			t.Run("UsingStar", func(t *testing.T) {
+				createRoleBytes(
+					t,
+					[]byte(`{
+						"id": "roleForAnonUsingStar",
+						"permissions": [
+							{"id": "serviceStar", "action": {"service": "*", "method": "read"}}
+						]
+					}`),
+				)
+				createPolicyBytes(
+					t,
+					[]byte(fmt.Sprintf(
+						`{
+							"id": "policyForAnonUsingStar",
+							"resource_paths": ["%s"],
+							"role_ids": ["roleForAnonUsingStar"]
+						}`,
+						resourcePath,
+					)),
+				)
+				grantGroupPolicy(t, arborist.AnonymousGroup, "policyForAnonUsingStar")
+				authRequestBody := []byte(fmt.Sprintf(
+					`{
+						"user": {"token": ""},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					resourcePath,
+					serviceName,
+					"read",
+				))
+				checkAuthSuccess(t, authRequestBody)
+			})
 		})
 
 		deleteEverything()
