@@ -23,6 +23,12 @@ microservices needing to check user authorization to operate on a resource can
 statelessly verify the user's authorization, making a request to arborist with
 the user's JWT and receiving a response for the authorization decision.
 
+## API documentation
+
+[OpenAPI documentation available here.](http://petstore.swagger.io/?url=https://raw.githubusercontent.com/uc-cdis/arborist/master/docs/openapi.yaml)
+
+The YAML file containing the OpenAPI documentation can be found in the `docs` folder.
+
 ## Setup
 
 ### Quickstart
