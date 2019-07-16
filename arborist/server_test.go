@@ -2803,44 +2803,84 @@ func TestServer(t *testing.T) {
 				createPolicyBytes(t, policyBody)
 				createUserBytes(t, userBody)
 				grantUserPolicy(t, username, policyName)
-
-				w := httptest.NewRecorder()
 				token := TestJWT{username: username}
 				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
-				req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					httpError(t, w, "auth resources request failed")
-				}
-				// in this case, since the user has zero access yet, should be empty
-				result := struct {
-					Resources []string `json:"resources"`
-				}{}
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth resources")
-				}
-				msg := fmt.Sprintf("got response body: %s", w.Body.String())
-				assert.Equal(t, []string{resourcePath}, result.Resources, msg)
-				// check the response returning tags is also correct
-				w = httptest.NewRecorder()
-				req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					httpError(t, w, "auth resources request failed")
-				}
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth resources")
-				}
-				msg = fmt.Sprintf("got response body: %s", w.Body.String())
-				assert.Equal(t, 1, len(result.Resources), msg)
-				if len(result.Resources) != 1 {
-					t.Fatal()
-				}
-				tag := result.Resources[0]
-				resource := getResourceWithPath(t, resourcePath)
-				assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
+
+				t.Run("GET", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("GET", "/auth/resources", nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+					// check the response returning tags is also correct
+					w = httptest.NewRecorder()
+					req = newRequest("GET", "/auth/resources?tags", nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, 1, len(result.Resources), msg)
+					if len(result.Resources) != 1 {
+						t.Fatal()
+					}
+					tag := result.Resources[0]
+					resource := getResourceWithPath(t, resourcePath)
+					assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
+				})
+
+				t.Run("POST", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+					// check the response returning tags is also correct
+					w = httptest.NewRecorder()
+					req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, 1, len(result.Resources), msg)
+					if len(result.Resources) != 1 {
+						t.Fatal()
+					}
+					tag := result.Resources[0]
+					resource := getResourceWithPath(t, resourcePath)
+					assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
+				})
 
 				t.Run("Policies", func(t *testing.T) {
 					w := httptest.NewRecorder()

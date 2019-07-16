@@ -87,7 +87,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(server.parseJSON(server.handleAuthRequest))).Methods("POST")
-	router.Handle("/auth/resources", http.HandlerFunc(server.parseJSON(server.handleListAuthResources))).Methods("POST")
+	router.Handle("/auth/resources", http.HandlerFunc(server.handleListAuthResourcesGET)).Methods("GET")
+	router.Handle("/auth/resources", http.HandlerFunc(server.parseJSON(server.handleListAuthResourcesPOST))).Methods("POST")
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyCreate))).Methods("POST")
@@ -206,67 +207,33 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
-	// Get QS arguments
-	resourcePathQS, ok := r.URL.Query()["resource"]
-	if !ok {
+	authRequest, errResponse := authRequestFromGET(server.decodeToken, r)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	if authRequest.Resource == "" {
 		msg := "auth proxy request missing `resource` argument"
-		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 400, nil)
-		_ = errResponse.write(w, r)
-		return
+		errResponse = newErrorResponse(msg, 400, nil)
 	}
-	resourcePath := resourcePathQS[0]
-	serviceQS, ok := r.URL.Query()["service"]
-	if !ok {
+	if authRequest.Service == "" {
 		msg := "auth proxy request missing `service` argument"
-		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if authRequest.Method == "" {
+		msg := "auth request missing `method` argument"
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
-	service := serviceQS[0]
-	methodQS, ok := r.URL.Query()["method"]
-	if !ok {
-		msg := "auth proxy request missing `method` argument"
-		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 400, nil)
-		_ = errResponse.write(w, r)
-		return
-	}
-	method := methodQS[0]
-	// get JWT from auth header and decode it
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		msg := "auth proxy request missing auth header"
-		server.logger.Info(msg)
-		errResponse := newErrorResponse(msg, 401, nil)
-		_ = errResponse.write(w, r)
-		return
-	}
-	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
-	userJWT = strings.TrimPrefix(userJWT, "bearer ")
-	aud := []string{"openid"}
-	info, err := server.decodeToken(userJWT, aud)
-	if err != nil {
-		server.logger.Info(err.Error())
-		errResponse := newErrorResponse(err.Error(), 401, &err)
-		_ = errResponse.write(w, r)
-		return
-	}
+	authRequest.stmts = server.stmts
+	w.Header().Set("REMOTE_USER", authRequest.Username)
 
-	w.Header().Set("REMOTE_USER", info.username)
-
-	var authRequest = AuthRequest{
-		Username: info.username,
-		ClientID: info.clientID,
-		Policies: info.policies,
-		Resource: resourcePath,
-		Service:  service,
-		Method:   method,
-		stmts:    server.stmts,
-	}
-
-	rv, err := authorizeUser(&authRequest)
+	rv, err := authorizeUser(authRequest)
 	if err != nil {
 		msg := fmt.Sprintf("could not authorize: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -278,7 +245,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		server.logger.Debug("user is authorized")
 	}
 	if err == nil && rv.Auth && authRequest.ClientID != "" {
-		rv, err = authorizeClient(&authRequest)
+		rv, err = authorizeClient(authRequest)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize: %s", err.Error())
 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -419,11 +386,25 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	_ = jsonResponseFrom(result, 200).write(w, r)
 }
 
-func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Request, body []byte) {
-	authRequest := struct {
+func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
+	authRequest := &AuthRequest{}
+	var errResponse *ErrorResponse
+	authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+}
+
+func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+	authRequest := &AuthRequest{}
+	var errResponse *ErrorResponse
+	request := struct {
 		User AuthRequestJSON_User `json:"user"`
 	}{}
-	err := json.Unmarshal(body, &authRequest)
+	err := json.Unmarshal(body, &request)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -434,7 +415,7 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 	// TODO
 	// make sure not empty
 	/*
-		if (authRequest.User == AuthRequestJSON_User{}) {
+		if (request.User == AuthRequestJSON_User{}) {
 			server.logger.Info("auth resources request missing user field", msg)
 			response := newErrorResponse(msg, 400, nil)
 			_ = response.write(w, r)
@@ -442,14 +423,14 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		}
 	*/
 	var aud []string
-	if authRequest.User.Audiences == nil {
+	if request.User.Audiences == nil {
 		aud = []string{"openid"}
 	} else {
-		aud = make([]string, len(authRequest.User.Audiences))
-		copy(aud, authRequest.User.Audiences)
+		aud = make([]string, len(request.User.Audiences))
+		copy(aud, request.User.Audiences)
 	}
 
-	info, err := server.decodeToken(authRequest.User.Token, aud)
+	info, err := server.decodeToken(request.User.Token, aud)
 	if err != nil {
 		server.logger.Info(err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)
@@ -457,21 +438,28 @@ func (server *Server) handleListAuthResources(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	request := &AuthRequest{
-		Username: info.username,
-		ClientID: info.clientID,
-		Policies: info.policies,
+	authRequest.Username = info.username
+	authRequest.ClientID = info.clientID
+	authRequest.Policies = info.policies
+	if request.User.Policies != nil {
+		authRequest.Policies = request.User.Policies
 	}
-	if authRequest.User.Policies != nil {
-		request.Policies = authRequest.User.Policies
-	}
+	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+}
 
-	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
+func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.Request, authRequest *AuthRequest, errResponse *ErrorResponse) {
 	if errResponse != nil {
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 
+	resourcesFromQuery, errResponse := authorizedResources(server.db, authRequest)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
 	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
