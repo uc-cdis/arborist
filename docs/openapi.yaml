@@ -56,6 +56,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserError'
   /auth/resources:
+    get:
+      tags:
+        - auth
+      description: >-
+        Given a user token in the Authorization header, return a list of
+        resources which are accessible to the user (using any action) according
+        to the policies listed in the token.
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: >-
+            Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResourcesResponse'
+        401:
+          description: >-
+            Authorization header or token failed to validate (authentication error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unauthenticated'
     post:
       tags:
         - auth
@@ -1202,3 +1230,15 @@ components:
           items:
             type: string
             example: 'policy'
+    Unauthenticated:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: failed to validate JWT
+            code:
+              type: integer
+              example: 401
