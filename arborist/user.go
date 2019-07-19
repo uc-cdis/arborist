@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -12,6 +13,34 @@ type User struct {
 	Email    string   `json:"email,omitempty"`
 	Groups   []string `json:"groups"`
 	Policies []string `json:"policies"`
+}
+
+func (user *User) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"email":    struct{}{},
+		"groups":   struct{}{},
+		"policies": struct{}{},
+	}
+	err = validateJSON("user", user, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the Role to. Since this is just type conversion there's no
+	// runtime cost.
+	type loader User
+	err = json.Unmarshal(data, (*loader)(user))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type UserFromQuery struct {
