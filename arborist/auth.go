@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -345,6 +346,48 @@ func evaluate(exp Expression, args []string, rows *sql.Rows) (bool, error) {
 		return false, err
 	}
 	return rv, nil
+}
+
+func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
+	resourcePath := ""
+	resourcePathQS, ok := r.URL.Query()["resource"]
+	if ok {
+		resourcePath = resourcePathQS[0]
+	}
+	service := ""
+	serviceQS, ok := r.URL.Query()["service"]
+	if ok {
+		service = serviceQS[0]
+	}
+	method := ""
+	methodQS, ok := r.URL.Query()["method"]
+	if ok {
+		method = methodQS[0]
+	}
+	// get JWT from auth header and decode it
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		msg := "auth request missing auth header"
+		return nil, newErrorResponse(msg, 401, nil)
+	}
+	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+	userJWT = strings.TrimPrefix(userJWT, "bearer ")
+	aud := []string{"openid"}
+	info, err := decode(userJWT, aud)
+	if err != nil {
+		return nil, newErrorResponse(err.Error(), 401, &err)
+	}
+
+	authRequest := AuthRequest{
+		Username: info.username,
+		ClientID: info.clientID,
+		Policies: info.policies,
+		Resource: resourcePath,
+		Service:  service,
+		Method:   method,
+	}
+
+	return &authRequest, nil
 }
 
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
