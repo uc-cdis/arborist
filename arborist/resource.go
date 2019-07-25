@@ -264,6 +264,10 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 }
 
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.validate()
+	if errResponse != nil {
+		return errResponse
+	}
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := formatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
