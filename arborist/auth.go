@@ -288,6 +288,11 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 
 // This is similar as authorizeUser, only that this method checks for clientID only
 func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
+	var exp Expression
+	var args []string
+	var resources []string
+	var rows *sql.Rows
+	var err error
 	var tag string
 
 	// See if the resource field is a path or a tag.
