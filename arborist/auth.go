@@ -302,8 +302,8 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	}
 
 	if request.Resource != "" {
-		exp, args, resources, err := parse(request.Resource)
-		rows, err := request.stmts.Query(
+		exp, args, resources, err = parse(request.Resource)
+		rows, err = request.stmts.Query(
 			`
 			SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM client
