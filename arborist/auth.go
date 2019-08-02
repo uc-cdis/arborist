@@ -181,14 +181,16 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	var err error
 	var tag string
 
+	resource := request.Resource
+
 	// See if the resource field is a path or a tag.
-	if !strings.HasPrefix(request.Resource, "/") {
-		tag = request.Resource
-		request.Resource = ""
+	if !strings.HasPrefix(resource, "/") {
+		tag = resource
+		resource = ""
 	}
 
-	if request.Resource != "" {
-		exp, args, resources, err = parse(request.Resource)
+	if resource != "" {
+		exp, args, resources, err = parse(resource)
 		rows, err = request.stmts.Query(
 			`
 			SELECT coalesce(text2ltree(request) <@ allowed, FALSE) FROM (
@@ -295,14 +297,16 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	var err error
 	var tag string
 
+	resource := request.Resource
+
 	// See if the resource field is a path or a tag.
-	if !strings.HasPrefix(request.Resource, "/") {
-		tag = request.Resource
-		request.Resource = ""
+	if !strings.HasPrefix(resource, "/") {
+		tag = resource
+		resource = ""
 	}
 
-	if request.Resource != "" {
-		exp, args, resources, err = parse(request.Resource)
+	if resource != "" {
+		exp, args, resources, err = parse(resource)
 		rows, err = request.stmts.Query(
 			`
 			SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
