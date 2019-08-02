@@ -356,7 +356,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 			) _,
 			(SELECT resource.path AS request FROM unnest($6::text[]) JOIN resource ON resource.tag = "unnest") asdf
 			`,
-			request.Username,           // $1
+			request.ClientID,           // $1
 			request.Service,            // $2
 			request.Method,             // $3
 			len(request.Policies) == 0, // $4
