@@ -337,7 +337,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT client_policy.policy_id FROM client
 					INNER JOIN client_policy ON client_policy.client_id = client.id
-					WHERE client.name = $1
+					WHERE client.external_client_id = $1
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
