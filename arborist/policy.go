@@ -54,6 +54,10 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	for i := range policy.ResourcePaths {
+		policy.ResourcePaths[i] = underscoreEncode(policy.ResourcePaths[i])
+	}
+
 	return nil
 }
 

@@ -74,6 +74,7 @@ func parseResourcePath(r *http.Request) string {
 	if !exists {
 		return ""
 	}
+	path = underscoreEncode(path)
 	// We have to add a slash at the front here; see resourcePath constant.
 	return strings.Join([]string{"/", path}, "")
 }
@@ -655,6 +656,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		if errResponse.HTTPError.Code == 500 {
 			errResponse.HTTPError.Code = 400
 		}
+		// TODO: patch error message to be intelligible if dumping resource path
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return

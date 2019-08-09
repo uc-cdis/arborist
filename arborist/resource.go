@@ -3,6 +3,7 @@ package arborist
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -28,6 +29,43 @@ type ResourceOut struct {
 	Tag          string   `json:"tag"`
 	Description  string   `json:"description"`
 	Subresources []string `json:"subresources"`
+}
+
+var regPercent *regexp.Regexp = regexp.MustCompile(`%`)
+var regSlashEncoded *regexp.Regexp = regexp.MustCompile(`%2F`)
+
+func underscoreEncode(decoded string) string {
+	// Per https://www.ietf.org/rfc/rfc3986.txt, there are the following
+	// unreserved characters (aside from alphanumeric and underscore) which do
+	// not urlencode:
+	//   - `-`
+	//   - `.`
+	//   - `~`
+	// Percent encoding uses hexadecimal, which we mustn't conflict with. So we
+	// use some made-up codes for these which will not overlap.
+	encoded := decoded
+	encoded = strings.ReplaceAll(encoded, "_", "_S0")
+	encoded = strings.ReplaceAll(encoded, "-", "_S1")
+	encoded = strings.ReplaceAll(encoded, ".", "_S2")
+	encoded = strings.ReplaceAll(encoded, "~", "_S3")
+	encoded = url.QueryEscape(encoded)
+	// turn the slashes *back*, we only want to "underscore-encode" other stuff
+	encoded = strings.ReplaceAll(encoded, "%2F", "/")
+	// finally we turn the % symbols into __ which ltree is OK with
+	encoded = strings.ReplaceAll(encoded, "%", "__")
+	return encoded
+}
+
+func underscoreDecode(encoded string) string {
+	// undo the steps from underscoreEncode
+	decoded := encoded
+	decoded = strings.ReplaceAll(decoded, "_S1", "-")
+	decoded = strings.ReplaceAll(decoded, "_S2", ".")
+	decoded = strings.ReplaceAll(decoded, "_S3", "~")
+	decoded = strings.ReplaceAll(decoded, "__", "%")
+	decoded = strings.ReplaceAll(decoded, "_S0", "_")
+	decoded, _ = url.QueryUnescape(decoded)
+	return decoded
 }
 
 // NOTE: the resource unmarshalling, because the resources can be specified
@@ -71,6 +109,11 @@ func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	// convert the resource name to "underscore-encoded"
+	// TODO: more explain
+	resource.Path = underscoreEncode(resource.Path)
+	resource.Name = underscoreEncode(resource.Name)
+
 	if resource.Subresources == nil {
 		resource.Subresources = []ResourceIn{}
 	}
@@ -98,8 +141,8 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 		subresources = append(subresources, formatDbPath(subresource))
 	}
 	resource := ResourceOut{
-		Name:         resourceFromQuery.Name,
-		Path:         formatDbPath(resourceFromQuery.Path),
+		Name:         underscoreDecode(resourceFromQuery.Name),
+		Path:         underscoreDecode(formatDbPath(resourceFromQuery.Path)),
 		Tag:          resourceFromQuery.Tag,
 		Subresources: subresources,
 	}
@@ -228,12 +271,12 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 // postgres currently only allows alphanumeric characters and underscores. We
 // also have to pass through slashes in the path since these will be translated
 // to the correct format for the database later.
-var resourcePathValidRegex = regexp.MustCompile(`^[/a-zA-Z0-9_]*$`)
-var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
+var resourcePathValidRegex = regexp.MustCompile(`^.*$`)
+var resourcePathValidChars = regexp.MustCompile(`.`)
 
 // Resource names are the same, except they can't contain slashes at all.
-var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
-var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
+var resourceNameValidRegex = regexp.MustCompile(`^[^/]*$`)
+var resourceNameValidChars = regexp.MustCompile(`[^/]`)
 
 func (resource *ResourceIn) validate() *ErrorResponse {
 	validPath := resourcePathValidRegex.MatchString(resource.Path)
