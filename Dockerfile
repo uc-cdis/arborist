@@ -1,4 +1,4 @@
-FROM golang:1.10-alpine as build
+FROM golang:1.12-alpine as build
 
 # Install SSL certificates
 RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev jq curl bash postgresql
