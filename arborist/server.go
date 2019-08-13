@@ -235,7 +235,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	rv, err := authorizeUser(authRequest)
 	if err != nil {
-		msg := fmt.Sprintf("could not authorize: %s", err.Error())
+		msg := fmt.Sprintf("could not authorize user: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
@@ -247,8 +247,8 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	if err == nil && rv.Auth && authRequest.ClientID != "" {
 		rv, err = authorizeClient(authRequest)
 		if err != nil {
-			msg := fmt.Sprintf("could not authorize: %s", err.Error())
-			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
+			server.logger.Info("error during client auth check: %s", msg)
 			response := newErrorResponse(msg, 400, nil)
 			_ = response.write(w, r)
 			return
@@ -354,12 +354,19 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		}
 		server.logger.Info("handling auth request: %v", request)
 		rv, err := authorizeUser(request)
-		if err == nil && rv.Auth {
+		if err != nil {
+			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
+			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		if rv.Auth {
 			server.logger.Debug("user is authorized")
 		} else {
 			server.logger.Debug("user is unauthorized")
 		}
-		if err == nil && rv.Auth && request.ClientID != "" {
+		if rv.Auth && request.ClientID != "" {
 			rv, err = authorizeClient(request)
 			if err == nil && rv.Auth {
 				server.logger.Debug("client is authorized")
@@ -368,7 +375,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		if err != nil {
-			msg := fmt.Sprintf("could not authorize: %s", err.Error())
+			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 			response := newErrorResponse(msg, 400, nil)
 			_ = response.write(w, r)
