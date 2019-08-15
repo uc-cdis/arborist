@@ -1,4 +1,5 @@
 _default: bin/arborist
+	@:  # if we have a command this silences "nothing to be done"
 
 bin/arborist: arborist/*.go # help: run the server
 	go build -o bin/arborist
@@ -13,7 +14,8 @@ coverage: test # help: generate test coverage file
 	go test --coverprofile=coverage.out ./arborist/
 
 db-test: $(which psql) # help: set up the database for testing (run automatically by `test`)
-	createdb || true
+	@echo 'createdb || true'
+	@createdb 2>&1 | grep -v 'already exist' || true
 	./migrations/latest
 
 up: upgrade # help: try to migrate the database to the next more recent version

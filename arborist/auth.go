@@ -111,7 +111,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
-		resource = formatPathForDb(resource)
+		resource = FormatPathForDb(resource)
 	} else {
 		tag = resource
 		resource = ""
@@ -203,7 +203,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
-		resource = formatPathForDb(resource)
+		resource = FormatPathForDb(resource)
 	} else {
 		tag = resource
 		resource = ""
@@ -299,7 +299,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	return &AuthResponse{result}, nil
 }
 
-// This is similar as authorizeUser, only that this method checks for clientID only
+// This is similar to authorizeUser, only that this method checks for clientID only
 func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	var err error
 	var tag string
@@ -308,7 +308,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
-		resource = formatPathForDb(resource)
+		resource = FormatPathForDb(resource)
 	} else {
 		tag = resource
 		resource = ""
@@ -424,6 +424,7 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	return &authRequest, nil
 }
 
+// See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {

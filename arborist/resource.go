@@ -3,6 +3,7 @@ package arborist
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -28,6 +29,43 @@ type ResourceOut struct {
 	Tag          string   `json:"tag"`
 	Description  string   `json:"description"`
 	Subresources []string `json:"subresources"`
+}
+
+var regPercent *regexp.Regexp = regexp.MustCompile(`%`)
+var regSlashEncoded *regexp.Regexp = regexp.MustCompile(`%2F`)
+
+func UnderscoreEncode(decoded string) string {
+	// Per https://www.ietf.org/rfc/rfc3986.txt, there are the following
+	// unreserved characters (aside from alphanumeric and underscore) which do
+	// not urlencode:
+	//   - `-`
+	//   - `.`
+	//   - `~`
+	// Percent encoding uses hexadecimal, which we mustn't conflict with. So we
+	// use some made-up codes for these which will not overlap.
+	encoded := decoded
+	encoded = strings.ReplaceAll(encoded, "_", "_S0")
+	encoded = strings.ReplaceAll(encoded, "-", "_S1")
+	encoded = strings.ReplaceAll(encoded, ".", "_S2")
+	encoded = strings.ReplaceAll(encoded, "~", "_S3")
+	encoded = url.QueryEscape(encoded)
+	// turn the slashes *back*, we only want to "underscore-encode" other stuff
+	encoded = strings.ReplaceAll(encoded, "%2F", "/")
+	// finally we turn the % symbols into __ which ltree is OK with
+	encoded = strings.ReplaceAll(encoded, "%", "__")
+	return encoded
+}
+
+func UnderscoreDecode(encoded string) string {
+	// undo the steps from UnderscoreEncode
+	decoded := encoded
+	decoded = strings.ReplaceAll(decoded, "_S1", "-")
+	decoded = strings.ReplaceAll(decoded, "_S2", ".")
+	decoded = strings.ReplaceAll(decoded, "_S3", "~")
+	decoded = strings.ReplaceAll(decoded, "__", "%")
+	decoded = strings.ReplaceAll(decoded, "_S0", "_")
+	decoded, _ = url.QueryUnescape(decoded)
+	return decoded
 }
 
 // NOTE: the resource unmarshalling, because the resources can be specified
@@ -98,8 +136,8 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 		subresources = append(subresources, formatDbPath(subresource))
 	}
 	resource := ResourceOut{
-		Name:         resourceFromQuery.Name,
-		Path:         formatDbPath(resourceFromQuery.Path),
+		Name:         UnderscoreDecode(resourceFromQuery.Name),
+		Path:         UnderscoreDecode(formatDbPath(resourceFromQuery.Path)),
 		Tag:          resourceFromQuery.Tag,
 		Subresources: subresources,
 	}
@@ -109,29 +147,30 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	return resource
 }
 
-// formatPathForDb takes a path from a resource in the database and transforms
+// FormatPathForDb takes a path from a resource in the database and transforms
 // it to the front-end version of the resource path. Inverse of `formatDbPath`.
 //
 //     formatDbPath("/a/b/c") == "a.b.c"
-func formatPathForDb(path string) string {
+func FormatPathForDb(path string) string {
 	// -1 means replace everything
-	return strings.TrimLeft(strings.Replace(path, "/", ".", -1), ".")
+	result := strings.TrimLeft(strings.Replace(UnderscoreEncode(path), "/", ".", -1), ".")
+	return result
 }
 
 // formatDbPath takes a path from a resource in the database and transforms it
-// to the front-end version of the resource path. Inverse of `formatPathForDb`.
+// to the front-end version of the resource path. Inverse of `FormatPathForDb`.
 //
 //     formatDbPath("a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
 	// -1 means replace everything
-	return "/" + strings.Replace(path, ".", "/", -1)
+	return UnderscoreDecode("/" + strings.Replace(path, ".", "/", -1))
 }
 
 // resourceWithPath looks up a resource matching the given path. The database
-// schema guarantees such a resource to be unique. Any error returned is
-// because of internal database failure.
+// schema guarantees such a resource to be unique. Any error returned is because
+// of internal database failure.
 func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
-	path = formatPathForDb(path)
+	path = FormatPathForDb(path)
 	resources := []ResourceFromQuery{}
 	stmt := `
 		SELECT
@@ -165,9 +204,9 @@ func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 	return &resource, nil
 }
 
-// resourceWithPath looks up a resource matching the given path. The database
-// schema guarantees such a resource to be unique. Any error returned is
-// because of internal database failure.
+// resourceWithTag looks up a resource matching the given tag. The database
+// schema guarantees such a resource to be unique. Any error returned is because
+// of internal database failure.
 func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
 	stmt := `
@@ -228,12 +267,12 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 // postgres currently only allows alphanumeric characters and underscores. We
 // also have to pass through slashes in the path since these will be translated
 // to the correct format for the database later.
-var resourcePathValidRegex = regexp.MustCompile(`^[/a-zA-Z0-9_]*$`)
-var resourcePathValidChars = regexp.MustCompile(`[/a-zA-Z0-9_]`)
+var resourcePathValidRegex = regexp.MustCompile(`^.*$`)
+var resourcePathValidChars = regexp.MustCompile(`.`)
 
 // Resource names are the same, except they can't contain slashes at all.
-var resourceNameValidRegex = regexp.MustCompile(`^[a-zA-Z0-9_]*$`)
-var resourceNameValidChars = regexp.MustCompile(`[a-zA-Z0-9_]`)
+var resourceNameValidRegex = regexp.MustCompile(`^[^/]*$`)
+var resourceNameValidChars = regexp.MustCompile(`[^/]`)
 
 func (resource *ResourceIn) validate() *ErrorResponse {
 	validPath := resourcePathValidRegex.MatchString(resource.Path)
@@ -269,7 +308,7 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 		return errResponse
 	}
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	path := formatPathForDb(resource.Path)
+	path := FormatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
 	_, err := tx.Exec(stmt, path, resource.Description)
 	if err != nil {
@@ -302,7 +341,7 @@ func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 400, nil)
 	}
 	stmt := "DELETE FROM resource WHERE path = $1"
-	_, err := tx.Exec(stmt, formatPathForDb(resource.Path))
+	_, err := tx.Exec(stmt, FormatPathForDb(resource.Path))
 	if err != nil {
 		// resource already doesn't exist; this is fine
 		return nil
@@ -331,7 +370,7 @@ func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
 
 func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
-	path := formatPathForDb(resource.Path)
+	path := FormatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
 	_, err := tx.Exec(stmt, path)
 	if err != nil {
@@ -354,7 +393,7 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 		subPathsKeep := []string{}
 		for _, subresource := range resource.Subresources {
 			subresource.addPath(resource.Path)
-			subpath := fmt.Sprintf("'%s'", formatPathForDb(subresource.Path))
+			subpath := fmt.Sprintf("'%s'", FormatPathForDb(subresource.Path))
 			subPathsKeep = append(subPathsKeep, subpath)
 		}
 		stmtFormat := `
