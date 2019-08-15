@@ -263,39 +263,8 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	return resources, nil
 }
 
-// Regexes used to validate input resource paths. The `ltree` module for
-// postgres currently only allows alphanumeric characters and underscores. We
-// also have to pass through slashes in the path since these will be translated
-// to the correct format for the database later.
-var resourcePathValidRegex = regexp.MustCompile(`^.*$`)
-var resourcePathValidChars = regexp.MustCompile(`.`)
-
-// Resource names are the same, except they can't contain slashes at all.
-var resourceNameValidRegex = regexp.MustCompile(`^[^/]*$`)
-var resourceNameValidChars = regexp.MustCompile(`[^/]`)
-
-func (resource *ResourceIn) validate() *ErrorResponse {
-	validPath := resourcePathValidRegex.MatchString(resource.Path)
-	if !validPath {
-		invalidChars := resourcePathValidChars.ReplaceAllLiteralString(resource.Path, "")
-		msg := fmt.Sprintf("input resource path contains invalid characters: %s", invalidChars)
-		return newErrorResponse(msg, 400, nil)
-	}
-	validName := resourceNameValidRegex.MatchString(resource.Name)
-	if !validName {
-		invalidChars := resourceNameValidChars.ReplaceAllLiteralString(resource.Name, "")
-		msg := fmt.Sprintf("input resource name contains invalid characters: %s", invalidChars)
-		return newErrorResponse(msg, 400, nil)
-	}
-	return nil
-}
-
 func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := resource.validate()
-	if errResponse != nil {
-		return errResponse
-	}
-	errResponse = resource.createRecursively(tx)
+	errResponse := resource.createRecursively(tx)
 	if errResponse != nil {
 		return errResponse
 	}
@@ -303,10 +272,6 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 }
 
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := resource.validate()
-	if errResponse != nil {
-		return errResponse
-	}
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := FormatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
