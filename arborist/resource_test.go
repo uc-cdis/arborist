@@ -11,8 +11,10 @@ func TestEncodeDecode(t *testing.T) {
 	inputs := []string{
 		"test",
 		"!@#$%^&*()`\\=+-_'\"<>?,.",
+		"_-.~",
 		"___ooOO00O___",
 		"foo-=-bar-=-baz",
+		"__S0_S1___S2_S3_S4_S5_S6_S7_2F__2F____AB",
 		"🙃",
 	}
 
