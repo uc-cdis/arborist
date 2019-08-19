@@ -640,7 +640,6 @@ func TestServer(t *testing.T) {
 
 			t.Run("Punctuation", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				// missing required field
 				body := []byte(`{"path": "/!@#punctuation$%^-_is_-&*(allowed)-==[].<>{},?\\"}`)
 				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
