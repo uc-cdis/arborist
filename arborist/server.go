@@ -64,7 +64,7 @@ func (server *Server) Init() (*Server, error) {
 
 // For some reason this is not allowed:
 //
-//    `{resourcePath:/[a-zA-Z0-9_\-\/]+}`
+//    `{resourcePath:/.+}`
 //
 // so we put the slash at the front here and fix it in parseResourcePath.
 const resourcePath string = `/{resourcePath:.+}`
