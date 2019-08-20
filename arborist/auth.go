@@ -212,34 +212,36 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	if resource != "" {
 		err = request.stmts.Select(
 			`
-			SELECT coalesce(text2ltree($6) <@ resource.path, FALSE) FROM (
-				SELECT usr_policy.policy_id FROM usr
-				INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-				WHERE usr.name = $1
-				UNION
-				SELECT grp_policy.policy_id FROM usr
-				INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
-				INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-				WHERE usr.name = $1
-				UNION
-				SELECT grp_policy.policy_id FROM grp
-				INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
-			) AS policies
-			JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			JOIN resource ON resource.id = policy_resource.resource_id
-			WHERE EXISTS (
-				SELECT 1 FROM policy_role
-				JOIN permission ON permission.role_id = policy_role.role_id
-				WHERE policy_role.policy_id = policies.policy_id
-				AND (permission.service = $2 OR permission.service = '*')
-				AND (permission.method = $3 OR permission.method = '*')
-			) AND (
-				$4 OR policies.policy_id IN (
-					SELECT id FROM policy
-					WHERE policy.name = ANY($5)
+			SELECT coalesce(text2ltree($6) <@ allowed, FALSE) FROM (
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT usr_policy.policy_id FROM usr
+					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM usr
+					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+				) AS policies
+				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
+				) AND (
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
 				)
-			)
+			) _
 			`,
 			&authorized,
 			request.Username,           // $1
@@ -252,34 +254,36 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	} else if tag != "" {
 		err = request.stmts.Select(
 			`
-			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ resource.path, FALSE) FROM (
-				SELECT usr_policy.policy_id FROM usr
-				INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-				WHERE usr.name = $1
-				UNION
-				SELECT grp_policy.policy_id FROM usr
-				INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
-				INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-				WHERE usr.name = $1
-				UNION
-				SELECT grp_policy.policy_id FROM grp
-				INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
-			) AS policies
-			JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			JOIN resource ON resource.id = policy_resource.resource_id
-			WHERE EXISTS (
-				SELECT 1 FROM policy_role
-				JOIN permission ON permission.role_id = policy_role.role_id
-				WHERE policy_role.policy_id = policies.policy_id
-				AND (permission.service = $2 OR permission.service = '*')
-				AND (permission.method = $3 OR permission.method = '*')
-			) AND (
-				$4 OR policies.policy_id IN (
-					SELECT id FROM policy
-					WHERE policy.name = ANY($5)
+			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT usr_policy.policy_id FROM usr
+					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM usr
+					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					WHERE usr.name = $1
+					UNION
+					SELECT grp_policy.policy_id FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+				) AS policies
+				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
+				) AND (
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
 				)
-			)
+			) _
 			`,
 			&authorized,
 			request.Username,           // $1
