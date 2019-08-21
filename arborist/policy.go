@@ -141,7 +141,7 @@ func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
 	queryPaths := make([]string, len(policy.ResourcePaths))
 	for i, path := range policy.ResourcePaths {
-		queryPaths[i] = formatPathForDb(path)
+		queryPaths[i] = FormatPathForDb(path)
 	}
 	resourcesStmt := selectInStmt("resource", "ltree2text(path)", queryPaths)
 	err := tx.Select(&resources, resourcesStmt)

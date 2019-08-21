@@ -64,10 +64,10 @@ func (server *Server) Init() (*Server, error) {
 
 // For some reason this is not allowed:
 //
-//    `{resourcePath:/[a-zA-Z0-9_\-\/]+}`
+//    `{resourcePath:/.+}`
 //
 // so we put the slash at the front here and fix it in parseResourcePath.
-const resourcePath string = `/{resourcePath:[a-zA-Z0-9_\-\/]+}`
+const resourcePath string = `/{resourcePath:.+}`
 
 func parseResourcePath(r *http.Request) string {
 	path, exists := mux.Vars(r)["resourcePath"]
@@ -352,7 +352,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			Method:   authRequest.Action.Method,
 			stmts:    server.stmts,
 		}
-		server.logger.Info("handling auth request: %v", request)
+		server.logger.Info("handling auth request: %#v", *request)
 		rv, err := authorizeUser(request)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
@@ -662,6 +662,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		if errResponse.HTTPError.Code == 500 {
 			errResponse.HTTPError.Code = 400
 		}
+		// TODO: patch error message to be intelligible if dumping resource path
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
