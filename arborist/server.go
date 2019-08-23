@@ -224,6 +224,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
 	}{}
@@ -231,10 +232,24 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
 		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if requestBody.Username == "" {
+		msg := "missing `username` argument"
+		server.logger.Info(msg)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if errResponse != nil {
+		_ = errResponse.write(w, r)
 		return
 	}
+	mappings, errResponse := authMapping(server.db, requestBody.Username)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {

@@ -588,20 +588,18 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 	}
 }
 
-type AuthMapping struct {
-	Path       string `json:"path"`
-	Permission struct {
-		Service string `json:"service"`
-		Method  string `json:"method"`
-	} `json:"permission"`
+type AuthMappingQuery struct {
+	Path    string `json:"path"`
+	Service string `json:"service"`
+	Method  string `json:"method"`
 }
 
-func authMapping(db *sqlx.DB, username string) ([]AuthMapping, *ErrorResponse) {
-	mappings := []AuthMapping{}
+type AuthMapping map[string][]Action
+
+func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+	mappingQuery := []AuthMappingQuery{}
 	stmt := `
-		SELECT
-			resource.path,
-			array_agg(DISTINCT (permission.service, permission.method)) AS permission
+		SELECT DISTINCT resource.path, permission.service, permission.method
 		FROM usr
 		INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
 		INNER JOIN policy ON policy.id = usr_policy.policy_id
@@ -611,12 +609,21 @@ func authMapping(db *sqlx.DB, username string) ([]AuthMapping, *ErrorResponse) {
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 		WHERE usr.name = $1
-		GROUP BY resource.id;
 	`
-	err := db.Select(&mappings, stmt, username)
+	err := db.Select(&mappingQuery, stmt, username)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
 		return nil, errResponse
 	}
-	return mappings, nil
+	mapping := make(AuthMapping)
+	for _, authMap := range mappingQuery {
+		path := formatDbPath(authMap.Path)
+		if _, ok := mapping[path]; !ok {
+			mapping[path] = []Action{}
+		}
+		action := Action{Service: authMap.Service, Method: authMap.Method}
+		mapping[path] = append(mapping[path], action)
+	}
+	return mapping, nil
 }

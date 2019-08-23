@@ -2244,6 +2244,44 @@ func TestServer(t *testing.T) {
 	t.Run("Auth", func(t *testing.T) {
 		tearDown := testSetup(t)
 
+		t.Run("Mapping", func(t *testing.T) {
+			setupTestPolicy(t)
+			createUserBytes(t, userBody)
+			grantUserPolicy(t, username, policyName)
+
+			testAuthMappingResponse := func(t *testing.T, w *httptest.ResponseRecorder) {
+				msg := fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, 200, w.Code, msg)
+				result := make(map[string][]arborist.Action)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg = fmt.Sprintf("result does not contain expected resource %s", resourcePath)
+				assert.Contains(t, result, resourcePath, msg)
+				action := arborist.Action{Service: serviceName, Method: methodName}
+				assert.Contains(t, result[resourcePath], action, "result does not contain action")
+			}
+
+			t.Run("GET", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/auth/mapping?username=%s", username)
+				req := newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				testAuthMappingResponse(t, w)
+			})
+
+			t.Run("POST", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
+				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				testAuthMappingResponse(t, w)
+			})
+		})
+
+		deleteEverything()
+
 		t.Run("Request", func(t *testing.T) {
 			setupTestPolicy(t)
 			createUserBytes(t, userBody)
