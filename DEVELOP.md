@@ -2,6 +2,12 @@
 
 ## Quickstart
 
+### Adding Required Postgres Extension `ltree`
+
+Arborist uses a Postgres Extension which gets setup automatically in Cloud Automation, but if you're developing locally you will need to install.
+
+In `psql` prompt: `create extension ltree;`
+
 ### Adding or Modifying Endpoints
 
 Here's a quick overview for the typical process to go through to alter or add
