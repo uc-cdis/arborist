@@ -2260,7 +2260,8 @@ func TestServer(t *testing.T) {
 				msg = fmt.Sprintf("result does not contain expected resource %s", resourcePath)
 				assert.Contains(t, result, resourcePath, msg)
 				action := arborist.Action{Service: serviceName, Method: methodName}
-				assert.Contains(t, result[resourcePath], action, "result does not contain action")
+				msg = fmt.Sprintf("result does not contain expected action %s", action)
+				assert.Contains(t, result[resourcePath], action, msg)
 			}
 
 			t.Run("GET", func(t *testing.T) {

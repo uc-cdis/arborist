@@ -597,6 +597,17 @@ type AuthMappingQuery struct {
 type AuthMapping map[string][]Action
 
 func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+	userFromQuery, err := userWithName(db, username)
+	if err != nil {
+		errResponse := newErrorResponse("couldn't look up user; check format on username", 400, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	if userFromQuery == nil {
+		msg := fmt.Sprintf("user does not exist: `%s`", username)
+		errResponse := newErrorResponse(msg, 400, &err)
+		return nil, errResponse
+	}
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -610,7 +621,7 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 		INNER JOIN resource ON resource.path <@ roots.path
 		WHERE usr.name = $1
 	`
-	err := db.Select(&mappingQuery, stmt, username)
+	err = db.Select(&mappingQuery, stmt, username)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error(err.Error())
