@@ -963,6 +963,17 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
+
+	// check if user exists at all first
+	user, err := userWithName(server.db, username)
+	if user == nil || err != nil {
+		msg := fmt.Sprintf("no user found with username: `%s`", username)
+		errResponse := newErrorResponse(msg, 404, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
 	service := ""
 	serviceQS, ok := r.URL.Query()["service"]
 	if ok {

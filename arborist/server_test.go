@@ -1406,6 +1406,16 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected 409 from trying to create same user again")
 				}
 			})
+
+			t.Run("MissingName", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"email": "asdf"}`)
+				req := newRequest("POST", "/user", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from trying to create user without name")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
@@ -1523,6 +1533,15 @@ func TestServer(t *testing.T) {
 				w.Body.String(),
 			)
 			assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+
+			t.Run("UserNotFound", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := newRequest("GET", "/user/nonexistent/resources", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "expected 404 trying to list resources for fake user")
+				}
+			})
 
 			// TODO (rudyardrichter, 2019-05-09): also test response with tag
 		})
@@ -1843,16 +1862,26 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from group creation")
 			}
-		})
 
-		t.Run("CreateAlreadyExists", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
-			req := newRequest("POST", "/group", bytes.NewBuffer(body))
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusConflict {
-				httpError(t, w, "creating group that already exists didn't error as expected")
-			}
+			t.Run("MissingName", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"users": ["%s"]}`, testGroupUser1))
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from creating group without name")
+				}
+			})
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "creating group that already exists didn't error as expected")
+				}
+			})
 		})
 
 		t.Run("List", func(t *testing.T) {
@@ -3006,21 +3035,18 @@ func TestServer(t *testing.T) {
 				groupResourcePath,
 				roleName,
 			))
+			createResourceBytes(t, resourceBody)
+			createPolicyBytes(t, policyBody)
 			groupBody := []byte(fmt.Sprintf(
 				`{
 					"name": "%s",
-					"resource_paths": ["%s"],
-					"role_ids": ["%s"],
+					"policies": ["%s"],
 					"users": []
 				}`,
 				groupName,
-				groupResourcePath,
-				roleName,
+				policyName,
 			))
 			createGroupBytes(t, groupBody)
-			createResourceBytes(t, resourceBody)
-			createPolicyBytes(t, policyBody)
-			grantGroupPolicy(t, groupName, policyName)
 			addUserToGroup(t, username, groupName)
 
 			t.Run("Group", func(t *testing.T) {
