@@ -630,9 +630,6 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mapping := make(AuthMapping)
 	for _, authMap := range mappingQuery {
 		path := formatDbPath(authMap.Path)
-		if _, ok := mapping[path]; !ok {
-			mapping[path] = []Action{}
-		}
 		action := Action{Service: authMap.Service, Method: authMap.Method}
 		mapping[path] = append(mapping[path], action)
 	}
