@@ -181,14 +181,16 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	var err error
 	var tag string
 
+	resource := request.Resource
+
 	// See if the resource field is a path or a tag.
-	if !strings.HasPrefix(request.Resource, "/") {
-		tag = request.Resource
-		request.Resource = ""
+	if !strings.HasPrefix(resource, "/") {
+		tag = resource
+		resource = ""
 	}
 
-	if request.Resource != "" {
-		exp, args, resources, err = parse(request.Resource)
+	if resource != "" {
+		exp, args, resources, err = parse(resource)
 		rows, err = request.stmts.Query(
 			`
 			SELECT coalesce(text2ltree(request) <@ allowed, FALSE) FROM (
@@ -288,29 +290,83 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 
 // This is similar as authorizeUser, only that this method checks for clientID only
 func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
-	exp, args, resources, err := parse(request.Resource)
-	rows, err := request.stmts.Query(
-		`
-		SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
-			SELECT array_agg(resource.path) AS allowed FROM client
-			JOIN client_policy ON client_policy.client_id = client.id
-			JOIN policy_resource ON policy_resource.policy_id = client_policy.policy_id
-			JOIN resource ON resource.id = policy_resource.resource_id
-			WHERE client.external_client_id = $1
-			AND EXISTS (
-				SELECT 1 FROM policy_role
-				JOIN permission ON permission.role_id = policy_role.role_id
-				WHERE policy_role.policy_id = client_policy.policy_id
-				AND (permission.service = $2 OR permission.service = '*')
-				AND (permission.method = $3 OR permission.method = '*')
-			)
-		) _, unnest($4::text[]);
-		`,
-		request.ClientID,    // $1
-		request.Service,     // $2
-		request.Method,      // $3
-		pq.Array(resources), // $4
-	)
+	var exp Expression
+	var args []string
+	var resources []string
+	var rows *sql.Rows
+	var err error
+	var tag string
+
+	resource := request.Resource
+
+	// See if the resource field is a path or a tag.
+	if !strings.HasPrefix(resource, "/") {
+		tag = resource
+		resource = ""
+	}
+
+	if resource != "" {
+		exp, args, resources, err = parse(resource)
+		rows, err = request.stmts.Query(
+			`
+			SELECT coalesce(text2ltree("unnest") <@ allowed, FALSE) FROM (
+				SELECT array_agg(resource.path) AS allowed FROM client
+				JOIN client_policy ON client_policy.client_id = client.id
+				JOIN policy_resource ON policy_resource.policy_id = client_policy.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE client.external_client_id = $1
+				AND EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = client_policy.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
+				)
+			) _, unnest($4::text[]);
+			`,
+			request.ClientID,    // $1
+			request.Service,     // $2
+			request.Method,      // $3
+			pq.Array(resources), // $4
+		)
+	} else if tag != "" {
+		exp, args, resources, err = parse(tag)
+		rows, err = request.stmts.Query(
+			`
+			SELECT coalesce(request <@ allowed, FALSE) FROM (
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT client_policy.policy_id FROM client
+					INNER JOIN client_policy ON client_policy.client_id = client.id
+					WHERE client.external_client_id = $1
+				) AS policies
+				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+				JOIN resource ON resource.id = policy_resource.resource_id
+				WHERE EXISTS (
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
+				) AND (
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
+				)
+			) _,
+			(SELECT resource.path AS request FROM unnest($6::text[]) JOIN resource ON resource.tag = "unnest") asdf
+			`,
+			request.ClientID,           // $1
+			request.Service,            // $2
+			request.Method,             // $3
+			len(request.Policies) == 0, // $4
+			pq.Array(request.Policies), // $5
+			pq.Array(resources),        // $6
+		)
+	} else {
+		err = errors.New("missing both resource and tag in auth request")
+	}
+
 	if err != nil {
 		return nil, err
 	}
