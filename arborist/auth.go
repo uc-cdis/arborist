@@ -587,3 +587,62 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		return resources, nil
 	}
 }
+
+type AuthMappingQuery struct {
+	Path    string `json:"path"`
+	Service string `json:"service"`
+	Method  string `json:"method"`
+}
+
+type AuthMapping map[string][]Action
+
+func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+	userFromQuery, err := userWithName(db, username)
+	if err != nil {
+		errResponse := newErrorResponse("couldn't look up user; check format on username", 400, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	if userFromQuery == nil {
+		msg := fmt.Sprintf("user does not exist: `%s`", username)
+		errResponse := newErrorResponse(msg, 400, &err)
+		return nil, errResponse
+	}
+	mappingQuery := []AuthMappingQuery{}
+	stmt := `
+		SELECT DISTINCT resource.path, permission.service, permission.method
+		FROM
+		(
+			SELECT usr_policy.policy_id FROM usr
+			INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+			WHERE usr.name = $1
+			UNION
+			SELECT grp_policy.policy_id FROM usr
+			INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+			WHERE usr.name = $1
+			UNION
+			SELECT grp_policy.policy_id FROM grp
+			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+			WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+		) AS policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
+		INNER JOIN permission ON permission.role_id = policy_role.role_id
+		INNER JOIN resource ON resource.path <@ roots.path
+	`
+	err = db.Select(&mappingQuery, stmt, username)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	mapping := make(AuthMapping)
+	for _, authMap := range mappingQuery {
+		path := formatDbPath(authMap.Path)
+		action := Action{Service: authMap.Service, Method: authMap.Method}
+		mapping[path] = append(mapping[path], action)
+	}
+	return mapping, nil
+}

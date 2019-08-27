@@ -16,6 +16,69 @@ tags:
   - name: policy
     description: manage policies to grant authorization
 paths:
+  /auth/mapping:
+    get:
+      tags:
+        - auth
+      description: >-
+        Return a mapping from the resources the specified user can access, to
+        the actions which they are authorized for on those resources.
+      parameters:
+        - in: query
+          name: username
+          schema:
+            type: string
+          required: true
+          description: the username in arborist to return results for
+      responses:
+        200:
+          description: successful response
+          content:
+            application/json:
+              schema:
+                description: >-
+                  map from resource paths as keys, to lists of actions
+                type: object
+                example: {"/programs/DEV": [{"service": "*", "method": "read"}, {"service": "*", "method": "read-storage"}]}
+        400:
+          description: >-
+            the input was somehow invalid; probably missing username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+    post:
+      tags:
+        - auth
+      description: >-
+        Return a mapping from the resources the specified user can access, to
+        the actions which they are authorized for on those resources.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: the username in arborist to return results for
+      responses:
+        200:
+          description: successful response
+          content:
+            application/json:
+              schema:
+                description: >-
+                  map from resource paths as keys, to lists of actions
+                type: object
+                example: {"/programs/DEV": [{"service": "*", "method": "read"}, {"service": "*", "method": "read-storage"}]}
+        400:
+          description: >-
+            the input was somehow invalid; probably missing username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
   /auth/request:
     post:
       tags:

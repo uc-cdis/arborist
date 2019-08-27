@@ -85,6 +85,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
+	router.Handle("/auth/mapping", http.HandlerFunc(server.handleAuthMappingGET)).Methods("GET")
+	router.Handle("/auth/mapping", http.HandlerFunc(server.parseJSON(server.handleAuthMappingPOST))).Methods("POST")
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(server.parseJSON(server.handleAuthRequest))).Methods("POST")
 	router.Handle("/auth/resources", http.HandlerFunc(server.handleListAuthResourcesGET)).Methods("GET")
@@ -204,6 +206,50 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	_ = jsonResponseFrom(response, 404).write(w, r)
+}
+
+func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
+	username := ""
+	usernameQS, ok := r.URL.Query()["username"]
+	if ok {
+		username = usernameQS[0]
+	}
+	mappings, errResponse := authMapping(server.db, username)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+	var errResponse *ErrorResponse = nil
+	requestBody := struct {
+		Username string `json:"username"`
+	}{}
+	err := json.Unmarshal(body, &requestBody)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
+		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if requestBody.Username == "" {
+		msg := "missing `username` argument"
+		server.logger.Info(msg)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
+	if errResponse != nil {
+		_ = errResponse.write(w, r)
+		return
+	}
+	mappings, errResponse := authMapping(server.db, requestBody.Username)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
