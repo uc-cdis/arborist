@@ -611,15 +611,26 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
-		FROM usr
-		INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-		INNER JOIN policy ON policy.id = usr_policy.policy_id
-		INNER JOIN policy_resource ON policy_resource.policy_id = policy.id
+		FROM
+		(
+			SELECT usr_policy.policy_id FROM usr
+			INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+			WHERE usr.name = $1
+			UNION
+			SELECT grp_policy.policy_id FROM usr
+			INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+			WHERE usr.name = $1
+			UNION
+			SELECT grp_policy.policy_id FROM grp
+			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+			WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+		) AS policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-		INNER JOIN policy_role ON policy_role.policy_id = policy.id
+		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
-		WHERE usr.name = $1
 	`
 	err = db.Select(&mappingQuery, stmt, username)
 	if err != nil {
