@@ -1596,7 +1596,9 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from user info")
 			}
 			assert.NotNil(t, result.Policies[0].ExpiresAt, "missing `expires_at` in response")
-			assert.Equal(t, timestamp, *result.Policies[0].ExpiresAt, "wrong value for `expires_at`")
+			expect, _ := time.Parse(time.RFC3339, timestamp)
+			got, _ := time.Parse(time.RFC3339, *result.Policies[0].ExpiresAt)
+			assert.True(t, expect.Equal(got), "wrong value for `expires_at`")
 		})
 
 		t.Run("Delete", func(t *testing.T) {
