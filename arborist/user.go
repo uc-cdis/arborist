@@ -167,6 +167,7 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt 
 	stmt := `
 		INSERT INTO usr_policy(usr_id, policy_id, expires_at)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3)
+		ON CONFLICT (usr_id, policy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, policyName, expiresAt)
 	if err != nil {

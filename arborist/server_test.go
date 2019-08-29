@@ -1475,6 +1475,7 @@ func TestServer(t *testing.T) {
 				"didn't grant policy correctly; got response body: %s",
 				w.Body.String(),
 			)
+			assert.Len(t, result.Policies, 1, msg)
 			assert.Equal(t, policyName, result.Policies[0].Policy, msg)
 			assert.Nil(t, result.Policies[0].ExpiresAt, msg)
 
