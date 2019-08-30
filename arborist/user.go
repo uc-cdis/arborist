@@ -237,6 +237,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 	stmt := `
 		INSERT INTO usr_grp(usr_id, grp_id, expires_at)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3)
+		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, groupName, expiresAt)
 	if err != nil {
@@ -274,7 +275,6 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorR
 		DELETE FROM usr_grp
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 		AND grp_id = (SELECT id FROM grp WHERE name = $2)
-		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, groupName)
 	if err != nil {
