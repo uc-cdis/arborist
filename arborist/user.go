@@ -274,6 +274,7 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorR
 		DELETE FROM usr_grp
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 		AND grp_id = (SELECT id FROM grp WHERE name = $2)
+		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, groupName)
 	if err != nil {
@@ -282,3 +283,4 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorR
 	}
 	return nil
 }
+
