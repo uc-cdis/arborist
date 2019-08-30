@@ -1291,7 +1291,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 	}
 	var expiresAt *time.Time
 	if requestUser.ExpiresAt != "" {
-		exp, err = time.Parse(time.RFC3339, requestUser.ExpiresAt)
+		exp, err := time.Parse(time.RFC3339, requestUser.ExpiresAt)
 		if err != nil {
 			msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
 			server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
