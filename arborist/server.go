@@ -986,7 +986,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		}
 		expiresAt = &exp
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt)
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, &expiresAt)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
