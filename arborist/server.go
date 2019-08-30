@@ -1289,9 +1289,9 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	var expiresAt time.Time
+	var expiresAt *time.Time
 	if requestUser.ExpiresAt != "" {
-		expiresAt, err = time.Parse(time.RFC3339, requestUser.ExpiresAt)
+		exp, err = time.Parse(time.RFC3339, requestUser.ExpiresAt)
 		if err != nil {
 			msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
 			server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
@@ -1299,6 +1299,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 			_ = response.write(w, r)
 			return
 		}
+		expiresAt = &exp
 	}
 	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, &expiresAt)
 	if errResponse != nil {
@@ -1306,6 +1307,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("added user %s to group %s", requestUser.Username, groupName)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
