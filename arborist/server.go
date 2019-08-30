@@ -986,7 +986,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		}
 		expiresAt = &exp
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, &expiresAt)
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1301,7 +1301,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		}
 		expiresAt = &exp
 	}
-	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, &expiresAt)
+	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, expiresAt)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
