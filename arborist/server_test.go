@@ -161,7 +161,12 @@ func TestServer(t *testing.T) {
 		fmt.Printf("using %s for test database\n", dbUrl)
 	}
 	db, err := sqlx.Open("postgres", dbUrl)
+	// no error so far, make sure ping returns OK
+	if err == nil {
+		err = db.Ping()
+	}
 	if err != nil {
+		fmt.Println("couldn't reach db; make sure arborist has correct database configuration!")
 		t.Fatal(err)
 	}
 	server, err := arborist.
@@ -176,8 +181,7 @@ func TestServer(t *testing.T) {
 	handler := server.MakeRouter(logDest)
 
 	// some test data to work with
-	resourcePath := "/example"
-	resourceDbPath := "example"
+	resourcePath := "/example(123)-X.Y*"
 	resourceBody := []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath))
 	serviceName := "zxcv"
 	roleName := "hjkl"
@@ -315,7 +319,7 @@ func TestServer(t *testing.T) {
 
 	getTagForResource := func(path string) string {
 		var tags []string
-		db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", path)
+		db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", arborist.FormatPathForDb(path))
 		if len(tags) == 0 {
 			return ""
 		}
@@ -592,25 +596,12 @@ func TestServer(t *testing.T) {
 				}
 			})
 
-			t.Run("InvalidPath", func(t *testing.T) {
+			t.Run("BadJSON", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				// missing required field
-				body := []byte(`{"path": "/hyphens-not-allowed"}`)
-				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				req := newRequest("POST", "/resource", nil)
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusBadRequest {
-					httpError(t, w, "resource creation didn't fail as expected")
-				}
-			})
-
-			t.Run("InvalidName", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				// missing required field
-				body := []byte(`{"name": "hyphens-not-allowed"}`)
-				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
-					httpError(t, w, "resource creation didn't fail as expected")
+					httpError(t, w, "expected 400 from request missing JSON")
 				}
 			})
 		})
@@ -618,15 +609,6 @@ func TestServer(t *testing.T) {
 		// We're going to create a resource and save the tag into this variable
 		// so we can test looking it up using the tag.
 		var resourceTag string
-
-		t.Run("CreateBadJSON", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			req := newRequest("POST", "/resource", nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusBadRequest {
-				httpError(t, w, "expected 400 from request missing JSON")
-			}
-		})
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -656,6 +638,16 @@ func TestServer(t *testing.T) {
 			assert.NotEqual(t, "", result.Resource.Tag, msg)
 			resourceTag = result.Resource.Tag
 
+			t.Run("Punctuation", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"path": "/!@#punctuation$%^-_is_-&*(allowed)-==[].<>{},?\\"}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't create resource with punctuation")
+				}
+			})
+
 			t.Run("AlreadyExists", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				body := []byte(fmt.Sprintf(`{"path": "%s"}`, path))
@@ -664,39 +656,6 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusConflict {
 					httpError(t, w, "expected error from creating resource that already exists")
 				}
-			})
-
-			// Test that errors are returned if a resource is input with
-			// invalid characters. (Postgres ltree module only allows
-			// alphanumeric.)
-			t.Run("InvalidCharacters", func(t *testing.T) {
-				t.Run("Path", func(t *testing.T) {
-					w := httptest.NewRecorder()
-					body := []byte(`{"path": "/a-b"}`)
-					req := newRequest("POST", "/resource", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusBadRequest {
-						httpError(t, w, "expected error from creating resource with invalid characters")
-					}
-				})
-
-				t.Run("Name", func(t *testing.T) {
-					w = httptest.NewRecorder()
-					body = []byte(`{"name": "a-^*#b"}`)
-					req = newRequest("POST", "/resource", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusBadRequest {
-						httpError(t, w, "expected error from creating resource with invalid characters")
-					}
-
-					w = httptest.NewRecorder()
-					body = []byte(`{"name": "a/b"}`)
-					req = newRequest("POST", "/resource", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusBadRequest {
-						httpError(t, w, "expected error from creating resource with invalid characters")
-					}
-				})
 			})
 
 			t.Run("MissingParent", func(t *testing.T) {
@@ -971,9 +930,9 @@ func TestServer(t *testing.T) {
 			// now PUT over the same resource, but keep the subresources
 			w = httptest.NewRecorder()
 			body = []byte(`{
-				"name": "Godel",
+				"name": "Godel,",
 				"subresources": [
-					{"name": "Escher", "subresources": [{"name": "Bach"}]},
+					{"name": "Escher,", "subresources": [{"name": "Bach"}]},
 					{"name": "completeness_theorem"}
 				]
 			}`)
@@ -986,7 +945,7 @@ func TestServer(t *testing.T) {
 			newBachTag := getTagForResource("Godel.Escher.Bach")
 			assert.Equal(t, escherTag, newEscherTag, "subresource tag changed after PUT")
 			assert.Equal(t, bachTag, newBachTag, "subresource tag changed after PUT")
-			getResourceWithPath(t, "/Godel/completeness_theorem")
+			getResourceWithPath(t, "/Godel,/completeness_theorem")
 		})
 
 		t.Run("Delete", func(t *testing.T) {
@@ -2365,7 +2324,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("Tag", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				tag := getTagForResource(resourceDbPath)
+				tag := getTagForResource(resourcePath)
 				body := []byte(fmt.Sprintf(
 					`{
 						"user": {"token": "%s"},
