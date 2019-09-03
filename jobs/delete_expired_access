@@ -1,0 +1,4 @@
+#!/bin/bash
+
+psql -c "DELETE FROM usr_grp WHERE expires_at <= now();"
+psql -c "DELETE FROM usr_policy WHERE expires_at <= now();"
