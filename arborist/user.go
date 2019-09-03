@@ -1,32 +1,53 @@
 package arborist
 
 import (
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 )
 
-type User struct {
-	Name     string   `json:"name"`
-	Email    string   `json:"email,omitempty"`
-	Groups   []string `json:"groups"`
-	Policies []string `json:"policies"`
+type PolicyBinding struct {
+	Policy    string  `json:"policy"`
+	ExpiresAt *string `json:"expires_at"`
 }
 
+type User struct {
+	Name     string          `json:"name"`
+	Email    string          `json:"email,omitempty"`
+	Groups   []string        `json:"groups"`
+	Policies []PolicyBinding `json:"policies"`
+}
+
+// UserFromQuery is used to read out a "standard" query for a user into a struct.
+//
+// This struct should be loaded into using the query in `userWithName`.
+//
+// `Policies` contains TODO
 type UserFromQuery struct {
 	ID       int64          `db:"id"`
 	Name     string         `db:"name"`
 	Email    *string        `db:"email"`
 	Groups   pq.StringArray `db:"groups"`
-	Policies pq.StringArray `db:"policies"`
+	Policies []byte         `db:"policies"`
 }
 
 func (userFromQuery *UserFromQuery) standardize() User {
+	if len(userFromQuery.Policies) == 0 {
+		userFromQuery.Policies = []byte("[]")
+	}
+	policies := []PolicyBinding{}
+	err := json.Unmarshal(userFromQuery.Policies, &policies)
+	if err != nil {
+		// debug
+		fmt.Printf("ERROR: UserFromQuery loader is broken: %s\n", err.Error())
+	}
 	user := User{
 		Name:     userFromQuery.Name,
 		Groups:   userFromQuery.Groups,
-		Policies: userFromQuery.Policies,
+		Policies: policies,
 	}
 	if userFromQuery.Email != nil {
 		user.Email = *userFromQuery.Email
@@ -41,23 +62,25 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 			usr.name,
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
-			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
+			(
+				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at))
+				FROM usr_policy
+				INNER JOIN policy ON policy.id = usr_policy.policy_id
+				WHERE usr_policy.usr_id = usr.id
+			) AS policies
 		FROM usr
-		LEFT JOIN usr_grp ON usr.id = usr_grp.usr_id
+		LEFT JOIN usr_grp ON usr_grp.usr_id = usr.id
 		LEFT JOIN grp ON grp.id = usr_grp.grp_id
-		LEFT JOIN usr_policy ON usr.id = usr_policy.usr_id
-		LEFT JOIN policy ON policy.id = usr_policy.policy_id
 		WHERE usr.name = $1
 		GROUP BY usr.id
-		LIMIT 1
 	`
 	users := []UserFromQuery{}
 	err := db.Select(&users, stmt, name)
-	if len(users) == 0 {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
 	}
 	user := users[0]
 	user.Groups = append(user.Groups, LoggedInGroup)
@@ -71,12 +94,15 @@ func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 			usr.name,
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
-			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
+			(
+				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at))
+				FROM usr_policy
+				INNER JOIN policy ON policy.id = usr_policy.policy_id
+				WHERE usr_policy.usr_id = usr.id
+			) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr.id = usr_grp.usr_id
 		LEFT JOIN grp ON grp.id = usr_grp.grp_id
-		LEFT JOIN usr_policy ON usr.id = usr_policy.usr_id
-		LEFT JOIN policy ON policy.id = usr_policy.policy_id
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
@@ -137,12 +163,13 @@ func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorResponse {
+func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time) *ErrorResponse {
 	stmt := `
-		INSERT INTO usr_policy(usr_id, policy_id)
-		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2))
+		INSERT INTO usr_policy(usr_id, policy_id, expires_at)
+		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3)
+		ON CONFLICT (usr_id, policy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, policyName)
+	_, err := db.Exec(stmt, username, policyName, expiresAt)
 	if err != nil {
 		user, err := userWithName(db, username)
 		if user == nil {
@@ -200,7 +227,7 @@ func revokeUserPolicyAll(db *sqlx.DB, username string) *ErrorResponse {
 	return nil
 }
 
-func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorResponse {
+func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *time.Time) *ErrorResponse {
 	if groupName == AnonymousGroup || groupName == LoggedInGroup {
 		return newErrorResponse("can't add users to built-in groups", 400, nil)
 	}
@@ -208,10 +235,11 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string) *ErrorRespon
 		return newErrorResponse("missing `username` argument", 400, nil)
 	}
 	stmt := `
-		INSERT INTO usr_grp(usr_id, grp_id)
-		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2))
+		INSERT INTO usr_grp(usr_id, grp_id, expires_at)
+		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3)
+		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, groupName)
+	_, err := db.Exec(stmt, username, groupName, expiresAt)
 	if err != nil {
 		user, err := userWithName(db, username)
 		if user == nil {
@@ -255,3 +283,4 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorR
 	}
 	return nil
 }
+

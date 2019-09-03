@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -928,16 +929,16 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["username"]
 	userFromQuery, err := userWithName(server.db, name)
-	if userFromQuery == nil {
-		msg := fmt.Sprintf("no user found with username: %s", name)
-		errResponse := newErrorResponse(msg, 404, nil)
+	if err != nil {
+		msg := fmt.Sprintf("user query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
-	if err != nil {
-		msg := fmt.Sprintf("user query failed: %s", err.Error())
-		errResponse := newErrorResponse(msg, 500, nil)
+	if userFromQuery == nil {
+		msg := fmt.Sprintf("no user found with username: %s", name)
+		errResponse := newErrorResponse(msg, 404, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
@@ -963,6 +964,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 	username := mux.Vars(r)["username"]
 	requestPolicy := struct {
 		PolicyName string `json:"policy"`
+		ExpiresAt  string `json:"expires_at"`
 	}{}
 	err := json.Unmarshal(body, &requestPolicy)
 	if err != nil {
@@ -972,7 +974,19 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName)
+	var expiresAt *time.Time
+	if requestPolicy.ExpiresAt != "" {
+		exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
+		if err != nil {
+			msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
+			server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		expiresAt = &exp
+	}
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1264,7 +1278,8 @@ func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) 
 func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request, body []byte) {
 	groupName := mux.Vars(r)["groupName"]
 	requestUser := struct {
-		Username string `json:"username"`
+		Username  string `json:"username"`
+		ExpiresAt string `json:"expires_at"`
 	}{}
 	err := json.Unmarshal(body, &requestUser)
 	if err != nil {
@@ -1274,12 +1289,25 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := addUserToGroup(server.db, requestUser.Username, groupName)
+	var expiresAt *time.Time
+	if requestUser.ExpiresAt != "" {
+		exp, err := time.Parse(time.RFC3339, requestUser.ExpiresAt)
+		if err != nil {
+			msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
+			server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		expiresAt = &exp
+	}
+	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, expiresAt)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
+	server.logger.Info("added user %s to group %s", requestUser.Username, groupName)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 

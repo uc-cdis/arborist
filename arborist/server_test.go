@@ -1459,10 +1459,13 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read user")
 			}
 			result := struct {
-				Name     string   `json:"name"`
-				Email    string   `json:"email"`
-				Policies []string `json:"policies"`
-				Groups   []string `json:"groups"`
+				Name     string `json:"name"`
+				Email    string `json:"email"`
+				Policies []struct {
+					Policy    string  `json:"policy"`
+					ExpiresAt *string `json:"expires_at"`
+				} `json:"policies"`
+				Groups []string `json:"groups"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -1472,7 +1475,9 @@ func TestServer(t *testing.T) {
 				"didn't grant policy correctly; got response body: %s",
 				w.Body.String(),
 			)
-			assert.Equal(t, []string{policyName}, result.Policies, msg)
+			assert.Len(t, result.Policies, 1, msg)
+			assert.Equal(t, policyName, result.Policies[0].Policy, msg)
+			assert.Nil(t, result.Policies[0].ExpiresAt, msg)
 
 			t.Run("PolicyNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -1558,6 +1563,43 @@ func TestServer(t *testing.T) {
 				w.Body.String(),
 			)
 			assert.NotContains(t, result.Policies, policyName, msg)
+		})
+
+		timestamp := time.Now().Add(time.Hour).Format(time.RFC3339)
+
+		t.Run("GrantPolicyWithExpiration", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/policy", username)
+			req := newRequest(
+				"POST",
+				url,
+				bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s", "expires_at": "%s"}`, policyName, timestamp))),
+			)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				httpError(t, w, "couldn't grant policy to user with expiration")
+			}
+		})
+
+		t.Run("CheckPolicyHasExpiration", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s", username)
+			req := newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			result := struct {
+				Policies []struct {
+					Policy    string  `json:"policy"`
+					ExpiresAt *string `json:"expires_at"`
+				} `json:"policies"`
+			}{}
+			err := json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user info")
+			}
+			assert.NotNil(t, result.Policies[0].ExpiresAt, "missing `expires_at` in response")
+			expect, _ := time.Parse(time.RFC3339, timestamp)
+			got, _ := time.Parse(time.RFC3339, *result.Policies[0].ExpiresAt)
+			assert.True(t, expect.Equal(got), "wrong value for `expires_at`")
 		})
 
 		t.Run("Delete", func(t *testing.T) {

@@ -691,7 +691,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/GrantPolicy'
+              $ref: '#/components/schemas/GrantUserPolicy'
       responses:
         204:
           description: successfully granted additional policy
@@ -964,6 +964,33 @@ paths:
           description: successfully revoked
         404:
           description: group not found
+  /group/{groupName}/user:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+    post:
+      tags:
+        - group
+      description: >-
+        Add a user to this group.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddUserToGroup'
+      responses:
+        204:
+          description: successfully added user to group
+        400:
+          description: >-
+            couldn't parse JSON input, or couldn't parse timestamp, or user not
+            provided, or user doesn't exist
+        404:
+          description: group does not exist
 components:
   schemas:
     AuthRequestBody:
@@ -1231,6 +1258,33 @@ components:
           type: string
           description: the policy to grant
           example: 'policy_name'
+    GrantUserPolicy:
+      type: object
+      properties:
+        policy:
+          type: string
+          description: the policy to grant
+          example: 'policy_name'
+          required: true
+        expires_at:
+          type: string
+          description: >-
+            timestamp in RFC 3339 format specifying the time at which the
+            user's access to this policy should expire
+          example: '2019-08-12T12:34:56Z'
+    AddUserToGroup:
+      type: object
+      properties:
+        username:
+          type: string
+          description: username for the user in arborist to add to the group
+          required: true
+        expires_at:
+          type: string
+          description: >-
+            timestamp in RFC 3339 format specifying the time at which the
+            user's access to this group should expire
+          example: '2019-08-12T12:34:56Z'
     User:
       type: object
       properties:
@@ -1248,8 +1302,14 @@ components:
         policies:
           type: array
           items:
-            type: string
-            example: 'policy'
+            type: object
+              properties:
+                policy:
+                  type: string
+                  example: 'policy'
+                expires_at:
+                  type: string
+                  example: '2019-08-12T12:34:56Z'
     UsersList:
       type: object
       properties:
