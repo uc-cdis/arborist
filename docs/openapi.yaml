@@ -1303,13 +1303,13 @@ components:
           type: array
           items:
             type: object
-              properties:
-                policy:
-                  type: string
-                  example: 'policy'
-                expires_at:
-                  type: string
-                  example: '2019-08-12T12:34:56Z'
+            properties:
+              policy:
+                type: string
+                example: 'policy'
+              expires_at:
+                type: string
+                example: '2019-08-12T12:34:56Z'
     UsersList:
       type: object
       properties:
