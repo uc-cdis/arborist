@@ -1416,6 +1416,7 @@ func TestServer(t *testing.T) {
 				url,
 				bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
 			)
+			req.Header.Add("X-AuthZ-Provider", "xxx")
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't grant policy to user")
@@ -1512,36 +1513,49 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
-			req := newRequest("DELETE", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusNoContent {
-				httpError(t, w, "couldn't revoke policy")
+			test := func(authzProvider string, expected bool, msg string) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
+				req := newRequest("DELETE", url, nil)
+				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't revoke policy")
+				}
+				// look up user again and check that policy is still there
+				w = httptest.NewRecorder()
+				url = fmt.Sprintf("/user/%s", username)
+				req = newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "couldn't read user")
+				}
+				result := struct {
+					Name     string `json:"name"`
+					Email    string `json:"email"`
+					Policies []struct {
+						Name      string `json:"policy"`
+						ExpiresAt string `json:"expires_at"`
+					} `json:"policies"`
+					Groups []string `json:"groups"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from user read")
+				}
+				found := false
+				for _, policy := range result.Policies {
+					if policy.Name == policyName {
+						found = true
+						break
+					}
+				}
+				if found != expected {
+					assert.Fail(t, fmt.Sprintf(msg, w.Body.String()))
+				}
 			}
-			// look up user again and check that policy is gone
-			w = httptest.NewRecorder()
-			url = fmt.Sprintf("/user/%s", username)
-			req = newRequest("GET", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				httpError(t, w, "couldn't read user")
-			}
-			result := struct {
-				Name     string   `json:"name"`
-				Email    string   `json:"email"`
-				Policies []string `json:"policies"`
-				Groups   []string `json:"groups"`
-			}{}
-			err = json.Unmarshal(w.Body.Bytes(), &result)
-			if err != nil {
-				httpError(t, w, "couldn't read response from user read")
-			}
-			msg := fmt.Sprintf(
-				"didn't revoke policy correctly; got response body: %s",
-				w.Body.String(),
-			)
-			assert.NotContains(t, result.Policies, policyName, msg)
+			test("yyy", true, "shouldn't revoke policy; got response body: %s")
+			test("xxx", false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		timestamp := time.Now().Add(time.Hour).Format(time.RFC3339)

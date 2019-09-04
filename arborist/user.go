@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -186,13 +187,13 @@ func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time) *ErrorResponse {
+func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
-		INSERT INTO usr_policy(usr_id, policy_id, expires_at)
-		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3)
+		INSERT INTO usr_policy(usr_id, policy_id, expires_at, authz_provider)
+		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3, $4)
 		ON CONFLICT (usr_id, policy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, policyName, expiresAt)
+	_, err := db.Exec(stmt, username, policyName, expiresAt, authzProvider)
 	if err != nil {
 		user, err := userWithName(db, username)
 		if user == nil {
@@ -223,13 +224,19 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt 
 	return nil
 }
 
-func revokeUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorResponse {
+func revokeUserPolicy(db *sqlx.DB, username string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 		AND policy_id = (SELECT id FROM policy WHERE name = $2)
 	`
-	_, err := db.Exec(stmt, username, policyName)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $3"
+		_, err = db.Exec(stmt, username, policyName, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, username, policyName)
+	}
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)
@@ -237,12 +244,18 @@ func revokeUserPolicy(db *sqlx.DB, username string, policyName string) *ErrorRes
 	return nil
 }
 
-func revokeUserPolicyAll(db *sqlx.DB, username string) *ErrorResponse {
+func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 	`
-	_, err := db.Exec(stmt, username)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = db.Exec(stmt, username, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, username)
+	}
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)
