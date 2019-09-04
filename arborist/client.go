@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -67,17 +68,12 @@ func listClientsFromDb(db *sqlx.DB) ([]ClientFromQuery, error) {
 	return clients, nil
 }
 
-func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
+func (client *Client) createInDb(db *sqlx.DB, authzProvider sql.NullString) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
-
-	// First, insert permissions if they don't exist yet. If they don't exist
-	// then use the contents of this client to create them; if they exist already
-	// then IGNORE the contents, and use what's in the database. In postgres we
-	// can use `ON CONFLICT DO NOTHING` for this.
 
 	var clientDBID int
 	stmt := `
@@ -107,12 +103,12 @@ func (client *Client) createInDb(db *sqlx.DB) *ErrorResponse {
 				SELECT id, name FROM policy WHERE name = ANY($1)
 			),
 			client_policies AS (
-				INSERT INTO client_policy (client_id, policy_id)
-				SELECT $2, id FROM policies
+				INSERT INTO client_policy (client_id, policy_id, authz_provider)
+				SELECT $2, id, $3 FROM policies
 			)
 			SELECT name FROM policies
 		`
-		rows, err := tx.Query(stmt, pq.Array(client.Policies), clientDBID)
+		rows, err := tx.Query(stmt, pq.Array(client.Policies), clientDBID, authzProvider)
 		if err != nil {
 			_ = tx.Rollback()
 			return newErrorResponse("failed to grant policy", 500, &err)
@@ -163,12 +159,12 @@ func (client *Client) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorResponse {
+func grantClientPolicy(db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
-		INSERT INTO client_policy(client_id, policy_id)
-		VALUES ((SELECT id FROM client WHERE external_client_id = $1), (SELECT id FROM policy WHERE name = $2))
+		INSERT INTO client_policy(client_id, policy_id, authz_provider)
+		VALUES ((SELECT id FROM client WHERE external_client_id = $1), (SELECT id FROM policy WHERE name = $2), $3)
 	`
-	_, err := db.Exec(stmt, clientID, policyName)
+	_, err := db.Exec(stmt, clientID, policyName, authzProvider)
 	if err != nil {
 		client, err := clientWithClientID(db, clientID)
 		if client == nil {
@@ -199,13 +195,19 @@ func grantClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorRe
 	return nil
 }
 
-func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorResponse {
+func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
 		WHERE client_id = (SELECT id FROM client WHERE external_client_id = $1)
 		AND policy_id = (SELECT id FROM policy WHERE name = $2)
 	`
-	_, err := db.Exec(stmt, clientID, policyName)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $3"
+		_, err = db.Exec(stmt, clientID, policyName, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, clientID, policyName)
+	}
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)
@@ -213,12 +215,18 @@ func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string) *ErrorR
 	return nil
 }
 
-func revokeClientPolicyAll(db *sqlx.DB, clientID string) *ErrorResponse {
+func revokeClientPolicyAll(db *sqlx.DB, clientID string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
 		WHERE client_id = (SELECT id FROM client WHERE external_client_id = $1)
 	`
-	_, err := db.Exec(stmt, clientID)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = db.Exec(stmt, clientID, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, clientID)
+	}
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)

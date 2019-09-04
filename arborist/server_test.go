@@ -1682,6 +1682,7 @@ func TestServer(t *testing.T) {
 				clientID, policyName,
 			))
 			req := newRequest("POST", "/client", bytes.NewBuffer(body))
+			req.Header.Add("X-AuthZ-Provider", "xxx")
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create client")
@@ -1717,34 +1718,40 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/client/%s/policy/%s", clientID, policyName)
-			req := newRequest("DELETE", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusNoContent {
-				httpError(t, w, "couldn't revoke policy")
+			test := func(authzProvider string, expected bool, msg string) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/client/%s/policy/%s", clientID, policyName)
+				req := newRequest("DELETE", url, nil)
+				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't revoke policy")
+				}
+				// look up client again and check that policy is gone
+				w = httptest.NewRecorder()
+				url = fmt.Sprintf("/client/%s", clientID)
+				req = newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "couldn't read client")
+				}
+				result := struct {
+					ClientID string   `json:"clientID"`
+					Policies []string `json:"policies"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from client read")
+				}
+				msg = fmt.Sprintf(msg, w.Body.String())
+				if expected {
+					assert.Contains(t, result.Policies, policyName, msg)
+				} else {
+					assert.NotContains(t, result.Policies, policyName, msg)
+				}
 			}
-			// look up client again and check that policy is gone
-			w = httptest.NewRecorder()
-			url = fmt.Sprintf("/client/%s", clientID)
-			req = newRequest("GET", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				httpError(t, w, "couldn't read client")
-			}
-			result := struct {
-				ClientID string   `json:"clientID"`
-				Policies []string `json:"policies"`
-			}{}
-			err = json.Unmarshal(w.Body.Bytes(), &result)
-			if err != nil {
-				httpError(t, w, "couldn't read response from client read")
-			}
-			msg := fmt.Sprintf(
-				"didn't revoke policy correctly; got response body: %s",
-				w.Body.String(),
-			)
-			assert.NotContains(t, result.Policies, policyName, msg)
+			test("yyy", true, "shouldn't revoke policy; got response body: %s")
+			test("xxx", false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		t.Run("GrantPolicy", func(t *testing.T) {
