@@ -1137,7 +1137,7 @@ func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := client.createInDb(server.db)
+	errResponse := client.createInDb(server.db, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1197,7 +1197,7 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName)
+	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1208,7 +1208,7 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 
 func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Request) {
 	clientID := mux.Vars(r)["clientID"]
-	errResponse := revokeClientPolicyAll(server.db, clientID)
+	errResponse := revokeClientPolicyAll(server.db, clientID, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1220,7 +1220,7 @@ func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Reque
 func (server *Server) handleClientRevokePolicy(w http.ResponseWriter, r *http.Request) {
 	clientID := mux.Vars(r)["clientID"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeClientPolicy(server.db, clientID, policyName)
+	errResponse := revokeClientPolicy(server.db, clientID, policyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)

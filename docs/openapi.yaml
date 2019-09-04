@@ -754,6 +754,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Client'
+      parameters:
+        - $ref: "#/components/parameters/authzProvider"
       responses:
         201:
           description: created client
@@ -804,6 +806,7 @@ paths:
         schema:
           type: string
         description: the client ID for a client registered in arborist
+      - $ref: "#/components/parameters/authzProvider"
     post:
       tags:
         - client
@@ -841,6 +844,7 @@ paths:
         schema:
           type: string
         description: the name for a policy
+      - $ref: "#/components/parameters/authzProvider"
     delete:
       tags:
         - client
