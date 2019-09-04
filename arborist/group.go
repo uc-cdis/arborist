@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -133,12 +134,7 @@ func (group *Group) policies(tx *sqlx.Tx) ([]PolicyFromQuery, error) {
 	return policies, nil
 }
 
-func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
-	// First, insert permissions if they don't exist yet. If they don't exist
-	// then use the contents of this group to create them; if they exist already
-	// then IGNORE the contents, and use what's in the database. In postgres we
-	// can use `ON CONFLICT DO NOTHING` for this.
-
+func (group *Group) createInDb(tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
 	var groupID int
 	stmt := "INSERT INTO grp(name) VALUES ($1) RETURNING id"
 	row := tx.QueryRowx(stmt, group.Name)
@@ -151,6 +147,10 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 409, &err)
 	}
 
+	return group.attachUsrAndPolicy(tx, groupID, authzProvider)
+}
+
+func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider sql.NullString) *ErrorResponse {
 	// add users to the group
 	if len(group.Users) > 0 {
 		users, err := group.users(tx)
@@ -158,11 +158,10 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 			msg := fmt.Sprintf("database call for users failed: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
-		stmt = multiInsertStmt("usr_grp(usr_id, grp_id)", len(group.Users))
+		stmt := multiInsertStmt("usr_grp(usr_id, grp_id, authz_provider)", len(group.Users))
 		userGroupRows := []interface{}{}
 		for _, user := range users {
-			userGroupRows = append(userGroupRows, user.ID)
-			userGroupRows = append(userGroupRows, groupID)
+			userGroupRows = append(userGroupRows, user.ID, groupID, authzProvider)
 		}
 		if len(group.Users) > len(users) {
 			msg := fmt.Sprintf("failed to create group %s while adding users: Some users do not exist", group.Name)
@@ -182,11 +181,10 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 			msg := fmt.Sprintf("database call for policies failed: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
-		stmt = multiInsertStmt("grp_policy(grp_id, policy_id)", len(group.Policies))
+		stmt := multiInsertStmt("grp_policy(grp_id, policy_id, authz_provider)", len(group.Policies))
 		groupPolicyRows := []interface{}{}
 		for _, policy := range policies {
-			groupPolicyRows = append(groupPolicyRows, groupID)
-			groupPolicyRows = append(groupPolicyRows, policy.ID)
+			groupPolicyRows = append(groupPolicyRows, groupID, policy.ID, authzProvider)
 		}
 		if len(group.Policies) > len(policies) {
 			msg := fmt.Sprintf("failed to create group %s while adding policies: Some policies do not exist", group.Name)
@@ -216,20 +214,58 @@ func (group *Group) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (group *Group) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := group.deleteInDb(tx)
-	if errResponse != nil {
-		return errResponse
+func (group *Group) overwriteInDb(tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
+	var groupID int
+	stmt := "SELECT id FROM grp WHERE name = $1 FOR UPDATE"
+	row := tx.QueryRowx(stmt, group.Name)
+	err := row.Scan(&groupID)
+	if err == nil {
+		stmt = "DELETE FROM usr_grp WHERE grp_id = $1"
+		if authzProvider.Valid {
+			stmt += " AND authz_provider = $2"
+			_, err = tx.Exec(stmt, groupID, authzProvider.String)
+		} else {
+			_, err = tx.Exec(stmt, groupID)
+		}
+		if err != nil {
+			var msg string
+			if authzProvider.Valid {
+				msg = fmt.Sprintf("failed to clear %s usr_grp for %s", authzProvider.String, group.Name)
+			} else {
+				msg = fmt.Sprintf("failed to clear usr_grp for %s", group.Name)
+			}
+			return newErrorResponse(msg, 500, &err)
+		}
+
+		stmt = "DELETE FROM grp_policy WHERE grp_id = $1"
+		if authzProvider.Valid {
+			stmt += " AND authz_provider = $2"
+			_, err = tx.Exec(stmt, groupID, authzProvider.String)
+		} else {
+			_, err = tx.Exec(stmt, groupID)
+		}
+		if err != nil {
+			var msg string
+			if authzProvider.Valid {
+				msg = fmt.Sprintf("failed to clear %s grp_policy for %s", authzProvider.String, group.Name)
+			} else {
+				msg = fmt.Sprintf("failed to clear grp_policy for %s", group.Name)
+			}
+			return newErrorResponse(msg, 500, &err)
+		}
+
+		return group.attachUsrAndPolicy(tx, groupID, authzProvider)
+	} else {
+		return group.createInDb(tx, authzProvider)
 	}
-	return group.createInDb(tx)
 }
 
-func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorResponse {
+func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
-		INSERT INTO grp_policy(grp_id, policy_id)
-		VALUES ((SELECT id FROM grp WHERE name = $1), (SELECT id FROM policy WHERE name = $2))
+		INSERT INTO grp_policy(grp_id, policy_id, authz_provider)
+		VALUES ((SELECT id FROM grp WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3)
 	`
-	_, err := db.Exec(stmt, groupName, policyName)
+	_, err := db.Exec(stmt, groupName, policyName, authzProvider)
 	if err != nil {
 		group, err := groupWithName(db, groupName)
 		if group == nil {
@@ -260,13 +296,19 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorRe
 	return nil
 }
 
-func revokeGroupPolicy(db *sqlx.DB, groupName string, policyName string) *ErrorResponse {
+func revokeGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM grp_policy
 		WHERE grp_id = (SELECT id FROM grp WHERE name = $1)
 		AND policy_id = (SELECT id FROM policy WHERE name = $2)
 	`
-	_, err := db.Exec(stmt, groupName, policyName)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $3"
+		_, err = db.Exec(stmt, groupName, policyName, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, groupName, policyName)
+	}
 	if err != nil {
 		msg := "revoke policy query failed"
 		return newErrorResponse(msg, 500, &err)

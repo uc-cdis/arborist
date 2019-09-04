@@ -1954,6 +1954,7 @@ func TestServer(t *testing.T) {
 				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testUsername))
 				req := newRequest("POST", groupUserURL, bytes.NewBuffer(body))
+				req.Header.Add("X-AuthZ-Provider", "xxx")
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusNoContent {
 					httpError(t, w, "couldn't add user to group")
@@ -2062,32 +2063,41 @@ func TestServer(t *testing.T) {
 		userToRemove := testGroupUser1
 
 		t.Run("RemoveUser", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/group/%s/user/%s", testGroupName, userToRemove)
-			req := newRequest("DELETE", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusNoContent {
-				httpError(t, w, "couldn't remove user from group")
+			test := func(authzProvider string, expected bool, msg string) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/group/%s/user/%s", testGroupName, userToRemove)
+				req := newRequest("DELETE", url, nil)
+				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't remove user from group")
+				}
+				// look up group again and check that user is gone
+				url = fmt.Sprintf("/group/%s", testGroupName)
+				w = httptest.NewRecorder()
+				req = newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "couldn't read group")
+				}
+				result := struct {
+					Name     string   `json:"name"`
+					Users    []string `json:"users"`
+					Policies []string `json:"policies"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from group read")
+				}
+				msg = fmt.Sprintf(msg, w.Body.String())
+				if expected {
+					assert.Contains(t, result.Users, userToRemove, msg)
+				} else {
+					assert.NotContains(t, result.Users, userToRemove, msg)
+				}
 			}
-			// look up group again and check that user is gone
-			url = fmt.Sprintf("/group/%s", testGroupName)
-			w = httptest.NewRecorder()
-			req = newRequest("GET", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				httpError(t, w, "couldn't read group")
-			}
-			result := struct {
-				Name     string   `json:"name"`
-				Users    []string `json:"users"`
-				Policies []string `json:"policies"`
-			}{}
-			err = json.Unmarshal(w.Body.Bytes(), &result)
-			if err != nil {
-				httpError(t, w, "couldn't read response from group read")
-			}
-			msg := fmt.Sprintf("didn't remove user; got response body: %s", w.Body.String())
-			assert.NotContains(t, result.Users, userToRemove, msg)
+			test("yyy", true, "shouldn't remove user; got response body: %s")
+			test("xxx", false, "didn't remove user; got response body: %s")
 		})
 
 		// do some preliminary setup so we have a policy to work with
@@ -2103,6 +2113,7 @@ func TestServer(t *testing.T) {
 				url,
 				bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
 			)
+			req.Header.Add("X-AuthZ-Provider", "xxx")
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNoContent {
 				httpError(t, w, "couldn't grant policy to group")
@@ -2163,31 +2174,40 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/group/%s/policy/%s", testGroupName, policyName)
-			req := newRequest("DELETE", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusNoContent {
-				httpError(t, w, "couldn't revoke policy from group")
+			test := func(authzProvider string, expected bool, msg string) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/group/%s/policy/%s", testGroupName, policyName)
+				req := newRequest("DELETE", url, nil)
+				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't revoke policy from group")
+				}
+				w = httptest.NewRecorder()
+				url = fmt.Sprintf("/group/%s", testGroupName)
+				req = newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "couldn't read group")
+				}
+				result := struct {
+					Name     string   `json:"name"`
+					Users    []string `json:"users"`
+					Policies []string `json:"policies"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from group read")
+				}
+				msg = fmt.Sprintf(msg, w.Body.String())
+				if expected {
+					assert.Contains(t, result.Policies, policyName, msg)
+				} else {
+					assert.NotContains(t, result.Policies, policyName, msg)
+				}
 			}
-			w = httptest.NewRecorder()
-			url = fmt.Sprintf("/group/%s", testGroupName)
-			req = newRequest("GET", url, nil)
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				httpError(t, w, "couldn't read group")
-			}
-			result := struct {
-				Name     string   `json:"name"`
-				Users    []string `json:"users"`
-				Policies []string `json:"policies"`
-			}{}
-			err = json.Unmarshal(w.Body.Bytes(), &result)
-			if err != nil {
-				httpError(t, w, "couldn't read response from group read")
-			}
-			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.NotContains(t, policyName, result.Policies, msg)
+			test("yyy", true, "shouldn't revoke policy; got response body: %s")
+			test("xxx", false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		t.Run("Delete", func(t *testing.T) {
