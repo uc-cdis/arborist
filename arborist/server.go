@@ -1260,12 +1260,14 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 		_ = response.write(w, r)
 		return
 	}
-	var errResponse *ErrorResponse
-	if r.Method == "PUT" {
-		errResponse = transactify(server.db, group.overwriteInDb)
-	} else {
-		errResponse = transactify(server.db, group.createInDb)
-	}
+	authzProvider := getAuthZProvider(r)
+	errResponse := transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse{
+		if r.Method == "PUT" {
+			return group.overwriteInDb(tx, authzProvider)
+		} else {
+			return group.createInDb(tx, authzProvider)
+		}
+	})
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1343,7 +1345,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		}
 		expiresAt = &exp
 	}
-	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, expiresAt)
+	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, expiresAt, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1356,7 +1358,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Request) {
 	groupName := mux.Vars(r)["groupName"]
 	username := mux.Vars(r)["username"]
-	errResponse := removeUserFromGroup(server.db, username, groupName)
+	errResponse := removeUserFromGroup(server.db, username, groupName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1378,7 +1380,7 @@ func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Requ
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName)
+	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1390,7 +1392,7 @@ func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Requ
 func (server *Server) handleGroupRevokePolicy(w http.ResponseWriter, r *http.Request) {
 	groupName := mux.Vars(r)["groupName"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeGroupPolicy(server.db, groupName, policyName)
+	errResponse := revokeGroupPolicy(server.db, groupName, policyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)

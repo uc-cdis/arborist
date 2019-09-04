@@ -263,7 +263,7 @@ func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullStr
 	return nil
 }
 
-func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *time.Time) *ErrorResponse {
+func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
 	if groupName == AnonymousGroup || groupName == LoggedInGroup {
 		return newErrorResponse("can't add users to built-in groups", 400, nil)
 	}
@@ -271,11 +271,11 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 		return newErrorResponse("missing `username` argument", 400, nil)
 	}
 	stmt := `
-		INSERT INTO usr_grp(usr_id, grp_id, expires_at)
-		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3)
+		INSERT INTO usr_grp(usr_id, grp_id, expires_at, authz_provider)
+		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3, $4)
 		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, groupName, expiresAt)
+	_, err := db.Exec(stmt, username, groupName, expiresAt, authzProvider)
 	if err != nil {
 		user, err := userWithName(db, username)
 		if user == nil {
@@ -306,13 +306,19 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 	return nil
 }
 
-func removeUserFromGroup(db *sqlx.DB, username string, groupName string) *ErrorResponse {
+func removeUserFromGroup(db *sqlx.DB, username string, groupName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_grp
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
 		AND grp_id = (SELECT id FROM grp WHERE name = $2)
 	`
-	_, err := db.Exec(stmt, username, groupName)
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $3"
+		_, err = db.Exec(stmt, username, groupName, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, username, groupName)
+	}
 	if err != nil {
 		msg := "remove user from group query failed"
 		return newErrorResponse(msg, 500, &err)

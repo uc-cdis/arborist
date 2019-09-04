@@ -877,9 +877,33 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Group'
+      parameters:
+        - $ref: "#/components/parameters/authzProvider"
       responses:
         201:
           description: created group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    $ref: '#/components/schemas/Group'
+    put:
+      tags:
+        - group
+      description: >-
+        Update a group with users and policies, create if not exist.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Group'
+      parameters:
+        - $ref: "#/components/parameters/authzProvider"
+      responses:
+        201:
+          description: updated or created group
           content:
             application/json:
               schema:
@@ -927,6 +951,7 @@ paths:
         schema:
           type: string
         description: the groupName for a group registered in arborist
+      - $ref: "#/components/parameters/authzProvider"
     post:
       tags:
         - group
@@ -956,6 +981,7 @@ paths:
         schema:
           type: string
         description: the name for a policy
+      - $ref: "#/components/parameters/authzProvider"
     delete:
       tags:
         - group
@@ -974,6 +1000,7 @@ paths:
         schema:
           type: string
         description: the groupName for a group registered in arborist
+      - $ref: "#/components/parameters/authzProvider"
     post:
       tags:
         - group
