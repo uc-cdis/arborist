@@ -682,6 +682,7 @@ paths:
         schema:
           type: string
         description: the username for a user registered in arborist
+      - $ref: "#/components/parameters/authzProvider"
     post:
       tags:
         - user
@@ -719,6 +720,7 @@ paths:
         schema:
           type: string
         description: the name for a policy
+      - $ref: "#/components/parameters/authzProvider"
     delete:
       tags:
         - user
@@ -1365,3 +1367,12 @@ components:
             code:
               type: integer
               example: 401
+  parameters:
+    authzProvider:
+      name: X-AuthZ-Provider
+      in: header
+      schema:
+        type: string
+      description: >-
+        operate only within the given AuthZ provider if specified
+        (data mismatching the given AuthZ provider will not be affected)

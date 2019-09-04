@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,15 @@ func parseResourcePath(r *http.Request) string {
 	}
 	// We have to add a slash at the front here; see resourcePath constant.
 	return strings.Join([]string{"/", path}, "")
+}
+
+func getAuthZProvider(r *http.Request) sql.NullString {
+	rv := r.Header.Get("X-AuthZ-Provider")
+	if len(rv) == 0 {
+		return sql.NullString{}
+	} else {
+		return sql.NullString{String: rv, Valid: true}
+	}
 }
 
 func (server *Server) MakeRouter(out io.Writer) http.Handler {
@@ -1002,7 +1012,7 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		}
 		expiresAt = &exp
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt)
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1014,20 +1024,25 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
-	errResponse := revokeUserPolicyAll(server.db, username)
+	authzProvider := getAuthZProvider(r)
+	errResponse := revokeUserPolicyAll(server.db, username, authzProvider)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
-	server.logger.Info("revoked all policies for user %s", username)
+	if authzProvider.Valid {
+		server.logger.Info("revoked all %s policies for user %s", authzProvider.String, username)
+	} else {
+		server.logger.Info("revoked all policies for user %s", username)
+	}
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeUserPolicy(server.db, username, policyName)
+	errResponse := revokeUserPolicy(server.db, username, policyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
