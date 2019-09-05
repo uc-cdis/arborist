@@ -136,6 +136,10 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 			userGroupRows = append(userGroupRows, user.ID)
 			userGroupRows = append(userGroupRows, groupID)
 		}
+		if len(group.Users) > len(userGroupRows) / 2 {
+			msg := fmt.Sprintf("failed to create group %s while adding users: Some users do not exist", group.Name)
+			return newErrorResponse(msg, 400, nil)
+		}
 		_, err = tx.Exec(stmt, userGroupRows...)
 		if err != nil {
 			msg := fmt.Sprintf("failed to create group while adding users: %s", err.Error())
