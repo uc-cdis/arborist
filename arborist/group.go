@@ -136,7 +136,7 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 			userGroupRows = append(userGroupRows, user.ID)
 			userGroupRows = append(userGroupRows, groupID)
 		}
-		if len(group.Users) > len(userGroupRows) / 2 {
+		if len(group.Users) > len(userGroupRows)/2 {
 			msg := fmt.Sprintf("failed to create group %s while adding users: Some users do not exist", group.Name)
 			return newErrorResponse(msg, 400, nil)
 		}
@@ -160,7 +160,7 @@ func (group *Group) createInDb(tx *sqlx.Tx) *ErrorResponse {
 			groupPolicyRows = append(groupPolicyRows, groupID)
 			groupPolicyRows = append(groupPolicyRows, policy.ID)
 		}
-		if len(group.Policies) > len(groupPolicyRows) / 2 {
+		if len(group.Policies) > len(groupPolicyRows)/2 {
 			msg := fmt.Sprintf("failed to create group %s while adding policies: Some policies do not exist", group.Name)
 			return newErrorResponse(msg, 400, nil)
 		}
