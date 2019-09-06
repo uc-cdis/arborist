@@ -21,11 +21,34 @@ type User struct {
 	Policies []PolicyBinding `json:"policies"`
 }
 
-// UserFromQuery is used to read out a "standard" query for a user into a struct.
-//
-// This struct should be loaded into using the query in `userWithName`.
-//
-// `Policies` contains TODO
+func (user *User) UnmarshalJSON(data []byte) error {
+	fields := make(map[string]interface{})
+	err := json.Unmarshal(data, &fields)
+	if err != nil {
+		return err
+	}
+	optionalFields := map[string]struct{}{
+		"email":    struct{}{},
+		"groups":   struct{}{},
+		"policies": struct{}{},
+	}
+	err = validateJSON("user", user, fields, optionalFields)
+	if err != nil {
+		return err
+	}
+
+	// Trick to use `json.Unmarshal` inside here, making a type alias which we
+	// cast the Role to. Since this is just type conversion there's no
+	// runtime cost.
+	type loader User
+	err = json.Unmarshal(data, (*loader)(user))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type UserFromQuery struct {
 	ID       int64          `db:"id"`
 	Name     string         `db:"name"`

@@ -1227,7 +1227,8 @@ func TestServer(t *testing.T) {
 				policyName,
 				roleName,
 			))
-			req := newRequest("PUT", "/policy", bytes.NewBuffer(body))
+			url := fmt.Sprintf("/policy/%s", policyName)
+			req := newRequest("PUT", url, bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't put policy")
@@ -1365,6 +1366,16 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected 409 from trying to create same user again")
 				}
 			})
+
+			t.Run("MissingName", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"email": "asdf"}`)
+				req := newRequest("POST", "/user", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from trying to create user without name")
+				}
+			})
 		})
 
 		t.Run("Read", func(t *testing.T) {
@@ -1487,6 +1498,15 @@ func TestServer(t *testing.T) {
 				w.Body.String(),
 			)
 			assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+
+			t.Run("UserNotFound", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := newRequest("GET", "/user/nonexistent/resources", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "expected 404 trying to list resources for fake user")
+				}
+			})
 
 			// TODO (rudyardrichter, 2019-05-09): also test response with tag
 		})
@@ -1844,16 +1864,26 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from group creation")
 			}
-		})
 
-		t.Run("CreateAlreadyExists", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
-			req := newRequest("POST", "/group", bytes.NewBuffer(body))
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusConflict {
-				httpError(t, w, "creating group that already exists didn't error as expected")
-			}
+			t.Run("MissingName", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"users": ["%s"]}`, testGroupUser1))
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from creating group without name")
+				}
+			})
+
+			t.Run("AlreadyExists", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"name": "%s"}`, testGroupName))
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "creating group that already exists didn't error as expected")
+				}
+			})
 		})
 
 		t.Run("List", func(t *testing.T) {
@@ -2817,6 +2847,8 @@ func TestServer(t *testing.T) {
 		deleteEverything()
 
 		t.Run("Resources", func(t *testing.T) {
+			createUserBytes(t, userBody)
+
 			t.Run("Empty", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				token := TestJWT{username: username}
@@ -2837,12 +2869,12 @@ func TestServer(t *testing.T) {
 				assert.Equal(t, []string{}, result.Resources, msg)
 			})
 
+			createResourceBytes(t, resourceBody)
+			createRoleBytes(t, roleBody)
+			createPolicyBytes(t, policyBody)
+			grantUserPolicy(t, username, policyName)
+
 			t.Run("Granted", func(t *testing.T) {
-				createResourceBytes(t, resourceBody)
-				createRoleBytes(t, roleBody)
-				createPolicyBytes(t, policyBody)
-				createUserBytes(t, userBody)
-				grantUserPolicy(t, username, policyName)
 				token := TestJWT{username: username}
 				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
 
@@ -2989,10 +3021,11 @@ func TestServer(t *testing.T) {
 			createResourceBytes(t, resourceBody)
 			createPolicyBytes(t, policyBody)
 			grantClientPolicy(t, clientID, policyName)
+			grantUserPolicy(t, username, policyName)
 
 			t.Run("Client", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				token := TestJWT{clientID: clientID}
+				token := TestJWT{username: username, clientID: clientID}
 				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
 				req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
@@ -3008,7 +3041,7 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "couldn't read response from auth resources")
 				}
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
-				assert.Equal(t, []string{clientResourcePath}, result.Resources, msg)
+				assert.Contains(t, result.Resources, clientResourcePath, msg)
 			})
 
 			t.Run("Both", func(t *testing.T) {
@@ -3046,21 +3079,18 @@ func TestServer(t *testing.T) {
 				groupResourcePath,
 				roleName,
 			))
+			createResourceBytes(t, resourceBody)
+			createPolicyBytes(t, policyBody)
 			groupBody := []byte(fmt.Sprintf(
 				`{
 					"name": "%s",
-					"resource_paths": ["%s"],
-					"role_ids": ["%s"],
+					"policies": ["%s"],
 					"users": []
 				}`,
 				groupName,
-				groupResourcePath,
-				roleName,
+				policyName,
 			))
 			createGroupBytes(t, groupBody)
-			createResourceBytes(t, resourceBody)
-			createPolicyBytes(t, policyBody)
-			grantGroupPolicy(t, groupName, policyName)
 			addUserToGroup(t, username, groupName)
 
 			t.Run("Group", func(t *testing.T) {

@@ -95,7 +95,9 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyCreate))).Methods("POST")
+	// delete this (PUT /policy) route after 3.0.0
 	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
+	router.Handle("/policy/{policyID}", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
 
@@ -589,6 +591,8 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	policy := &Policy{}
+	// uncomment this after 3.0.0
+	// policy.Name = mux.Vars(r)["policyID"]
 	err := json.Unmarshal(body, policy)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
@@ -1031,6 +1035,17 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
+
+	// check if user exists at all first
+	user, err := userWithName(server.db, username)
+	if user == nil || err != nil {
+		msg := fmt.Sprintf("no user found with username: `%s`", username)
+		errResponse := newErrorResponse(msg, 404, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
 	service := ""
 	serviceQS, ok := r.URL.Query()["service"]
 	if ok {

@@ -430,6 +430,14 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
+	user, err := userWithName(db, request.Username)
+	if err != nil {
+		return nil, newErrorResponse("resources query failed; couldn't find user", 500, &err)
+	}
+	if user == nil {
+		msg := fmt.Sprintf("user does not exist: `%s`", request.Username)
+		return nil, newErrorResponse(msg, 404, nil)
+	}
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
@@ -474,7 +482,6 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		return resources, nil
 	}
 	resources := []ResourceFromQuery{}
-	var err error
 	if request.ClientID == "" {
 		if request.Username == "" {
 			return nil, newErrorResponse("missing username in auth request", 400, nil)
