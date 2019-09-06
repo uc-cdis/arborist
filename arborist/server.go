@@ -95,6 +95,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/policy", http.HandlerFunc(server.handlePolicyList)).Methods("GET")
 	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyCreate))).Methods("POST")
+	// delete this (PUT /policy) route after 3.0.0
+	router.Handle("/policy", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
@@ -589,7 +591,8 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	policy := &Policy{}
-	policy.Name = mux.Vars(r)["policyID"]
+	// uncomment this after 3.0.0
+	// policy.Name = mux.Vars(r)["policyID"]
 	err := json.Unmarshal(body, policy)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())

@@ -36,6 +36,8 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 
 	// delete fields which should be ignored in user input
 	delete(fields, "ID")
+	// uncomment this after 3.0.0 and lowercase the ID field in optionalFields too
+	// delete(fields, "id")
 
 	optionalFields := map[string]struct{}{
 		"ID":          struct{}{},
