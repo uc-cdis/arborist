@@ -2,7 +2,7 @@
 
 ![GitHub release](https://img.shields.io/github/release/uc-cdis/arborist.svg) [![Build Status](https://travis-ci.com/uc-cdis/arborist.svg?branch=master)](https://travis-ci.com/uc-cdis/arborist) [![Coverage Status](https://coveralls.io/repos/github/uc-cdis/arborist/badge.svg)](https://coveralls.io/github/uc-cdis/arborist)
 
-Arborist a role-based access control (RBAC) policy engine, designed for use with
+Arborist is an attribute-based access control (ABAC) policy engine, designed for use with
 the [Gen3 stack](https://gen3.org/). Arborist tracks resources requiring access
 control, along with actions which users may perform to operate on these
 resources, and roles, which aggregate permissions to perform one or more

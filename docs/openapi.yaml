@@ -2,7 +2,7 @@ openapi: 3.0.1
 info:
   title: Arborist
   version: 1.1.1
-  description: authorization microservice to handle RBAC based on configured policies
+  description: authorization microservice to handle ABAC based on configured policies
   license:
     name: 'Apache 2.0'
     url: 'https://github.com/uc-cdis/arborist'
@@ -89,7 +89,7 @@ paths:
         information about the user's specific request. The terminology used to
         describe user requests is flexible and arborist does not "nail it down";
         however our usage so far is to use the permission model to capture the
-        basic set of operations one might expect in RBAC (read/write, etc.)
+        basic set of operations one might expect in ABAC (read/write, etc.)
         combined with the client service, and the path for the resource the user
         is trying to access. If the given JWT has `azp` field, the permission of
         the corresponding client will be also checked; only when both the user
