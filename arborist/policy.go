@@ -35,12 +35,11 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	// delete fields which should be ignored in user input
-	delete(fields, "ID")
-	// uncomment this after 3.0.0 and lowercase the ID field in optionalFields too
-	// delete(fields, "id")
+	// (this deletes from `fields` map, so only affects validation)
+	delete(fields, "id")
 
 	optionalFields := map[string]struct{}{
-		"ID":          struct{}{},
+		"id":          struct{}{},
 		"description": struct{}{},
 	}
 	err = validateJSON("policy", policy, fields, optionalFields)
