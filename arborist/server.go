@@ -605,7 +605,7 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 	if mux.Vars(r)["policyID"] != "" {
 		policy.Name = mux.Vars(r)["policyID"]
 	}
-	errResponse := transactify(server.db, policy.overwriteInDb)
+	errResponse := transactify(server.db, policy.updateInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
