@@ -34,12 +34,7 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// delete fields which should be ignored in user input
-	// (this deletes from `fields` map, so only affects validation)
-	delete(fields, "id")
-
 	optionalFields := map[string]struct{}{
-		"id":          struct{}{},
 		"description": struct{}{},
 	}
 	err = validateJSON("policy", policy, fields, optionalFields)
@@ -168,6 +163,9 @@ func (policy *Policy) roles(tx *sqlx.Tx) ([]RoleFromQuery, error) {
 // looking at the database. This includes that the policy must contain at least
 // one resource and at least one role.
 func (policy *Policy) validate() *ErrorResponse {
+	if len(policy.Name) == 0 {
+		return newErrorResponse("policy name cannot be empty string", 400, nil)
+	}
 	// Resources and roles must be non-empty
 	if len(policy.ResourcePaths) == 0 {
 		return newErrorResponse("no resource paths specified", 400, nil)
