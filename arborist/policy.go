@@ -304,6 +304,14 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 404, &err)
 	}
 
+	stmt = "UPDATE policy SET description = $1 WHERE id = $2"
+	_, err = tx.Exec(stmt, policy.Description, policyID)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("failed to update policy: update description failed: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
 	// First delete resources and roles that were previously attached to policy
 	stmt = "DELETE FROM policy_resource WHERE policy_id = $1"
 	_, err = tx.Exec(stmt, policyID)
