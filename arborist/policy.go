@@ -176,7 +176,6 @@ func (policy *Policy) validate() *ErrorResponse {
 	return nil
 }
 
-
 // add_resources_and_roles takes a policy and links it in the database
 // to each of its resources and roles.
 func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
@@ -280,7 +279,7 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 409, &err)
 	}
 
-        errResponse = policy.add_resources_and_roles(tx)
+	errResponse = policy.add_resources_and_roles(tx)
 	if errResponse != nil {
 		return errResponse
 	}
@@ -336,8 +335,8 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
-        // Now add the new resources and roles
-        errResponse = policy.add_resources_and_roles(tx)
+	// Now add the new resources and roles
+	errResponse = policy.add_resources_and_roles(tx)
 	if errResponse != nil {
 		return errResponse
 	}
