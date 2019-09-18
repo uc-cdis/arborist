@@ -176,17 +176,9 @@ func (policy *Policy) validate() *ErrorResponse {
 	return nil
 }
 
-// add_resources_and_roles takes a policy and links it in the database
+// addResourcesAndRoles takes a policy and links it in the database
 // to each of its resources and roles.
-func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
-
-	var policyID int
-	stmt := "SELECT id FROM policy WHERE name = $1"
-	err := tx.Get(&policyID, stmt, policy.Name)
-	if err != nil {
-		msg := fmt.Sprintf("failed to update policy: no policy found with id: %s", policy.Name)
-		return newErrorResponse(msg, 404, &err)
-	}
+func (policy *Policy) addResourcesAndRoles(tx *sqlx.Tx, policyID int) *ErrorResponse {
 
 	// `resources` is a list of looked-up resources which appear in the input policy
 	resources, err := policy.resources(tx)
@@ -212,7 +204,7 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 400, nil)
 	}
 	// try to insert relationships from this policy to all resources
-	stmt = multiInsertStmt("policy_resource(policy_id, resource_id)", len(resources))
+	stmt := multiInsertStmt("policy_resource(policy_id, resource_id)", len(resources))
 	policyResourceRows := []interface{}{}
 	for _, resource := range resources {
 		policyResourceRows = append(policyResourceRows, policyID)
@@ -268,9 +260,11 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		return errResponse
 	}
 
+	var policyID int
 	// TODO: make sure description works as expected
 	stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-	_, err := tx.Exec(stmt, policy.Name, policy.Description)
+	row := tx.QueryRowx(stmt, policy.Name, policy.Description)
+	err := row.Scan(&policyID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
 		// this should only fail because the policy was not unique. return error
@@ -279,7 +273,7 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 409, &err)
 	}
 
-	errResponse = policy.add_resources_and_roles(tx)
+	errResponse = policy.addResourcesAndRoles(tx, policyID)
 	if errResponse != nil {
 		return errResponse
 	}
@@ -336,7 +330,7 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	}
 
 	// Now add the new resources and roles
-	errResponse = policy.add_resources_and_roles(tx)
+	errResponse = policy.addResourcesAndRoles(tx, policyID)
 	if errResponse != nil {
 		return errResponse
 	}
