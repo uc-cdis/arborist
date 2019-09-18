@@ -185,7 +185,6 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 	stmt := "SELECT id FROM policy WHERE name = $1"
 	err := tx.Get(&policyID, stmt, policy.Name)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to update policy: no policy found with id: %s", policy.Name)
 		return newErrorResponse(msg, 404, &err)
 	}
@@ -193,7 +192,6 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 	// `resources` is a list of looked-up resources which appear in the input policy
 	resources, err := policy.resources(tx)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("database call for resources failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
@@ -210,7 +208,6 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 		}
 	}
 	if len(missingResources) > 0 {
-		_ = tx.Rollback()
 		missingString := strings.Join(missingResources, ", ")
 		msg := fmt.Sprintf("failed to create policy: resources do not exist: %s", missingString)
 		return newErrorResponse(msg, 400, nil)
@@ -224,14 +221,12 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 	}
 	_, err = tx.Exec(stmt, policyResourceRows...)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to insert policy while linking resources: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 
 	roles, err := policy.roles(tx)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("database call for roles failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
@@ -247,7 +242,6 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 		}
 	}
 	if len(missingRoles) > 0 {
-		_ = tx.Rollback()
 		missingString := strings.Join(missingRoles, ", ")
 		msg := fmt.Sprintf("failed to create policy: roles do not exist: %s", missingString)
 		return newErrorResponse(msg, 400, nil)
@@ -261,7 +255,6 @@ func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 	}
 	_, err = tx.Exec(stmt, policyRoleRows...)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to insert policy while linking roles: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
@@ -281,7 +274,6 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	_, err := tx.Exec(stmt, policy.Name, policy.Description)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
-		_ = tx.Rollback()
 		// this should only fail because the policy was not unique. return error
 		// accordingly
 		msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s", policy.Name)
@@ -319,7 +311,6 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	stmt := "SELECT id FROM policy WHERE name = $1"
 	err := tx.Get(&policyID, stmt, policy.Name)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to update policy: no policy found with id: %s", policy.Name)
 		return newErrorResponse(msg, 404, &err)
 	}
@@ -327,7 +318,6 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	stmt = "UPDATE policy SET description = $1 WHERE id = $2"
 	_, err = tx.Exec(stmt, policy.Description, policyID)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to update policy: update description failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
@@ -336,14 +326,12 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	stmt = "DELETE FROM policy_resource WHERE policy_id = $1"
 	_, err = tx.Exec(stmt, policyID)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("database deletion from policy_resource failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 	stmt = "DELETE FROM policy_role WHERE policy_id = $1"
 	_, err = tx.Exec(stmt, policyID)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("database deletion from policy_role failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
