@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -301,16 +302,14 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	}
 
 	var policyID int
-	stmt := "SELECT id FROM policy WHERE name = $1"
-	err := tx.Get(&policyID, stmt, policy.Name)
-	if err != nil {
+	stmt := "UPDATE policy SET description = $1 WHERE name = $2 RETURNING id"
+	row := tx.QueryRowx(stmt, policy.Description, policy.Name)
+	err := row.Scan(&policyID)
+	switch {
+	case err == sql.ErrNoRows:
 		msg := fmt.Sprintf("failed to update policy: no policy found with id: %s", policy.Name)
 		return newErrorResponse(msg, 404, &err)
-	}
-
-	stmt = "UPDATE policy SET description = $1 WHERE id = $2"
-	_, err = tx.Exec(stmt, policy.Description, policyID)
-	if err != nil {
+	case err != nil:
 		msg := fmt.Sprintf("failed to update policy: update description failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
