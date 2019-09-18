@@ -176,25 +176,18 @@ func (policy *Policy) validate() *ErrorResponse {
 	return nil
 }
 
-// createInDb writes out the policy to the database.
-func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := policy.validate()
-	if errResponse != nil {
-		return errResponse
-	}
+
+// add_resources_and_roles takes a policy and links it in the database
+// to each of its resources and roles.
+func (policy *Policy) add_resources_and_roles(tx *sqlx.Tx) *ErrorResponse {
 
 	var policyID int
-	// TODO: make sure description works as expected
-	stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-	row := tx.QueryRowx(stmt, policy.Name, policy.Description)
-	err := row.Scan(&policyID)
+	stmt := "SELECT id FROM policy WHERE name = $1"
+	err := tx.Get(&policyID, stmt, policy.Name)
 	if err != nil {
-		// should add more checking here to guarantee the correct error
 		_ = tx.Rollback()
-		// this should only fail because the policy was not unique. return error
-		// accordingly
-		msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s", policy.Name)
-		return newErrorResponse(msg, 409, &err)
+		msg := fmt.Sprintf("failed to update policy: no policy found with id: %s", policy.Name)
+		return newErrorResponse(msg, 404, &err)
 	}
 
 	// `resources` is a list of looked-up resources which appear in the input policy
@@ -271,6 +264,33 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to insert policy while linking roles: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
+	}
+
+	return nil
+}
+
+// createInDb writes out the policy to the database.
+func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := policy.validate()
+	if errResponse != nil {
+		return errResponse
+	}
+
+	// TODO: make sure description works as expected
+	stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
+	_, err := tx.Exec(stmt, policy.Name, policy.Description)
+	if err != nil {
+		// should add more checking here to guarantee the correct error
+		_ = tx.Rollback()
+		// this should only fail because the policy was not unique. return error
+		// accordingly
+		msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s", policy.Name)
+		return newErrorResponse(msg, 409, &err)
+	}
+
+        errResponse = policy.add_resources_and_roles(tx)
+	if errResponse != nil {
+		return errResponse
 	}
 
 	return nil
@@ -328,81 +348,10 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
-
-	// `resources` is a list of looked-up resources which appear in the input policy
-	resources, err := policy.resources(tx)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("database call for resources failed: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-	// make sure all resources for new policy exist in DB
-	resourceSet := make(map[string]struct{})
-	for _, resource := range resources {
-		path := formatDbPath(resource.Path)
-		resourceSet[path] = struct{}{}
-	}
-	missingResources := []string{}
-	for _, path := range policy.ResourcePaths {
-		if _, exists := resourceSet[path]; !exists {
-			missingResources = append(missingResources, path)
-		}
-	}
-	if len(missingResources) > 0 {
-		_ = tx.Rollback()
-		missingString := strings.Join(missingResources, ", ")
-		msg := fmt.Sprintf("failed to create policy: resources do not exist: %s", missingString)
-		return newErrorResponse(msg, 400, nil)
-	}
-	// try to insert relationships from this policy to all resources
-	stmt = multiInsertStmt("policy_resource(policy_id, resource_id)", len(resources))
-	policyResourceRows := []interface{}{}
-	for _, resource := range resources {
-		policyResourceRows = append(policyResourceRows, policyID)
-		policyResourceRows = append(policyResourceRows, resource.ID)
-	}
-	_, err = tx.Exec(stmt, policyResourceRows...)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("failed to insert policy while linking resources: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-
-	roles, err := policy.roles(tx)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("database call for roles failed: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-	// make sure all roles for new policy exist in DB
-	roleSet := make(map[string]struct{})
-	for _, role := range roles {
-		roleSet[role.Name] = struct{}{}
-	}
-	missingRoles := []string{}
-	for _, role := range policy.RoleIDs {
-		if _, exists := roleSet[role]; !exists {
-			missingRoles = append(missingRoles, role)
-		}
-	}
-	if len(missingRoles) > 0 {
-		_ = tx.Rollback()
-		missingString := strings.Join(missingRoles, ", ")
-		msg := fmt.Sprintf("failed to create policy: roles do not exist: %s", missingString)
-		return newErrorResponse(msg, 400, nil)
-	}
-	// try to insert relationships from this policy to all roles
-	stmt = multiInsertStmt("policy_role(policy_id, role_id)", len(roles))
-	policyRoleRows := []interface{}{}
-	for _, role := range roles {
-		policyRoleRows = append(policyRoleRows, policyID)
-		policyRoleRows = append(policyRoleRows, role.ID)
-	}
-	_, err = tx.Exec(stmt, policyRoleRows...)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("failed to insert policy while linking roles: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
+        // Now add the new resources and roles
+        errResponse = policy.add_resources_and_roles(tx)
+	if errResponse != nil {
+		return errResponse
 	}
 
 	return nil
