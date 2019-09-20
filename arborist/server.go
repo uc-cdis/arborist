@@ -591,8 +591,6 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	policy := &Policy{}
-	// uncomment this after 3.0.0
-	// policy.Name = mux.Vars(r)["policyID"]
 	err := json.Unmarshal(body, policy)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
@@ -601,7 +599,13 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := transactify(server.db, policy.overwriteInDb)
+	// Overwrite policy name from json with policy name from query arg.
+	// After 3.0.0, when PUT /policy is deprecated and only PUT /policy/{policyID} is allowed,
+	// can remove the !="" check. For now, if policy name not found in url, default to name in json.
+	if mux.Vars(r)["policyID"] != "" {
+		policy.Name = mux.Vars(r)["policyID"]
+	}
+	errResponse := transactify(server.db, policy.updateInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
