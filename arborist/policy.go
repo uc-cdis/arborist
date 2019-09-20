@@ -35,7 +35,11 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	// id is optional here because PUT doesn't require it to be in the json;
+	// handlePolicyOverwrite will populate id later, from the URL.
+	// id is still validated later, in policy `validate` function.
 	optionalFields := map[string]struct{}{
+		"id": struct{}{},
 		"description": struct{}{},
 	}
 	err = validateJSON("policy", policy, fields, optionalFields)
@@ -165,7 +169,7 @@ func (policy *Policy) roles(tx *sqlx.Tx) ([]RoleFromQuery, error) {
 // one resource and at least one role.
 func (policy *Policy) validate() *ErrorResponse {
 	if len(policy.Name) == 0 {
-		return newErrorResponse("policy name cannot be empty string", 400, nil)
+		return newErrorResponse("policy ID cannot be absent or empty", 400, nil)
 	}
 	// Resources and roles must be non-empty
 	if len(policy.ResourcePaths) == 0 {
