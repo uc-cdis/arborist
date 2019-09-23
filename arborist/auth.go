@@ -347,23 +347,23 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 			`
 			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
-						SELECT client_policy.policy_id FROM client
-						INNER JOIN client_policy ON client_policy.client_id = client.id
-						WHERE client.external_client_id = $1
+					SELECT client_policy.policy_id FROM client
+					INNER JOIN client_policy ON client_policy.client_id = client.id
+					WHERE client.external_client_id = $1
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
 				WHERE EXISTS (
-						SELECT 1 FROM policy_role
-						JOIN permission ON permission.role_id = policy_role.role_id
-						WHERE policy_role.policy_id = policies.policy_id
-						AND (permission.service = $2 OR permission.service = '*')
-						AND (permission.method = $3 OR permission.method = '*')
+					SELECT 1 FROM policy_role
+					JOIN permission ON permission.role_id = policy_role.role_id
+					WHERE policy_role.policy_id = policies.policy_id
+					AND (permission.service = $2 OR permission.service = '*')
+					AND (permission.method = $3 OR permission.method = '*')
 				) AND (
-						$4 OR policies.policy_id IN (
-								SELECT id FROM policy
-								WHERE policy.name = ANY($5)
-						)
+					$4 OR policies.policy_id IN (
+						SELECT id FROM policy
+						WHERE policy.name = ANY($5)
+					)
 				)
 			) _
 			`,
