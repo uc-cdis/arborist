@@ -345,28 +345,27 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	} else if tag != "" {
 		err = request.stmts.Select(
 			`
-			SELECT coalesce(request <@ allowed, FALSE) FROM ((
-				SELECT array_agg(resource.path) AS allowed FROM (
-					SELECT client_policy.policy_id FROM client
-					INNER JOIN client_policy ON client_policy.client_id = client.id
-					WHERE client.external_client_id = $1
-				) AS policies
-				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-				JOIN resource ON resource.id = policy_resource.resource_id
-				WHERE EXISTS (
-					SELECT 1 FROM policy_role
-					JOIN permission ON permission.role_id = policy_role.role_id
-					WHERE policy_role.policy_id = policies.policy_id
-					AND (permission.service = $2 OR permission.service = '*')
-					AND (permission.method = $3 OR permission.method = '*')
-				) AND (
-					$4 OR policies.policy_id IN (
-						SELECT id FROM policy
-						WHERE policy.name = ANY($5)
+			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
+					SELECT array_agg(resource.path) AS allowed FROM (
+							SELECT client_policy.policy_id FROM client
+							INNER JOIN client_policy ON client_policy.client_id = client.id
+							WHERE client.external_client_id = $1
+					) AS policies
+					JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+					JOIN resource ON resource.id = policy_resource.resource_id
+					WHERE EXISTS (
+							SELECT 1 FROM policy_role
+							JOIN permission ON permission.role_id = policy_role.role_id
+							WHERE policy_role.policy_id = policies.policy_id
+							AND (permission.service = $2 OR permission.service = '*')
+							AND (permission.method = $3 OR permission.method = '*')
+					) AND (
+							$4 OR policies.policy_id IN (
+									SELECT id FROM policy
+									WHERE policy.name = ANY($5)
+							)
 					)
-				)
-			) _,
-			(SELECT resource.path AS request FROM resource WHERE resource.tag = $6) __)
+			) _
 			`,
 			&authorized,
 			request.ClientID,           // $1
@@ -374,16 +373,16 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 			request.Method,             // $3
 			len(request.Policies) == 0, // $4
 			pq.Array(request.Policies), // $5
-			resource,                   // $6
+			tag,                        // $6
 		)
 	} else {
-		err = errors.New("missing both resource and tag in auth request")
+		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	return &AuthResponse{authorized[0]}, nil
+	result := len(authorized) > 0 && authorized[0]
+	return &AuthResponse{result}, nil
 }
 
 func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
