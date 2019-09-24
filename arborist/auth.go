@@ -345,7 +345,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	} else if tag != "" {
 		err = request.stmts.Select(
 			`
-			SELECT coalesce(request <@ allowed, FALSE) FROM ((
+			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT client_policy.policy_id FROM client
 					INNER JOIN client_policy ON client_policy.client_id = client.id
@@ -365,8 +365,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($5)
 					)
 				)
-			) _,
-			(SELECT resource.path AS request FROM resource WHERE resource.tag = $6) __)
+			) _
 			`,
 			&authorized,
 			request.ClientID,           // $1
@@ -374,16 +373,16 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 			request.Method,             // $3
 			len(request.Policies) == 0, // $4
 			pq.Array(request.Policies), // $5
-			resource,                   // $6
+			tag,                        // $6
 		)
 	} else {
-		err = errors.New("missing both resource and tag in auth request")
+		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	return &AuthResponse{authorized[0]}, nil
+	result := len(authorized) > 0 && authorized[0]
+	return &AuthResponse{result}, nil
 }
 
 func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
