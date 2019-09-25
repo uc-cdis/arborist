@@ -1261,7 +1261,7 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	authzProvider := getAuthZProvider(r)
-	errResponse := transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse{
+	errResponse := transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse {
 		if r.Method == "PUT" {
 			return group.overwriteInDb(tx, authzProvider)
 		} else {
