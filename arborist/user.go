@@ -325,4 +325,3 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string, authzPr
 	}
 	return nil
 }
-

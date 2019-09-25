@@ -39,7 +39,7 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 	// handlePolicyOverwrite will populate id later, from the URL.
 	// id is still validated later, in policy `validate` function.
 	optionalFields := map[string]struct{}{
-		"id": struct{}{},
+		"id":          struct{}{},
 		"description": struct{}{},
 	}
 	err = validateJSON("policy", policy, fields, optionalFields)
