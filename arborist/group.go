@@ -219,45 +219,45 @@ func (group *Group) overwriteInDb(tx *sqlx.Tx, authzProvider sql.NullString) *Er
 	stmt := "SELECT id FROM grp WHERE name = $1 FOR UPDATE"
 	row := tx.QueryRowx(stmt, group.Name)
 	err := row.Scan(&groupID)
-	if err == nil {
-		stmt = "DELETE FROM usr_grp WHERE grp_id = $1"
-		if authzProvider.Valid {
-			stmt += " AND authz_provider = $2"
-			_, err = tx.Exec(stmt, groupID, authzProvider.String)
-		} else {
-			_, err = tx.Exec(stmt, groupID)
-		}
-		if err != nil {
-			var msg string
-			if authzProvider.Valid {
-				msg = fmt.Sprintf("failed to clear %s usr_grp for %s", authzProvider.String, group.Name)
-			} else {
-				msg = fmt.Sprintf("failed to clear usr_grp for %s", group.Name)
-			}
-			return newErrorResponse(msg, 500, &err)
-		}
-
-		stmt = "DELETE FROM grp_policy WHERE grp_id = $1"
-		if authzProvider.Valid {
-			stmt += " AND authz_provider = $2"
-			_, err = tx.Exec(stmt, groupID, authzProvider.String)
-		} else {
-			_, err = tx.Exec(stmt, groupID)
-		}
-		if err != nil {
-			var msg string
-			if authzProvider.Valid {
-				msg = fmt.Sprintf("failed to clear %s grp_policy for %s", authzProvider.String, group.Name)
-			} else {
-				msg = fmt.Sprintf("failed to clear grp_policy for %s", group.Name)
-			}
-			return newErrorResponse(msg, 500, &err)
-		}
-
-		return group.attachUsrAndPolicy(tx, groupID, authzProvider)
-	} else {
+	if err != nil {
 		return group.createInDb(tx, authzProvider)
 	}
+
+	stmt = "DELETE FROM usr_grp WHERE grp_id = $1"
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = tx.Exec(stmt, groupID, authzProvider.String)
+	} else {
+		_, err = tx.Exec(stmt, groupID)
+	}
+	if err != nil {
+		var msg string
+		if authzProvider.Valid {
+			msg = fmt.Sprintf("failed to clear %s usr_grp for %s", authzProvider.String, group.Name)
+		} else {
+			msg = fmt.Sprintf("failed to clear usr_grp for %s", group.Name)
+		}
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	stmt = "DELETE FROM grp_policy WHERE grp_id = $1"
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = tx.Exec(stmt, groupID, authzProvider.String)
+	} else {
+		_, err = tx.Exec(stmt, groupID)
+	}
+	if err != nil {
+		var msg string
+		if authzProvider.Valid {
+			msg = fmt.Sprintf("failed to clear %s grp_policy for %s", authzProvider.String, group.Name)
+		} else {
+			msg = fmt.Sprintf("failed to clear grp_policy for %s", group.Name)
+		}
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	return group.attachUsrAndPolicy(tx, groupID, authzProvider)
 }
 
 func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
