@@ -1522,7 +1522,7 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusNoContent {
 					httpError(t, w, "couldn't revoke policy")
 				}
-				// look up user again and check that policy is still there
+				// look up user again and check if policy is still there
 				w = httptest.NewRecorder()
 				url = fmt.Sprintf("/user/%s", username)
 				req = newRequest("GET", url, nil)
