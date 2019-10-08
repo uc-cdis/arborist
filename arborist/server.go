@@ -236,6 +236,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			server.logger.Info("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
 		} else {
+			server.logger.Info("found username in jwt: %s", info.username)
 			username = info.username
 		}
 	}
