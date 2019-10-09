@@ -226,6 +226,19 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	usernameQS, ok := r.URL.Query()["username"]
 	if ok {
 		username = usernameQS[0]
+	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		// Fall back to JWT for username. Added for Arborist UI integration...
+		server.logger.Info("No username in query args; falling back to jwt...")
+		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		userJWT = strings.TrimPrefix(userJWT, "bearer ")
+		aud := []string{"openid"}
+		info, err := server.decodeToken(userJWT, aud)
+		if err != nil {
+			server.logger.Info("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+		} else {
+			server.logger.Info("found username in jwt: %s", info.username)
+			username = info.username
+		}
 	}
 	mappings, errResponse := authMapping(server.db, username)
 	if errResponse != nil {
