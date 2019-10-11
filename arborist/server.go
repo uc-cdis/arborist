@@ -897,7 +897,7 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
-	usersFromQuery, err := listUsersFromDb(server.db)
+	usersFromQuery, pagination, err := listUsersFromDb(server.db, r)
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -911,8 +911,10 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	}
 	result := struct {
 		Users []User `json:"users"`
+		Pagination *Pagination `json:"pagination"`
 	}{
 		Users: users,
+		Pagination: pagination,
 	}
 	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }

@@ -3,6 +3,7 @@ package arborist
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -11,6 +12,8 @@ import (
 
 type PolicyBinding struct {
 	Policy    string  `json:"policy"`
+	Role      string  `json:"role"`
+	Resource  string  `json:"resource"`
 	ExpiresAt *string `json:"expires_at"`
 }
 
@@ -110,7 +113,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
-func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
+func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination, error) {
 	stmt := `
 		SELECT
 			usr.id,
@@ -118,9 +121,13 @@ func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
 			(
-				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at))
+				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at, 'role', role.name, 'resource', resource.name))
 				FROM usr_policy
 				INNER JOIN policy ON policy.id = usr_policy.policy_id
+				INNER JOIN policy_role ON policy_role.policy_id = policy.id
+				INNER JOIN role ON role.id = policy_role.role_id
+				INNER JOIN policy_resource ON policy_resource.policy_id = policy.id
+				INNER JOIN resource ON resource.id = policy_resource.resource_id
 				WHERE usr_policy.usr_id = usr.id
 			) AS policies
 		FROM usr
@@ -129,11 +136,11 @@ func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
-	err := db.Select(&users, stmt)
+	pagination, err := SelectWithPagination(db, &users, stmt, r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return users, nil
+	return users, pagination, nil
 }
 
 func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
