@@ -512,6 +512,10 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				JOIN usr_grp ON usr_grp.grp_id = grp.id
 				JOIN usr ON usr.id = usr_grp.usr_id
 				WHERE usr.name = $1
+				UNION
+				SELECT grp_policy.policy_id FROM grp
+				INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
 			) policies
 			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
