@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -15,6 +16,17 @@ type PolicyBinding struct {
 	Role      string  `json:"role"`
 	Resource  string  `json:"resource"`
 	ExpiresAt *string `json:"expires_at"`
+}
+
+func (policyBinding *PolicyBinding) standardize() PolicyBinding {
+	policyBinding.Resource = UnderscoreDecode(policyBinding.Resource)
+	policy := PolicyBinding{
+		Policy:    policyBinding.Policy,
+		Role:      policyBinding.Role,
+		Resource:  UnderscoreDecode(policyBinding.Resource),
+		ExpiresAt: policyBinding.ExpiresAt,
+	}
+	return policy
 }
 
 type User struct {
@@ -65,7 +77,12 @@ func (userFromQuery *UserFromQuery) standardize() User {
 		userFromQuery.Policies = []byte("[]")
 	}
 	policies := []PolicyBinding{}
+	resultPolicies := []PolicyBinding{}
 	err := json.Unmarshal(userFromQuery.Policies, &policies)
+	for _, policyBinding := range policies {
+		policy := policyBinding.standardize()
+		resultPolicies = append(resultPolicies, policy)
+	}
 	if err != nil {
 		// debug
 		fmt.Printf("ERROR: UserFromQuery loader is broken: %s\n", err.Error())
@@ -73,7 +90,7 @@ func (userFromQuery *UserFromQuery) standardize() User {
 	user := User{
 		Name:     userFromQuery.Name,
 		Groups:   userFromQuery.Groups,
-		Policies: policies,
+		Policies: resultPolicies,
 	}
 	if userFromQuery.Email != nil {
 		user.Email = *userFromQuery.Email
@@ -121,7 +138,7 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
 			(
-				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at, 'role', role.name, 'resource', resource.name))
+				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at, 'role', role.name, 'resource', resource.name, 'resource_path', resource.path)) 
 				FROM usr_policy
 				INNER JOIN policy ON policy.id = usr_policy.policy_id
 				INNER JOIN policy_role ON policy_role.policy_id = policy.id
@@ -133,8 +150,56 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 		FROM usr
 		LEFT JOIN usr_grp ON usr.id = usr_grp.usr_id
 		LEFT JOIN grp ON grp.id = usr_grp.grp_id
+	`
+	vars := r.URL.Query()
+	conditions := make([]string, 0)
+	rolesConditions := make([]string, 0)
+	resourceConditions := make([]string, 0)
+	groupConditions := make([]string, 0)
+	if len(vars["roles[]"]) != 0 {
+		for _, v := range vars["roles[]"] {
+			rolesConditions = append(rolesConditions, "'" + v + "'")
+		}
+		if len(rolesConditions) != 0 {
+			conditions = append(conditions, "ARRAY[" + strings.Join(rolesConditions, ", ") + "] <@ array_agg(DISTINCT role.name)")
+		}
+	}
+	if len(vars["resources[]"]) != 0 {
+		for _, v := range vars["resources[]"] {
+			resourceConditions = append(resourceConditions, "'" + v + "'")
+		}
+		if len(resourceConditions) != 0 {
+			conditions = append(conditions, "ARRAY[" + strings.Join(resourceConditions, ",") + "] <@ array_agg(resource.tag)")
+		}
+	}
+	if len(vars["groups[]"]) != 0 {
+		for _, v := range vars["groups[]"] {
+			groupConditions = append(groupConditions, "'" + v + "'")
+		}
+		if len(groupConditions) != 0 {
+			conditions = append(conditions, "ARRAY[" + strings.Join(groupConditions, ",") + "] <@ array_remove(array_agg(DISTINCT grp.name), NULL)")
+		}
+	}
+	if len(resourceConditions) != 0 || len(rolesConditions) != 0 {
+		stmt = stmt + `
+		LEFT JOIN usr_policy ON usr_policy.usr_id = usr.id LEFT JOIN policy ON policy.id = usr_policy.policy_id`
+		if len(rolesConditions) != 0 {
+			stmt = stmt + `
+			LEFT JOIN policy_role ON policy_role.policy_id = policy.id LEFT JOIN role ON role.id = policy_role.role_id
+			`
+		}
+		if len(resourceConditions) != 0 {
+			stmt = stmt + `
+			LEFT JOIN policy_resource ON policy_resource.policy_id = policy.id LEFT JOIN resource ON resource.id = policy_resource.resource_id
+			`
+		}
+	}
+	stmt = stmt + `
 		GROUP BY usr.id
 	`
+	if len(conditions) != 0 {
+		stmt = stmt + "HAVING " + strings.Join(conditions, " AND ")
+	}
 	users := []UserFromQuery{}
 	pagination, err := SelectWithPagination(db, &users, stmt, r)
 	if err != nil {
