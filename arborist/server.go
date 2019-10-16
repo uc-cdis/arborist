@@ -125,7 +125,9 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
+	router.Handle("/users", http.HandlerFunc(server.parseJSON(server.handleUsersCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
+	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PUT")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
@@ -942,6 +944,33 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
 }
 
+func (server *Server) handleUsersCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	users := &Users{}
+	err := json.Unmarshal(body, users)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse users from JSON: %s", err.Error())
+		server.logger.Info("tried to create users but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := users.multiCreateInDb(server.db)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	for _, user := range users.Users {
+		server.logger.Info("created user %s", user.Name)
+	}
+	created := struct {
+		Created *Users `json:"created"`
+	}{
+		Created: users,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
+}
+
 func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, body []byte) {
 	user := &User{}
 	err := json.Unmarshal(body, user)
@@ -986,6 +1015,28 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromQuery.standardize()
 	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, body []byte) {
+	user := &User{}
+	err := json.Unmarshal(body, user)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse user from JSON: %s", err.Error())
+		server.logger.Info("tried to create user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	authzProvider := getAuthZProvider(r)
+	nameInDb := mux.Vars(r)["username"]
+	errResponse := user.updateInDb(server.db,nameInDb,authzProvider)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info("update user %s", nameInDb)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
