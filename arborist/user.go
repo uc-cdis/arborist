@@ -166,26 +166,26 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 	groupConditions := make([]string, 0)
 	if len(vars["roles[]"]) != 0 {
 		for _, v := range vars["roles[]"] {
-			rolesConditions = append(rolesConditions, "'" + v + "'")
+			rolesConditions = append(rolesConditions, "'"+v+"'")
 		}
 		if len(rolesConditions) != 0 {
-			conditions = append(conditions, "ARRAY[" + strings.Join(rolesConditions, ", ") + "] <@ array_agg(DISTINCT role.name)")
+			conditions = append(conditions, "ARRAY["+strings.Join(rolesConditions, ", ")+"] <@ array_agg(DISTINCT role.name)")
 		}
 	}
 	if len(vars["resources[]"]) != 0 {
 		for _, v := range vars["resources[]"] {
-			resourceConditions = append(resourceConditions, "'" + v + "'")
+			resourceConditions = append(resourceConditions, "'"+v+"'")
 		}
 		if len(resourceConditions) != 0 {
-			conditions = append(conditions, "ARRAY[" + strings.Join(resourceConditions, ",") + "] <@ array_agg(resource.tag)")
+			conditions = append(conditions, "ARRAY["+strings.Join(resourceConditions, ",")+"] <@ array_agg(resource.tag)")
 		}
 	}
 	if len(vars["groups[]"]) != 0 {
 		for _, v := range vars["groups[]"] {
-			groupConditions = append(groupConditions, "'" + v + "'")
+			groupConditions = append(groupConditions, "'"+v+"'")
 		}
 		if len(groupConditions) != 0 {
-			conditions = append(conditions, "ARRAY[" + strings.Join(groupConditions, ",") + "] <@ array_remove(array_agg(DISTINCT grp.name), NULL)")
+			conditions = append(conditions, "ARRAY["+strings.Join(groupConditions, ",")+"] <@ array_remove(array_agg(DISTINCT grp.name), NULL)")
 		}
 	}
 	if len(resourceConditions) != 0 || len(rolesConditions) != 0 {
@@ -255,6 +255,134 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
+func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
+	tx, err := db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	stmt := `
+		UPDATE usr 
+		SET name = $1, email = $2
+		where name = $3
+	`
+
+	_, err = db.Exec(stmt, user.Name, user.Email, nameInDb)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("Update user fail: %s", user.Name)
+		return newErrorResponse(msg, 500, &err)
+	}
+	errResponse := revokeUserPolicyAll(db, user.Name, authzProvider)
+	if errResponse != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("Update user fail - revoke user policy: %s", user.Name)
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	userInDb, err := userWithName(db, user.Name)
+
+	if err != nil {
+		_ = tx.Rollback()
+		msg := "user query failed"
+		return newErrorResponse(msg, 500, &err)
+	}
+	createPolicyInDb(db,tx, user.Policies, userInDb.ID)
+
+	err = tx.Commit()
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	return nil
+}
+
+func createPolicyInDb(db *sqlx.DB,tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
+	var err error = nil
+	newPolicies := make([] struct {
+		policyBinding PolicyBinding
+		policyID      int64
+	}, 0)
+	userPolicyStmt := multiInsertStmt("usr_policy(usr_id,policy_id)", len(Policies))
+	userPolicyRows := []interface{}{}
+	for _, policyBinding := range Policies {
+		var policyID int64
+		policyInDb, err := policyWithName(db, policyBinding.Policy)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := "policy query failed"
+			return newErrorResponse(msg, 500, &err)
+		}
+		if policyInDb == nil {
+			// policy does not exist
+			stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
+			row := tx.QueryRowx(stmt, policyBinding.Policy, "")
+			err := row.Scan(&policyID)
+
+			if err != nil {
+				_ = tx.Rollback()
+				msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s",
+					policyBinding.Policy)
+				return newErrorResponse(msg, 409, &err)
+			}
+			newPolicies = append(newPolicies, struct {
+				policyBinding PolicyBinding
+				policyID      int64
+			}{policyBinding: policyBinding, policyID: policyID})
+		} else {
+			policyID = policyInDb.ID
+		}
+		userPolicyRows = append(userPolicyRows, userID)
+		userPolicyRows = append(userPolicyRows, policyID)
+	}
+
+	policyRoleStmt := multiInsertStmt("policy_role(policy_id, role_id)", len(newPolicies))
+	policyResourceStmt := multiInsertStmt("policy_resource(policy_id, resource_id)", len(newPolicies))
+	policyRoleRows := []interface{}{}
+	policyResourceRows := []interface{}{}
+
+	if len(newPolicies) != 0 {
+		// New policy requires binding of role and resource
+		for i, policy := range newPolicies {
+			// Create policy with resource and role
+			policyRoleStmt = strings.Replace(policyRoleStmt, "$"+strconv.Itoa(i*2+2),
+				"(SELECT id FROM role WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
+			policyResourceStmt = strings.Replace(policyResourceStmt, "$"+strconv.Itoa(i*2+2),
+				"(SELECT id FROM resource WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
+			policyRoleRows = append(policyRoleRows, policy.policyID)
+			policyRoleRows = append(policyRoleRows, policy.policyBinding.Role)
+			policyResourceRows = append(policyResourceRows, policy.policyID)
+			// Resource name needs to encode
+			policyResourceRows = append(policyResourceRows, UnderscoreEncode(policy.policyBinding.Resource))
+		}
+
+		_, err = tx.Exec(policyRoleStmt, policyRoleRows...)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("failed to bind Role with policy while adding users: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+
+		_, err = tx.Exec(policyResourceStmt, policyResourceRows...)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("failed to bind Resource with policy while adding users: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+	}
+
+	_, err = tx.Exec(userPolicyStmt, userPolicyRows...)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("failed to bind user with policy while adding users: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
+}
+
 func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -266,7 +394,7 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 	// then ONLY need to bind the policy to the user.
 
 	for _, user := range users.Users {
-		var userID int
+		var userID int64
 		stmt := `
 			INSERT INTO usr(name, email)
 			VALUES ($1, $2)
@@ -301,85 +429,7 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
-
-		newPolicies := make([] struct {
-			policyBinding PolicyBinding
-			policyID      int64
-		}, 0)
-		userPolicyStmt := multiInsertStmt("usr_policy(usr_id,policy_id)", len(users.Policies))
-		userPolicyRows := []interface{}{}
-		for _, policyBinding := range users.Policies {
-			var policyID int64
-			policyInDb, err := policyWithName(db, policyBinding.Policy)
-			if err != nil {
-				_ = tx.Rollback()
-				msg := "policy query failed"
-				return newErrorResponse(msg, 500, &err)
-			}
-			if policyInDb == nil {
-				// policy does not exist
-				stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-				row := tx.QueryRowx(stmt, policyBinding.Policy, "")
-				err := row.Scan(&policyID)
-
-				if err != nil {
-					_ = tx.Rollback()
-					msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s",
-						policyBinding.Policy)
-					return newErrorResponse(msg, 409, &err)
-				}
-				newPolicies = append(newPolicies, struct {
-					policyBinding PolicyBinding
-					policyID      int64
-				}{policyBinding: policyBinding, policyID: policyID})
-			} else {
-				policyID = policyInDb.ID
-			}
-			userPolicyRows = append(userPolicyRows, userID)
-			userPolicyRows = append(userPolicyRows, policyID)
-		}
-
-		policyRoleStmt := multiInsertStmt("policy_role(policy_id, role_id)", len(newPolicies))
-		policyResourceStmt := multiInsertStmt("policy_resource(policy_id, resource_id)", len(newPolicies))
-		policyRoleRows := []interface{}{}
-		policyResourceRows := []interface{}{}
-
-		if len(newPolicies) != 0 {
-			// New policy requires binding of role and resource
-			for i, policy := range newPolicies {
-				// Create policy with resource and role
-				policyRoleStmt = strings.Replace(policyRoleStmt, "$"+strconv.Itoa(i*2+2),
-					"(SELECT id FROM role WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
-				policyResourceStmt = strings.Replace(policyResourceStmt, "$"+strconv.Itoa(i*2+2),
-					"(SELECT id FROM resource WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
-				policyRoleRows = append(policyRoleRows, policy.policyID)
-				policyRoleRows = append(policyRoleRows, policy.policyBinding.Role)
-				policyResourceRows = append(policyResourceRows, policy.policyID)
-				// Resource name needs to encode
-				policyResourceRows = append(policyResourceRows, UnderscoreEncode(policy.policyBinding.Resource))
-			}
-
-			_, err = tx.Exec(policyRoleStmt, policyRoleRows...)
-			if err != nil {
-				_ = tx.Rollback()
-				msg := fmt.Sprintf("failed to bind Role with policy while adding users: %s", err.Error())
-				return newErrorResponse(msg, 500, &err)
-			}
-
-			_, err = tx.Exec(policyResourceStmt, policyResourceRows...)
-			if err != nil {
-				_ = tx.Rollback()
-				msg := fmt.Sprintf("failed to bind Resource with policy while adding users: %s", err.Error())
-				return newErrorResponse(msg, 500, &err)
-			}
-		}
-
-		_, err = tx.Exec(userPolicyStmt, userPolicyRows...)
-		if err != nil {
-			_ = tx.Rollback()
-			msg := fmt.Sprintf("failed to bind user with policy while adding users: %s", err.Error())
-			return newErrorResponse(msg, 500, &err)
-		}
+		createPolicyInDb(db,tx,users.Policies,userID)
 	}
 
 	err = tx.Commit()
