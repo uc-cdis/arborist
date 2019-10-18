@@ -237,6 +237,45 @@ func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 	return &resource, nil
 }
 
+func resourceWithNamespace(db *sqlx.DB, path string) ([]ResourceFromQuery, error) {
+	path = strings.Replace(path, string('/'), string('.'), -1)
+	if strings.HasPrefix(path, string('.')) {
+		path = path[1:]
+	}
+	stmt := `
+		SELECT
+			parent.id,
+			parent.name,
+			parent.path,
+			parent.tag,
+			parent.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(parent.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM resource AS parent
+	`
+	if path == "" {
+		stmt += "WHERE parent.namespace = true AND nlevel(parent.path) = 1"
+	} else if path == "default" {
+		stmt += `
+		WHERE parent.namespace = false 
+		AND NOT EXISTS (SELECT 1 FROM resource AS root WHERE root.namespace = true AND root.path @> parent.path)`
+	} else {
+		stmt += `WHERE text2ltree(CAST ('` + path + `' AS TEXT)) @> parent.path AND parent.path != '` + path + `'`
+	}
+	stmt += " GROUP BY parent.id"
+	var resources []ResourceFromQuery
+	err := db.Select(&resources, stmt)
+	if err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
 func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 	stmt := `
 		SELECT
