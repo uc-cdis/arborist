@@ -164,28 +164,32 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 	rolesConditions := make([]string, 0)
 	resourceConditions := make([]string, 0)
 	groupConditions := make([]string, 0)
-	if len(vars["roles[]"]) != 0 {
-		for _, v := range vars["roles[]"] {
-			rolesConditions = append(rolesConditions, "'"+v+"'")
+	if len(vars["groups[]"]) != 0 {
+		for _, v := range vars["groups[]"] {
+			groupConditions = append(groupConditions, "'" + v + "'")
 		}
-		if len(rolesConditions) != 0 {
-			conditions = append(conditions, "ARRAY["+strings.Join(rolesConditions, ", ")+"] <@ array_agg(DISTINCT role.name)")
+		if len(groupConditions) != 0 {
+			conditions = append(conditions, "ARRAY["+strings.Join(groupConditions, ",")+"] && array_remove(array_agg(DISTINCT grp.name), NULL)")
 		}
 	}
 	if len(vars["resources[]"]) != 0 {
 		for _, v := range vars["resources[]"] {
 			resourceConditions = append(resourceConditions, "'"+v+"'")
 		}
-		if len(resourceConditions) != 0 {
-			conditions = append(conditions, "ARRAY["+strings.Join(resourceConditions, ",")+"] <@ array_agg(resource.tag)")
+	}
+	if len(vars["roles[]"]) != 0 {
+		for _, v := range vars["roles[]"] {
+			rolesConditions = append(rolesConditions, "'"+v+"'")
 		}
 	}
-	if len(vars["groups[]"]) != 0 {
-		for _, v := range vars["groups[]"] {
-			groupConditions = append(groupConditions, "'"+v+"'")
+	if len(vars["resources[]"]) != 0 && len(vars["roles[]"]) != 0 {
+		conditions = append(conditions, "ARRAY(SELECT (role.id, resource.id) FROM role, resource WHERE role.name in (" + strings.Join(rolesConditions, ", ") + ") AND resource.tag in (" + strings.Join(resourceConditions, ", ") + ")) && array_agg(DISTINCT(role.id, resource.id))")
+	} else {
+		if len(resourceConditions) != 0 {
+			conditions = append(conditions, "ARRAY["+strings.Join(resourceConditions, ",")+"] && array_agg(resource.tag)")
 		}
-		if len(groupConditions) != 0 {
-			conditions = append(conditions, "ARRAY["+strings.Join(groupConditions, ",")+"] <@ array_remove(array_agg(DISTINCT grp.name), NULL)")
+		if len(rolesConditions) != 0 {
+			conditions = append(conditions, "ARRAY["+strings.Join(rolesConditions, ", ")+"] && array_agg(DISTINCT role.name)")
 		}
 	}
 	if len(resourceConditions) != 0 || len(rolesConditions) != 0 {
