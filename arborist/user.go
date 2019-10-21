@@ -57,9 +57,10 @@ func (user *User) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"email":    struct{}{},
-		"groups":   struct{}{},
-		"policies": struct{}{},
+		"email":                struct{}{},
+		"groups":               struct{}{},
+		"policies":             struct{}{},
+		"groups_with_policies": struct{}{},
 	}
 	err = validateJSON("user", user, fields, optionalFields)
 	if err != nil {
@@ -210,7 +211,7 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 	groupConditions := make([]string, 0)
 	if len(vars["groups[]"]) != 0 {
 		for _, v := range vars["groups[]"] {
-			groupConditions = append(groupConditions, "'" + v + "'")
+			groupConditions = append(groupConditions, "'"+v+"'")
 		}
 		if len(groupConditions) != 0 {
 			conditions = append(conditions, "ARRAY["+strings.Join(groupConditions, ",")+"] && array_remove(array_agg(DISTINCT grp.name), NULL)")
@@ -227,7 +228,7 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 		}
 	}
 	if len(vars["resources[]"]) != 0 && len(vars["roles[]"]) != 0 {
-		conditions = append(conditions, "ARRAY(SELECT (role.id, resource.id) FROM role, resource WHERE role.name in (" + strings.Join(rolesConditions, ", ") + ") AND resource.tag in (" + strings.Join(resourceConditions, ", ") + ")) && array_agg(DISTINCT(role.id, resource.id))")
+		conditions = append(conditions, "ARRAY(SELECT (role.id, resource.id) FROM role, resource WHERE role.name in ("+strings.Join(rolesConditions, ", ")+") AND resource.tag in ("+strings.Join(resourceConditions, ", ")+")) && array_agg(DISTINCT(role.id, resource.id))")
 	} else {
 		if len(resourceConditions) != 0 {
 			conditions = append(conditions, "ARRAY["+strings.Join(resourceConditions, ",")+"] && array_agg(resource.tag)")
