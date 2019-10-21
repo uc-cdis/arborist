@@ -20,6 +20,11 @@ type PolicyBinding struct {
 	ExpiresAt *string `json:"expires_at"`
 }
 
+type GroupBinding struct {
+	Name     string          `json:"name"`
+	Policies []PolicyBinding `json:"policies"`
+}
+
 func (policyBinding *PolicyBinding) standardize() PolicyBinding {
 	policyBinding.Resource = UnderscoreDecode(policyBinding.Resource)
 	policy := PolicyBinding{
@@ -32,10 +37,11 @@ func (policyBinding *PolicyBinding) standardize() PolicyBinding {
 }
 
 type User struct {
-	Name     string          `json:"name"`
-	Email    string          `json:"email,omitempty"`
-	Groups   []string        `json:"groups"`
-	Policies []PolicyBinding `json:"policies"`
+	Name               string          `json:"name"`
+	Email              string          `json:"email,omitempty"`
+	Groups             []string        `json:"groups"`
+	GroupsWithPolicies []GroupBinding  `json:"groups_with_policies"`
+	Policies           []PolicyBinding `json:"policies"`
 }
 
 type Users struct {
@@ -51,9 +57,10 @@ func (user *User) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"email":    struct{}{},
-		"groups":   struct{}{},
-		"policies": struct{}{},
+		"email":                struct{}{},
+		"groups":               struct{}{},
+		"policies":             struct{}{},
+		"groups_with_policies": struct{}{},
 	}
 	err = validateJSON("user", user, fields, optionalFields)
 	if err != nil {
@@ -73,16 +80,20 @@ func (user *User) UnmarshalJSON(data []byte) error {
 }
 
 type UserFromQuery struct {
-	ID       int64          `db:"id"`
-	Name     string         `db:"name"`
-	Email    *string        `db:"email"`
-	Groups   pq.StringArray `db:"groups"`
-	Policies []byte         `db:"policies"`
+	ID                 int64          `db:"id"`
+	Name               string         `db:"name"`
+	Email              *string        `db:"email"`
+	Groups             pq.StringArray `db:"groups"`
+	GroupsWithPolicies []byte         `db:"groups_with_policies"`
+	Policies           []byte         `db:"policies"`
 }
 
 func (userFromQuery *UserFromQuery) standardize() User {
 	if len(userFromQuery.Policies) == 0 {
 		userFromQuery.Policies = []byte("[]")
+	}
+	if len(userFromQuery.GroupsWithPolicies) == 0 {
+		userFromQuery.GroupsWithPolicies = []byte("[]")
 	}
 	policies := []PolicyBinding{}
 	resultPolicies := []PolicyBinding{}
@@ -95,10 +106,30 @@ func (userFromQuery *UserFromQuery) standardize() User {
 		// debug
 		fmt.Printf("ERROR: UserFromQuery loader is broken: %s\n", err.Error())
 	}
+
+	groups := []GroupBinding{}
+	resultGroups := []GroupBinding{}
+	err = json.Unmarshal(userFromQuery.GroupsWithPolicies, &groups)
+	if err != nil {
+		fmt.Printf("ERROR: UserFromQuery loader is broken: %s\n", err.Error())
+	}
+	for _, group := range groups {
+		resultPolicies = []PolicyBinding{}
+		newGroup := GroupBinding{}
+		for _, policyBinding := range group.Policies {
+			policy := policyBinding.standardize()
+			resultPolicies = append(resultPolicies, policy)
+		}
+		newGroup.Name = group.Name
+		newGroup.Policies = resultPolicies
+		resultGroups = append(resultGroups, newGroup)
+	}
+
 	user := User{
-		Name:     userFromQuery.Name,
-		Groups:   userFromQuery.Groups,
-		Policies: resultPolicies,
+		Name:               userFromQuery.Name,
+		Groups:             userFromQuery.Groups,
+		GroupsWithPolicies: resultGroups,
+		Policies:           resultPolicies,
 	}
 	if userFromQuery.Email != nil {
 		user.Email = *userFromQuery.Email
@@ -144,6 +175,20 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 			usr.id,
 			usr.name,
 			usr.email,
+			(
+				SELECT json_agg(json_build_object('name', grp.name, 'policies', (
+					SELECT json_agg(json_build_object('policy',policy.name, 'role', role.name ,'resource', resource.name, 'resource_path', resource.path)) 
+					FROM grp_policy 
+					LEFT JOIN policy ON policy.id = grp_policy.policy_id 
+					LEFT JOIN policy_role ON policy_role.policy_id = policy.id 
+					LEFT JOIN role ON role.id = policy_role.role_id 
+					LEFT JOIN policy_resource ON policy_resource.policy_id = policy.id 
+					LEFT JOIN resource ON resource.id = policy_resource.resource_id
+					WHERE grp_policy.grp_id = grp.id)))  
+				FROM usr_grp 
+				LEFT JOIN grp ON usr_grp.grp_id = grp.id 
+				WHERE usr_grp.usr_id = usr.id
+			) AS groups_with_policies,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
 			(
 				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at, 'role', role.name, 'resource', resource.name, 'resource_path', resource.path)) 
@@ -166,7 +211,7 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 	groupConditions := make([]string, 0)
 	if len(vars["groups[]"]) != 0 {
 		for _, v := range vars["groups[]"] {
-			groupConditions = append(groupConditions, "'" + v + "'")
+			groupConditions = append(groupConditions, "'"+v+"'")
 		}
 		if len(groupConditions) != 0 {
 			conditions = append(conditions, "ARRAY["+strings.Join(groupConditions, ",")+"] && array_remove(array_agg(DISTINCT grp.name), NULL)")
@@ -183,7 +228,7 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 		}
 	}
 	if len(vars["resources[]"]) != 0 && len(vars["roles[]"]) != 0 {
-		conditions = append(conditions, "ARRAY(SELECT (role.id, resource.id) FROM role, resource WHERE role.name in (" + strings.Join(rolesConditions, ", ") + ") AND resource.tag in (" + strings.Join(resourceConditions, ", ") + ")) && array_agg(DISTINCT(role.id, resource.id))")
+		conditions = append(conditions, "ARRAY(SELECT (role.id, resource.id) FROM role, resource WHERE role.name in ("+strings.Join(rolesConditions, ", ")+") AND resource.tag in ("+strings.Join(resourceConditions, ", ")+")) && array_agg(DISTINCT(role.id, resource.id))")
 	} else {
 		if len(resourceConditions) != 0 {
 			conditions = append(conditions, "ARRAY["+strings.Join(resourceConditions, ",")+"] && array_agg(resource.tag)")
@@ -292,7 +337,7 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 		msg := "user query failed"
 		return newErrorResponse(msg, 500, &err)
 	}
-	createPolicyInDb(db,tx, user.Policies, userInDb.ID)
+	createPolicyInDb(db, tx, user.Policies, userInDb.ID)
 
 	err = tx.Commit()
 	if err != nil {
@@ -304,7 +349,7 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 	return nil
 }
 
-func createPolicyInDb(db *sqlx.DB,tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
+func createPolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
 	var err error = nil
 	newPolicies := make([] struct {
 		policyBinding PolicyBinding
@@ -433,7 +478,7 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
-		createPolicyInDb(db,tx,users.Policies,userID)
+		createPolicyInDb(db, tx, users.Policies, userID)
 	}
 
 	err = tx.Commit()
