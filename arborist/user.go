@@ -108,20 +108,21 @@ func (userFromQuery *UserFromQuery) standardize() User {
 	}
 
 	groups := []GroupBinding{}
+	groupPolicies := []PolicyBinding{}
 	resultGroups := []GroupBinding{}
 	err = json.Unmarshal(userFromQuery.GroupsWithPolicies, &groups)
 	if err != nil {
 		fmt.Printf("ERROR: UserFromQuery loader is broken: %s\n", err.Error())
 	}
 	for _, group := range groups {
-		resultPolicies = []PolicyBinding{}
+		groupPolicies = []PolicyBinding{}
 		newGroup := GroupBinding{}
 		for _, policyBinding := range group.Policies {
 			policy := policyBinding.standardize()
-			resultPolicies = append(resultPolicies, policy)
+			groupPolicies = append(groupPolicies, policy)
 		}
 		newGroup.Name = group.Name
-		newGroup.Policies = resultPolicies
+		newGroup.Policies = groupPolicies
 		resultGroups = append(resultGroups, newGroup)
 	}
 
@@ -330,6 +331,13 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 		return newErrorResponse(msg, 500, &err)
 	}
 
+	errResponse = revokeUserGroupAll(db, user.Name, authzProvider)
+	if errResponse != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("Update user fail - revoke user group: %s", user.Name)
+		return newErrorResponse(msg, 500, &err)
+	}
+
 	userInDb, err := userWithName(db, user.Name)
 
 	if err != nil {
@@ -337,7 +345,9 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 		msg := "user query failed"
 		return newErrorResponse(msg, 500, &err)
 	}
-	createPolicyInDb(db, tx, user.Policies, userInDb.ID)
+
+	multiCreateGroupInDb(tx, user.Groups, userInDb.ID)
+	multiCreatePolicyInDb(db, tx, user.Policies, userInDb.ID)
 
 	err = tx.Commit()
 	if err != nil {
@@ -349,7 +359,7 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 	return nil
 }
 
-func createPolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
+func multiCreatePolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
 	var err error = nil
 	newPolicies := make([] struct {
 		policyBinding PolicyBinding
@@ -432,6 +442,29 @@ func createPolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID
 	return nil
 }
 
+func multiCreateGroupInDb(tx *sqlx.Tx, Groups []string, userID int64) *ErrorResponse {
+	stmt := multiInsertStmt("usr_grp(usr_id, grp_id)", len(Groups))
+	userGroupRows := []interface{}{}
+	for i, groupName := range Groups {
+		if groupName == AnonymousGroup || groupName == LoggedInGroup {
+			_ = tx.Rollback()
+			return newErrorResponse("can't add users to built-in groups", 400, nil)
+		}
+		stmt = strings.Replace(stmt, "$"+strconv.Itoa(i*2+2),
+			"(SELECT id FROM grp WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
+		userGroupRows = append(userGroupRows, userID)
+		userGroupRows = append(userGroupRows, groupName)
+	}
+
+	_, err := tx.Exec(stmt, userGroupRows...)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
+}
+
 func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -458,27 +491,8 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			msg := fmt.Sprintf("failed to insert user: user with this ID already exists: %s", user.Name)
 			return newErrorResponse(msg, 409, &err)
 		}
-
-		stmt = multiInsertStmt("usr_grp(usr_id, grp_id)", len(users.Groups))
-		userGroupRows := []interface{}{}
-		for i, groupName := range users.Groups {
-			if groupName == AnonymousGroup || groupName == LoggedInGroup {
-				_ = tx.Rollback()
-				return newErrorResponse("can't add users to built-in groups", 400, nil)
-			}
-			stmt = strings.Replace(stmt, "$"+strconv.Itoa(i*2+2),
-				"(SELECT id FROM grp WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
-			userGroupRows = append(userGroupRows, userID)
-			userGroupRows = append(userGroupRows, groupName)
-		}
-
-		_, err = tx.Exec(stmt, userGroupRows...)
-		if err != nil {
-			_ = tx.Rollback()
-			msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
-			return newErrorResponse(msg, 500, &err)
-		}
-		createPolicyInDb(db, tx, users.Policies, userID)
+		multiCreateGroupInDb(tx, users.Groups, userID)
+		multiCreatePolicyInDb(db, tx, users.Policies, userID)
 	}
 
 	err = tx.Commit()
@@ -573,6 +587,25 @@ func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullStr
 	}
 	if err != nil {
 		msg := "revoke policy query failed"
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
+}
+
+func revokeUserGroupAll(db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
+	stmt := `
+		DELETE FROM usr_grp
+		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
+	`
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = db.Exec(stmt, username, authzProvider)
+	} else {
+		_, err = db.Exec(stmt, username)
+	}
+	if err != nil {
+		msg := "revoke group query failed"
 		return newErrorResponse(msg, 500, &err)
 	}
 	return nil
