@@ -9,7 +9,7 @@ import (
 type Pagination struct {
 	Page int `json:"page"`
 	PageSize int `json:"page_size"`
-	NextPage string `json:"next_page"`
+	NextPage int `json:"next_page"`
 	TotalCount int `json:"total_count"`
 }
 
@@ -46,9 +46,9 @@ func SelectWithPagination(db *sqlx.DB, dest interface{}, query string, r *http.R
 		pagination.PageSize = _pageSize
 		pagination.TotalCount = totalCount
 		if _page * _pageSize >= totalCount {
-			pagination.NextPage = ""
+			pagination.NextPage = 0
 		} else {
-			pagination.NextPage = strconv.Itoa(_page + 1)
+			pagination.NextPage = _page + 1
 		}
 		query = query + ` LIMIT ` + pageSize + ` OFFSET ` + strconv.Itoa((_page - 1) * _pageSize)
 		err := db.Select(dest, query, args...)

@@ -33,6 +33,11 @@ func main() {
 			"environment variables. If using the commandline argument, add\n"+
 			"?sslmode=disable",
 	)
+	var fenceUrl *string = flag.String(
+		"fence",
+		"",
+		"URL to connect to fence",
+	)
 	flag.Parse()
 
 	if *jwkEndpoint == "" {
@@ -52,6 +57,7 @@ func main() {
 		WithLogger(logger).
 		WithJWTApp(jwtApp).
 		WithDB(db).
+		WithFence(fenceUrl).
 		Init()
 	if err != nil {
 		panic(err)

@@ -3,7 +3,9 @@ package arborist
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,9 +38,23 @@ func (policyBinding *PolicyBinding) standardize() PolicyBinding {
 	return policy
 }
 
+type FenceUser struct {
+	Name               string          `json:"name"`
+	Email              string          `json:"email,omitempty"`
+	DisplayName		   string 		   `json:"display_name"`
+	Active			   bool			   `json:"active"`
+}
+
+type FenceUsers struct {
+	Users	 []FenceUser	 `json:"users"`
+	Pagination Pagination	`json:"pagination"`
+}
+
 type User struct {
 	Name               string          `json:"name"`
 	Email              string          `json:"email,omitempty"`
+	DisplayName		   string 		   `json:"display_name"`
+	Active			   bool			   `json:"active"`
 	Groups             []string        `json:"groups"`
 	GroupsWithPolicies []GroupBinding  `json:"groups_with_policies"`
 	Policies           []PolicyBinding `json:"policies"`
@@ -88,7 +104,20 @@ type UserFromQuery struct {
 	Policies           []byte         `db:"policies"`
 }
 
-func (userFromQuery *UserFromQuery) standardize() User {
+func (fenceUser *FenceUser) standardize() User {
+	user := User{
+		Name:               fenceUser.Name,
+		DisplayName:		fenceUser.DisplayName,
+		Email:				fenceUser.Email,
+		Active:				fenceUser.Active,
+		GroupsWithPolicies:	[]GroupBinding{},
+		Policies:			[]PolicyBinding{},
+		Groups:				[]string{},
+	}
+	return user
+}
+
+func (userFromQuery *UserFromQuery) standardize(fenceUser *FenceUser) User {
 	if len(userFromQuery.Policies) == 0 {
 		userFromQuery.Policies = []byte("[]")
 	}
@@ -132,8 +161,10 @@ func (userFromQuery *UserFromQuery) standardize() User {
 		GroupsWithPolicies: resultGroups,
 		Policies:           resultPolicies,
 	}
-	if userFromQuery.Email != nil {
-		user.Email = *userFromQuery.Email
+	if fenceUser != nil {
+		user.DisplayName = fenceUser.DisplayName
+		user.Email = fenceUser.Email
+		user.Active = fenceUser.Active
 	}
 	return user
 }
@@ -170,7 +201,58 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
-func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination, error) {
+func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*FenceUsers, error) {
+	vars := r.URL.Query()
+	var page string
+	var pageSize string
+	var keyword string
+	page = vars.Get("page")
+	pageSize = vars.Get("page_size")
+	keyword = vars.Get("keyword")
+	var fenceResp *http.Response
+	params := make([]string, 0)
+	if keyword != "" {
+		params = append(params, "keyword=" + keyword)
+	}
+	if len(vars["groups[]"]) != 0 || len(vars["resources[]"]) != 0 || len(vars["roles[]"]) != 0 {
+		path := "/admin/user"
+		if len(params) > 0 {
+			path = path + "?" + strings.Join(params, "&")
+		}
+		resp, err := server.fence.request(r, path, "GET")
+		if err != nil {
+			return nil, err
+		}
+		fenceResp = resp
+	} else {
+		params = append(params, "page=" + page)
+		params = append(params, "page_size=" + pageSize)
+		path := "/admin/paginated_users"
+		path = path + "?" + strings.Join(params, "&")
+		resp, err := server.fence.request(r, path, "GET")
+		if err != nil {
+			return nil, err
+		}
+		fenceResp = resp
+	}
+	defer fenceResp.Body.Close()
+	if fenceResp.StatusCode != 200 {
+		err := errors.New(fenceResp.Status)
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(fenceResp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fenceUsers := FenceUsers{}
+	err = json.Unmarshal(body, &fenceUsers)
+	if err != nil {
+		return nil, err
+	}
+	return &fenceUsers, nil
+}
+
+func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagination) ([]UserFromQuery, *Pagination, error) {
 	stmt := `
 		SELECT
 			usr.id,
@@ -253,17 +335,28 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request) ([]UserFromQuery, *Pagination
 		}
 	}
 	stmt = stmt + `
+		WHERE usr.name in ('` + strings.Join(userNames, "', '") + `')
+	`
+	stmt = stmt + `
 		GROUP BY usr.id
 	`
 	if len(conditions) != 0 {
 		stmt = stmt + "HAVING " + strings.Join(conditions, " AND ")
 	}
 	users := []UserFromQuery{}
-	pagination, err := SelectWithPagination(db, &users, stmt, r)
-	if err != nil {
-		return nil, nil, err
+	if pag.Page == 0 {
+		pagination, err := SelectWithPagination(db, &users, stmt, r)
+		if err != nil {
+			return nil, nil, err
+		}
+		return users, pagination, nil
+	} else {
+		err := db.Select(&users, stmt)
+		if err != nil {
+			return nil, nil, err
+		}
+		return users, pag, nil
 	}
-	return users, pagination, nil
 }
 
 func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
