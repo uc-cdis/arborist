@@ -10,7 +10,6 @@ type FenceServer struct {
 }
 
 func (fenceServer *FenceServer) request(r *http.Request, url string, method string) (*http.Response, error) {
-	println(fenceServer.url)
 	var netClient = &http.Client{
 		Timeout: 10 * time.Second,
 	}
