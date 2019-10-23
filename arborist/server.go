@@ -28,6 +28,7 @@ type Server struct {
 	jwtApp JWTDecoder
 	logger *LogHandler
 	stmts  *CachedStmts
+	fence  *FenceServer
 }
 
 func NewServer() *Server {
@@ -50,6 +51,17 @@ func (server *Server) WithDB(db *sqlx.DB) *Server {
 	return server
 }
 
+func (server *Server) WithFence(fenceUrl *string) *Server {
+	fenceServer := &FenceServer{}
+	if strings.HasSuffix(*fenceUrl, "/") {
+		fenceServer.url = string([]byte(*fenceUrl)[:len(*fenceUrl) - 1])
+	} else {
+		fenceServer.url = *fenceUrl
+	}
+	server.fence = fenceServer
+	return server
+}
+
 func (server *Server) Init() (*Server, error) {
 	if server.db == nil {
 		return nil, errors.New("arborist server initialized without database")
@@ -59,6 +71,9 @@ func (server *Server) Init() (*Server, error) {
 	}
 	if server.logger == nil {
 		return nil, errors.New("arborist server initialized without logger")
+	}
+	if server.fence == nil || server.fence.url == "" {
+		return nil, errors.New("arborist server initialized without fence url")
 	}
 
 	return server, nil
@@ -946,7 +961,21 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
-	usersFromQuery, pagination, err := listUsersFromDb(server.db, r)
+	vars := r.URL.Query()
+	fenceUsers, err := fetchFenceUsers(server, w, r)
+	if err != nil {
+		msg := fmt.Sprintf("users query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	userNames := make([]string, 0)
+	for _, user := range fenceUsers.Users {
+		userNames = append(userNames, user.Name)
+	}
+	usersFromQuery, pagination, err := listUsersFromDb(server.db, r, userNames, &fenceUsers.Pagination)
+
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -955,8 +984,17 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	users := []User{}
-	for _, userFromQuery := range usersFromQuery {
-		users = append(users, userFromQuery.standardize())
+	for _, fenceUser := range fenceUsers.Users {
+		find := false
+		for _, userFromQuery := range usersFromQuery {
+			if fenceUser.Name == userFromQuery.Name {
+				users = append(users, userFromQuery.standardize(&fenceUser))
+				find = true
+			}
+		}
+		if len(vars["groups[]"]) == 0 && len(vars["resources[]"]) == 0 && len(vars["roles[]"]) == 0 && !find {
+			users = append(users, fenceUser.standardize())
+		}
 	}
 	result := struct {
 		Users []User `json:"users"`
@@ -1037,7 +1075,7 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	user := userFromQuery.standardize()
+	user := userFromQuery.standardize(nil)
 	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
 }
 
