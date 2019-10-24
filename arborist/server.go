@@ -1084,20 +1084,14 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 	err := json.Unmarshal(body, user)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse user from JSON: %s", err.Error())
-		server.logger.Info("tried to create user but input was invalid: %s", msg)
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
 		return
 	}
-	authzProvider := getAuthZProvider(r)
-	nameInDb := mux.Vars(r)["username"]
-	errResponse := user.updateInDb(server.db,nameInDb,authzProvider)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	server.logger.Info("update user %s", nameInDb)
+	user.Name = mux.Vars(r)["username"]
+	createOrUpdateUser(server, w, r, user, false)
+	server.logger.Info("update user %s", user.Name)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
