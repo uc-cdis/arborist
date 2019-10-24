@@ -41,7 +41,7 @@ func (policyBinding *PolicyBinding) standardize() PolicyBinding {
 type FenceUser struct {
 	Name               string          `json:"name"`
 	Email              string          `json:"email,omitempty"`
-	DisplayName		   string 		   `json:"display_name"`
+	PreferredName	   string 		   `json:"preferred_username"`
 	Active			   bool			   `json:"active"`
 }
 
@@ -53,7 +53,7 @@ type FenceUsers struct {
 type User struct {
 	Name               string          `json:"name"`
 	Email              string          `json:"email,omitempty"`
-	DisplayName		   string 		   `json:"display_name"`
+	PreferredName	   string 		   `json:"preferred_username"`
 	Active			   bool			   `json:"active"`
 	Groups             []string        `json:"groups"`
 	GroupsWithPolicies []GroupBinding  `json:"groups_with_policies"`
@@ -96,7 +96,7 @@ func (user *User) UnmarshalJSON(data []byte) error {
 }
 
 type UserFromQuery struct {
-	ID                 int64          `db:"id"`
+	ID                 int            `db:"id"`
 	Name               string         `db:"name"`
 	Email              *string        `db:"email"`
 	Groups             pq.StringArray `db:"groups"`
@@ -107,7 +107,7 @@ type UserFromQuery struct {
 func (fenceUser *FenceUser) standardize() User {
 	user := User{
 		Name:               fenceUser.Name,
-		DisplayName:		fenceUser.DisplayName,
+		PreferredName:		fenceUser.PreferredName,
 		Email:				fenceUser.Email,
 		Active:				fenceUser.Active,
 		GroupsWithPolicies:	[]GroupBinding{},
@@ -162,7 +162,7 @@ func (userFromQuery *UserFromQuery) standardize(fenceUser *FenceUser) User {
 		Policies:           resultPolicies,
 	}
 	if fenceUser != nil {
-		user.DisplayName = fenceUser.DisplayName
+		user.PreferredName = fenceUser.PreferredName
 		user.Email = fenceUser.Email
 		user.Active = fenceUser.Active
 	}
@@ -201,6 +201,194 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
+func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, user *User, create bool) {
+	db := server.db
+	tx, err := db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		response := newErrorResponse(msg, 500, &err)
+		_ = response.write(w, r)
+		return
+	}
+	// fetch fence user
+	fenceUser, err := fetchFenceUser(server.fence, r, user)
+	if err != nil {
+		msg := fmt.Sprintf("could not fetch user from fence: %s", err.Error())
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 500, nil)
+		_ = response.write(w, r)
+		return
+	} else if fenceUser == nil {
+		if !create {
+			msg := fmt.Sprintf("could not fetch user from fence")
+			server.logger.Info("tried to update user but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 404, nil)
+			_ = response.write(w, r)
+			return
+		}
+	}
+	// fetch arborist user
+	userExist, err := arboristUserExist(server.db, user.Name)
+	if err != nil {
+		msg := fmt.Sprintf("could not fetch user from arborist: %s", err.Error())
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 500, nil)
+		_ = response.write(w, r)
+		return
+	}
+	authzProvider := getAuthZProvider(r)
+	if userExist {
+		errResponse := user.updateInDb(server.db, user.Name, authzProvider)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			tx.Rollback()
+			return
+		}
+	} else {
+		var userID int
+		stmt := `
+			INSERT INTO usr(name)
+			VALUES ($1)
+			RETURNING id
+		`
+		row := tx.QueryRowx(stmt, user.Name)
+		err = row.Scan(&userID)
+		if err != nil {
+			// should add more checking here to guarantee the correct error
+			_ = tx.Rollback()
+			// this should only fail because the user was not unique. return error
+			// accordingly
+			msg := fmt.Sprintf("failed to insert user: user with this ID already exists: %s", user.Name)
+			response := newErrorResponse(msg, 409, nil)
+			_ = response.write(w, r)
+			return
+		}
+		errResponse := multiCreateGroupInDb(db, user.Groups, userID)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			tx.Rollback()
+			return
+		}
+		errResponse = multiCreatePolicyInDb(db, user.Policies, userID)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			tx.Rollback()
+			return
+		}
+	}
+	if create && fenceUser == nil {
+		_, err = createFenceUser(server.fence, r, user)
+	} else {
+		_, err = updateFenceUser(server.fence, r, user)
+	}
+	if err != nil {
+		msg := "could not update user to fence: " + err.Error()
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 500, nil)
+		_ = response.write(w, r)
+		tx.Rollback()
+		return
+	}
+	err = tx.Commit()
+	if err != nil {
+		msg := "couldn't commit database transaction: " + err.Error()
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 500, nil)
+		_ = response.write(w, r)
+		tx.Rollback()
+		return
+	}
+}
+
+func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+	resp, err := fence.request(r, "/admin/user/" + user.Name, "GET", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return nil, nil
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(resp.Status)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fenceUser := FenceUser{}
+	err = json.Unmarshal(body, &fenceUser)
+	if err != nil {
+		return nil, err
+	}
+	return &fenceUser, nil
+}
+
+func arboristUserExist(db *sqlx.DB, username string) (bool, error) {
+	var count int
+
+	err := db.Get(&count, "SELECT count(*) FROM usr WHERE name = '" + username + "'")
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func createFenceUser (fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+	values := map[string]string{}
+	values["name"] = user.Name
+	values["display_name"] = user.PreferredName
+	values["email"] = user.Email
+	resp, err := fence.request(r, "/admin/user", "POST", values)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err := errors.New(resp.Status)
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fenceUser := FenceUser{}
+	err = json.Unmarshal(body, &fenceUser)
+	if err != nil {
+		return nil, err
+	}
+	return &fenceUser, nil
+}
+
+func updateFenceUser (fence *FenceServer, r *http.Request, user *User) (*FenceUser, error){
+	values := map[string]string{}
+	values["active"] = strconv.FormatBool(user.Active)
+	values["display_name"] = user.PreferredName
+	values["email"] = user.Email
+	resp, err := fence.request(r, "/admin/user/" + user.Name, "PUT", values)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err := errors.New(resp.Status)
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fenceUser := FenceUser{}
+	err = json.Unmarshal(body, &fenceUser)
+	if err != nil {
+		return nil, err
+	}
+	return &fenceUser, nil
+}
+
 func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*FenceUsers, error) {
 	vars := r.URL.Query()
 	var page string
@@ -219,7 +407,7 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 		if len(params) > 0 {
 			path = path + "?" + strings.Join(params, "&")
 		}
-		resp, err := server.fence.request(r, path, "GET")
+		resp, err := server.fence.request(r, path, "GET", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +417,7 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 		params = append(params, "page_size=" + pageSize)
 		path := "/admin/paginated_users"
 		path = path + "?" + strings.Join(params, "&")
-		resp, err := server.fence.request(r, path, "GET")
+		resp, err := server.fence.request(r, path, "GET", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -398,84 +586,64 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
+
 func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
-	tx, err := db.Beginx()
-	if err != nil {
-		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
-	}
-
-	stmt := `
-		UPDATE usr 
-		SET name = $1, email = $2
-		where name = $3
-	`
-
-	_, err = db.Exec(stmt, user.Name, user.Email, nameInDb)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("Update user fail: %s", user.Name)
-		return newErrorResponse(msg, 500, &err)
-	}
 	errResponse := revokeUserPolicyAll(db, user.Name, authzProvider)
 	if errResponse != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("Update user fail - revoke user policy: %s", user.Name)
-		return newErrorResponse(msg, 500, &err)
+		msg := "Update user fail - revoke user policy: " + user.Name
+		return newErrorResponse(msg, 500, nil)
 	}
 
 	errResponse = revokeUserGroupAll(db, user.Name, authzProvider)
 	if errResponse != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("Update user fail - revoke user group: %s", user.Name)
-		return newErrorResponse(msg, 500, &err)
+		msg := "Update user fail - revoke user group: " + user.Name
+		return newErrorResponse(msg, 500, nil)
 	}
 
 	userInDb, err := userWithName(db, user.Name)
 
 	if err != nil {
-		_ = tx.Rollback()
 		msg := "user query failed"
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	multiCreateGroupInDb(tx, user.Groups, userInDb.ID)
-	multiCreatePolicyInDb(db, tx, user.Policies, userInDb.ID)
-
-	err = tx.Commit()
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
+	errResponse = multiCreateGroupInDb(db, user.Groups, userInDb.ID)
+	if errResponse != nil {
+		return errResponse
+	}
+	errResponse = multiCreatePolicyInDb(db, user.Policies, userInDb.ID)
+	if errResponse != nil {
+		return errResponse
 	}
 
 	return nil
 }
 
-func multiCreatePolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int64) *ErrorResponse {
+func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *ErrorResponse {
 	var err error = nil
 	newPolicies := make([] struct {
 		policyBinding PolicyBinding
 		policyID      int64
 	}, 0)
+	if len(Policies) <= 0 {
+		return nil
+	}
 	userPolicyStmt := multiInsertStmt("usr_policy(usr_id,policy_id)", len(Policies))
 	userPolicyRows := []interface{}{}
 	for _, policyBinding := range Policies {
 		var policyID int64
 		policyInDb, err := policyWithName(db, policyBinding.Policy)
 		if err != nil {
-			_ = tx.Rollback()
 			msg := "policy query failed"
 			return newErrorResponse(msg, 500, &err)
 		}
 		if policyInDb == nil {
 			// policy does not exist
 			stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-			row := tx.QueryRowx(stmt, policyBinding.Policy, "")
+			row := db.QueryRowx(stmt, policyBinding.Policy, "")
 			err := row.Scan(&policyID)
 
 			if err != nil {
-				_ = tx.Rollback()
 				msg := fmt.Sprintf("failed to insert policy: policy with this ID already exists: %s",
 					policyBinding.Policy)
 				return newErrorResponse(msg, 409, &err)
@@ -511,36 +679,35 @@ func multiCreatePolicyInDb(db *sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, u
 			policyResourceRows = append(policyResourceRows, UnderscoreEncode(policy.policyBinding.Resource))
 		}
 
-		_, err = tx.Exec(policyRoleStmt, policyRoleRows...)
+		_, err = db.Exec(policyRoleStmt, policyRoleRows...)
 		if err != nil {
-			_ = tx.Rollback()
 			msg := fmt.Sprintf("failed to bind Role with policy while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
 
-		_, err = tx.Exec(policyResourceStmt, policyResourceRows...)
+		_, err = db.Exec(policyResourceStmt, policyResourceRows...)
 		if err != nil {
-			_ = tx.Rollback()
 			msg := fmt.Sprintf("failed to bind Resource with policy while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
 	}
 
-	_, err = tx.Exec(userPolicyStmt, userPolicyRows...)
+	_, err = db.Exec(userPolicyStmt, userPolicyRows...)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to bind user with policy while adding users: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 	return nil
 }
 
-func multiCreateGroupInDb(tx *sqlx.Tx, Groups []string, userID int64) *ErrorResponse {
+func multiCreateGroupInDb(db *sqlx.DB, Groups []string, userID int) *ErrorResponse {
+	if len(Groups) <= 0 {
+		return nil
+	}
 	stmt := multiInsertStmt("usr_grp(usr_id, grp_id)", len(Groups))
 	userGroupRows := []interface{}{}
 	for i, groupName := range Groups {
 		if groupName == AnonymousGroup || groupName == LoggedInGroup {
-			_ = tx.Rollback()
 			return newErrorResponse("can't add users to built-in groups", 400, nil)
 		}
 		stmt = strings.Replace(stmt, "$"+strconv.Itoa(i*2+2),
@@ -549,9 +716,8 @@ func multiCreateGroupInDb(tx *sqlx.Tx, Groups []string, userID int64) *ErrorResp
 		userGroupRows = append(userGroupRows, groupName)
 	}
 
-	_, err := tx.Exec(stmt, userGroupRows...)
+	_, err := db.Exec(stmt, userGroupRows...)
 	if err != nil {
-		_ = tx.Rollback()
 		msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
@@ -569,7 +735,7 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 	// then ONLY need to bind the policy to the user.
 
 	for _, user := range users.Users {
-		var userID int64
+		var userID int
 		stmt := `
 			INSERT INTO usr(name, email)
 			VALUES ($1, $2)
@@ -584,8 +750,18 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			msg := fmt.Sprintf("failed to insert user: user with this ID already exists: %s", user.Name)
 			return newErrorResponse(msg, 409, &err)
 		}
-		multiCreateGroupInDb(tx, users.Groups, userID)
-		multiCreatePolicyInDb(db, tx, users.Policies, userID)
+		errResponse := multiCreateGroupInDb(db, user.Groups, userID)
+		if errResponse != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("Create user fail - create groups: %s", user.Name)
+			return newErrorResponse(msg, 500, &err)
+		}
+		errResponse = multiCreatePolicyInDb(db, user.Policies, userID)
+		if errResponse != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("Create user fail - create policies: %s", user.Name)
+			return newErrorResponse(msg, 500, &err)
+		}
 	}
 
 	err = tx.Commit()

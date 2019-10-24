@@ -1,6 +1,8 @@
 package arborist
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -9,11 +11,13 @@ type FenceServer struct {
 	url		string
 }
 
-func (fenceServer *FenceServer) request(r *http.Request, url string, method string) (*http.Response, error) {
+func (fenceServer *FenceServer) request(r *http.Request, url string, method string, values map[string]string) (*http.Response, error) {
 	var netClient = &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	req, err := http.NewRequest(method, fenceServer.url + url, nil)
+
+	jsonValue, _ := json.Marshal(values)
+	req, err := http.NewRequest(method, fenceServer.url + url, bytes.NewBuffer(jsonValue))
 	if err != nil {
 		return nil, err
 	}
