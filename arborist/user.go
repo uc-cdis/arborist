@@ -339,7 +339,7 @@ func arboristUserExist(db *sqlx.DB, username string) (bool, error) {
 }
 
 func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
-	values := map[string]string{}
+	values := map[string]interface{}{}
 	values["name"] = user.Name
 	values["display_name"] = user.PreferredName
 	values["email"] = user.Email
@@ -365,8 +365,8 @@ func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUse
 }
 
 func updateFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
-	values := map[string]string{}
-	values["active"] = strconv.FormatBool(user.Active)
+	values := map[string]interface{}{}
+	values["active"] = user.Active
 	values["display_name"] = user.PreferredName
 	values["email"] = user.Email
 	resp, err := fence.request(r, "/admin/user/"+user.Name, "PUT", values)

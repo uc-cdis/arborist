@@ -11,7 +11,7 @@ type FenceServer struct {
 	url		string
 }
 
-func (fenceServer *FenceServer) request(r *http.Request, url string, method string, values map[string]string) (*http.Response, error) {
+func (fenceServer *FenceServer) request(r *http.Request, url string, method string, values map[string]interface{}) (*http.Response, error) {
 	var netClient = &http.Client{
 		Timeout: 10 * time.Second,
 	}
