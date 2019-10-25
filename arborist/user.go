@@ -228,7 +228,7 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	// fetch arborist user
-	userExist, err := arboristUserExist(server.db, user.Name)
+	existUserID, err := fetchArboristUserID(tx, user.Name)
 	if err != nil {
 		msg := fmt.Sprintf("could not fetch user from arborist: %s", err.Error())
 		server.logger.Info("tried to update user but input was invalid: %s", msg)
@@ -237,8 +237,8 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	authzProvider := getAuthZProvider(r)
-	if userExist {
-		errResponse := user.updateInDb(db, user.Name, authzProvider)
+	if existUserID != 0 {
+		errResponse := user.updateInDb(tx, user.Name, authzProvider)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -272,7 +272,7 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 			_ = tx.Rollback()
 			return
 		}
-		errResponse = multiCreatePolicyInDb(db, tx, user.Policies, userID)
+		errResponse = multiCreatePolicyInDb(tx, user.Policies, userID)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -328,14 +328,17 @@ func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser
 	return &fenceUser, nil
 }
 
-func arboristUserExist(db *sqlx.DB, username string) (bool, error) {
-	var count int
+func fetchArboristUserID(tx *sqlx.Tx, username string) (int, error) {
+	var userIDs []int
 
-	err := db.Get(&count, "SELECT count(*) FROM usr WHERE name = '"+username+"'")
+	err := tx.Select(&userIDs, "SELECT ID FROM usr WHERE name = '"+username+"'")
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return count > 0, nil
+	if len(userIDs) > 0 {
+		return userIDs[0], nil
+	}
+	return 0, nil
 }
 
 func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
@@ -587,21 +590,20 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
-	tx, err := db.Beginx()
-	errResponse := revokeUserPolicyAll(db, user.Name, authzProvider)
+func (user *User) updateInDb(tx *sqlx.Tx, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
+	errResponse := revokeUserPolicyAllWithTransaction(tx, user.Name, authzProvider)
 	if errResponse != nil {
 		msg := "Update user fail - revoke user policy: " + user.Name
 		return newErrorResponse(msg, 500, nil)
 	}
 
-	errResponse = revokeUserGroupAll(db, user.Name, authzProvider)
+	errResponse = revokeUserGroupAll(tx, user.Name, authzProvider)
 	if errResponse != nil {
 		msg := "Update user fail - revoke user group: " + user.Name
 		return newErrorResponse(msg, 500, nil)
 	}
 
-	userInDb, err := userWithName(db, user.Name)
+	existUserID, err := fetchArboristUserID(tx, user.Name)
 
 	if err != nil {
 		msg := "user query failed"
@@ -609,13 +611,13 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 	}
 
 	if len(user.Groups) != 0 {
-		errResponse = multiCreateGroupInDb(tx, user.Groups, userInDb.ID)
+		errResponse = multiCreateGroupInDb(tx, user.Groups, existUserID)
 		if errResponse != nil {
 			return errResponse
 		}
 	}
 	if len(user.Policies) != 0 {
-		errResponse = multiCreatePolicyInDb(db, tx, user.Policies, userInDb.ID)
+		errResponse = multiCreatePolicyInDb(tx, user.Policies, existUserID)
 		if errResponse != nil {
 			return errResponse
 		}
@@ -624,7 +626,7 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 	return nil
 }
 
-func multiCreatePolicyInDb(db * sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int) *ErrorResponse {
+func multiCreatePolicyInDb(tx *sqlx.Tx, Policies []PolicyBinding, userID int) *ErrorResponse {
 	var err error = nil
 	newPolicies := make([] struct {
 		policyBinding PolicyBinding
@@ -638,12 +640,12 @@ func multiCreatePolicyInDb(db * sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, 
 	newPolicyWithoutResourceQuantity := 0
 	for _, policyBinding := range Policies {
 		var policyID int64
-		policyInDb, err := policyWithName(db, policyBinding.Policy)
+		policyInDb, err := fetchPolicyID(tx, policyBinding.Policy)
 		if err != nil {
-			msg := "policy query failed"
+			msg := "policy query failed: " + err.Error()
 			return newErrorResponse(msg, 500, &err)
 		}
-		if policyInDb == nil {
+		if policyInDb == 0 {
 			// policy does not exist, insert the policy, get ID.
 			stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
 			row := tx.QueryRowx(stmt, policyBinding.Policy, "")
@@ -663,7 +665,7 @@ func multiCreatePolicyInDb(db * sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, 
 				newPolicyWithoutResourceQuantity = newPolicyWithoutResourceQuantity + 1
 			}
 		} else {
-			policyID = policyInDb.ID
+			policyID = int64(policyInDb)
 		}
 		userPolicyRows = append(userPolicyRows, userID)
 		userPolicyRows = append(userPolicyRows, policyID)
@@ -766,8 +768,8 @@ func (users *Users) multiCreateInDb(server *Server, w http.ResponseWriter, r *ht
 			return newErrorResponse(msg, 500, &err)
 		}
 
-		userExist, err := arboristUserExist(server.db, user.Name)
-		if userExist {
+		existUserID, err := fetchArboristUserID(tx, user.Name)
+		if existUserID != 0 {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("user with this name already exists in Arborist")
 			return newErrorResponse(msg, 500, &err)
@@ -796,7 +798,7 @@ func (users *Users) multiCreateInDb(server *Server, w http.ResponseWriter, r *ht
 			msg := fmt.Sprintf("Create user fail - create groups: %s", user.Name)
 			return newErrorResponse(msg, 500, &err)
 		}
-		errResponse = multiCreatePolicyInDb(db, tx, users.Policies, userID)
+		errResponse = multiCreatePolicyInDb(tx, users.Policies, userID)
 		if errResponse != nil {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("Create user fail - create policies: %s", user.Name)
@@ -901,7 +903,26 @@ func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullStr
 	return nil
 }
 
-func revokeUserGroupAll(db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
+func revokeUserPolicyAllWithTransaction(tx *sqlx.Tx, username string, authzProvider sql.NullString) *ErrorResponse {
+	stmt := `
+		DELETE FROM usr_policy
+		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
+	`
+	var err error = nil
+	if authzProvider.Valid {
+		stmt += " AND authz_provider = $2"
+		_, err = tx.Exec(stmt, username, authzProvider)
+	} else {
+		_, err = tx.Exec(stmt, username)
+	}
+	if err != nil {
+		msg := "revoke policy query failed"
+		return newErrorResponse(msg, 500, &err)
+	}
+	return nil
+}
+
+func revokeUserGroupAll(tx *sqlx.Tx, username string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_grp
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
@@ -909,9 +930,9 @@ func revokeUserGroupAll(db *sqlx.DB, username string, authzProvider sql.NullStri
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $2"
-		_, err = db.Exec(stmt, username, authzProvider)
+		_, err = tx.Exec(stmt, username, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, username)
+		_, err = tx.Exec(stmt, username)
 	}
 	if err != nil {
 		msg := "revoke group query failed"
