@@ -129,6 +129,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
 	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource/namespace", http.HandlerFunc(server.handleResourceWithNamespace)).Methods("GET")
+	router.Handle("/resource/namespace/{namespace}", http.HandlerFunc(server.handleResourceByNamespace)).Methods("GET")
 	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
@@ -824,10 +825,30 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 	_ = jsonResponseFrom(resource, http.StatusOK).write(w, r)
 }
 
+func (server *Server) handleResourceByNamespace(w http.ResponseWriter, r *http.Request) {
+	namespace := mux.Vars(r)["namespace"]
+	resourcesFromQuery, err := resourceWithNamespace(server.db, namespace)
+	resources := []ResourceOut{}
+	for _, resourceFromQuery := range resourcesFromQuery {
+		resources = append(resources, resourceFromQuery.standardize())
+	}
+	if err != nil {
+		msg := fmt.Sprintf("resources with namespace query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	result := struct {
+		Resources []ResourceOut `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
 func (server *Server) handleResourceWithNamespace(w http.ResponseWriter, r *http.Request) {
-	vars := r.URL.Query()
-	path := vars.Get("path")
-	resourcesFromQuery, err := resourceWithNamespace(server.db, path)
+	resourcesFromQuery, err := resourceWithNamespace(server.db, "")
 	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
