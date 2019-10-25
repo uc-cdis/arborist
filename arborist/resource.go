@@ -29,6 +29,7 @@ type ResourceOut struct {
 	Tag          string   `json:"tag"`
 	Description  string   `json:"description"`
 	Subresources []string `json:"subresources"`
+	Namespace	 bool	  `json:"namespace"`
 }
 
 var regPercent *regexp.Regexp = regexp.MustCompile(`%`)
@@ -126,6 +127,7 @@ type ResourceFromQuery struct {
 	Description  *string        `db:"description"`
 	Path         string         `db:"path"`
 	Subresources pq.StringArray `db:"subresources"`
+	Namespace	 bool			`db:"namespace"`
 }
 
 // standardize takes a resource returned from a query and turns it into the
@@ -140,6 +142,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 		Path:         UnderscoreDecode(formatDbPath(resourceFromQuery.Path)),
 		Tag:          resourceFromQuery.Tag,
 		Subresources: subresources,
+		Namespace:	  resourceFromQuery.Namespace,
 	}
 	if resourceFromQuery.Description != nil {
 		resource.Description = *resourceFromQuery.Description
@@ -284,6 +287,7 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 			parent.path,
 			parent.tag,
 			parent.description,
+			parent.namespace,
 			array(
 				SELECT child.path
 				FROM resource AS child
