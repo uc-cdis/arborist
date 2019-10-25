@@ -28,7 +28,6 @@ type GroupBinding struct {
 }
 
 func (policyBinding *PolicyBinding) standardize() PolicyBinding {
-	policyBinding.Resource = UnderscoreDecode(policyBinding.Resource)
 	policy := PolicyBinding{
 		Policy:    policyBinding.Policy,
 		Role:      policyBinding.Role,
@@ -39,22 +38,22 @@ func (policyBinding *PolicyBinding) standardize() PolicyBinding {
 }
 
 type FenceUser struct {
-	Name               string          `json:"name"`
-	Email              string          `json:"email,omitempty"`
-	PreferredName	   string 		   `json:"preferred_username"`
-	Active			   bool			   `json:"active"`
+	Name          string `json:"name"`
+	Email         string `json:"email,omitempty"`
+	PreferredName string `json:"preferred_username"`
+	Active        bool   `json:"active"`
 }
 
 type FenceUsers struct {
-	Users	 []FenceUser	 `json:"users"`
-	Pagination Pagination	`json:"pagination"`
+	Users      []FenceUser `json:"users"`
+	Pagination Pagination  `json:"pagination"`
 }
 
 type User struct {
 	Name               string          `json:"name"`
 	Email              string          `json:"email,omitempty"`
-	PreferredName	   string 		   `json:"preferred_username"`
-	Active			   bool			   `json:"active"`
+	PreferredName      string          `json:"preferred_username"`
+	Active             bool            `json:"active"`
 	Groups             []string        `json:"groups"`
 	GroupsWithPolicies []GroupBinding  `json:"groups_with_policies"`
 	Policies           []PolicyBinding `json:"policies"`
@@ -74,6 +73,7 @@ func (user *User) UnmarshalJSON(data []byte) error {
 	}
 	optionalFields := map[string]struct{}{
 		"email":                struct{}{},
+		"active":               struct{}{},
 		"groups":               struct{}{},
 		"policies":             struct{}{},
 		"groups_with_policies": struct{}{},
@@ -107,12 +107,12 @@ type UserFromQuery struct {
 func (fenceUser *FenceUser) standardize() User {
 	user := User{
 		Name:               fenceUser.Name,
-		PreferredName:		fenceUser.PreferredName,
-		Email:				fenceUser.Email,
-		Active:				fenceUser.Active,
-		GroupsWithPolicies:	[]GroupBinding{},
-		Policies:			[]PolicyBinding{},
-		Groups:				[]string{},
+		PreferredName:      fenceUser.PreferredName,
+		Email:              fenceUser.Email,
+		Active:             fenceUser.Active,
+		GroupsWithPolicies: []GroupBinding{},
+		Policies:           []PolicyBinding{},
+		Groups:             []string{},
 	}
 	return user
 }
@@ -238,11 +238,11 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 	}
 	authzProvider := getAuthZProvider(r)
 	if userExist {
-		errResponse := user.updateInDb(server.db, user.Name, authzProvider)
+		errResponse := user.updateInDb(db, user.Name, authzProvider)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
-			tx.Rollback()
+			_ = tx.Rollback()
 			return
 		}
 	} else {
@@ -264,18 +264,19 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 			_ = response.write(w, r)
 			return
 		}
-		errResponse := multiCreateGroupInDb(db, user.Groups, userID)
+
+		errResponse := multiCreateGroupInDb(tx, user.Groups, userID)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
-			tx.Rollback()
+			_ = tx.Rollback()
 			return
 		}
-		errResponse = multiCreatePolicyInDb(db, user.Policies, userID)
+		errResponse = multiCreatePolicyInDb(db, tx, user.Policies, userID)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
-			tx.Rollback()
+			_ = tx.Rollback()
 			return
 		}
 	}
@@ -289,7 +290,7 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		server.logger.Info("tried to update user but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 500, nil)
 		_ = response.write(w, r)
-		tx.Rollback()
+		_ = tx.Rollback()
 		return
 	}
 	err = tx.Commit()
@@ -298,13 +299,13 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		server.logger.Info("tried to update user but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 500, nil)
 		_ = response.write(w, r)
-		tx.Rollback()
+		_ = tx.Rollback()
 		return
 	}
 }
 
 func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
-	resp, err := fence.request(r, "/admin/user/" + user.Name, "GET", nil)
+	resp, err := fence.request(r, "/admin/user/"+user.Name, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +331,14 @@ func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser
 func arboristUserExist(db *sqlx.DB, username string) (bool, error) {
 	var count int
 
-	err := db.Get(&count, "SELECT count(*) FROM usr WHERE name = '" + username + "'")
+	err := db.Get(&count, "SELECT count(*) FROM usr WHERE name = '"+username+"'")
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
-func createFenceUser (fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
 	values := map[string]string{}
 	values["name"] = user.Name
 	values["display_name"] = user.PreferredName
@@ -363,12 +364,12 @@ func createFenceUser (fence *FenceServer, r *http.Request, user *User) (*FenceUs
 	return &fenceUser, nil
 }
 
-func updateFenceUser (fence *FenceServer, r *http.Request, user *User) (*FenceUser, error){
+func updateFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
 	values := map[string]string{}
 	values["active"] = strconv.FormatBool(user.Active)
 	values["display_name"] = user.PreferredName
 	values["email"] = user.Email
-	resp, err := fence.request(r, "/admin/user/" + user.Name, "PUT", values)
+	resp, err := fence.request(r, "/admin/user/"+user.Name, "PUT", values)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +401,7 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 	var fenceResp *http.Response
 	params := make([]string, 0)
 	if keyword != "" {
-		params = append(params, "keyword=" + keyword)
+		params = append(params, "keyword="+keyword)
 	}
 	if len(vars["groups[]"]) != 0 || len(vars["resources[]"]) != 0 || len(vars["roles[]"]) != 0 {
 		path := "/admin/user"
@@ -413,8 +414,8 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 		}
 		fenceResp = resp
 	} else {
-		params = append(params, "page=" + page)
-		params = append(params, "page_size=" + pageSize)
+		params = append(params, "page="+page)
+		params = append(params, "page_size="+pageSize)
 		path := "/admin/paginated_users"
 		path = path + "?" + strings.Join(params, "&")
 		resp, err := server.fence.request(r, path, "GET", nil)
@@ -450,9 +451,9 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagi
 				SELECT json_agg(json_build_object('name', grp.name, 'policies', (
 					SELECT json_agg(json_build_object('policy',policy.name, 'role', role.name ,'resource', resource.name, 'resource_path', resource.path)) 
 					FROM grp_policy 
-					LEFT JOIN policy ON policy.id = grp_policy.policy_id 
-					LEFT JOIN policy_role ON policy_role.policy_id = policy.id 
-					LEFT JOIN role ON role.id = policy_role.role_id 
+					INNER JOIN policy ON policy.id = grp_policy.policy_id 
+					INNER JOIN policy_role ON policy_role.policy_id = policy.id 
+					INNER JOIN role ON role.id = policy_role.role_id 
 					LEFT JOIN policy_resource ON policy_resource.policy_id = policy.id 
 					LEFT JOIN resource ON resource.id = policy_resource.resource_id
 					WHERE grp_policy.grp_id = grp.id)))  
@@ -467,8 +468,8 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagi
 				INNER JOIN policy ON policy.id = usr_policy.policy_id
 				INNER JOIN policy_role ON policy_role.policy_id = policy.id
 				INNER JOIN role ON role.id = policy_role.role_id
-				INNER JOIN policy_resource ON policy_resource.policy_id = policy.id
-				INNER JOIN resource ON resource.id = policy_resource.resource_id
+				LEFT JOIN policy_resource ON policy_resource.policy_id = policy.id
+				LEFT JOIN resource ON resource.id = policy_resource.resource_id
 				WHERE usr_policy.usr_id = usr.id
 			) AS policies
 		FROM usr
@@ -586,8 +587,8 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-
 func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
+	tx, err := db.Beginx()
 	errResponse := revokeUserPolicyAll(db, user.Name, authzProvider)
 	if errResponse != nil {
 		msg := "Update user fail - revoke user policy: " + user.Name
@@ -607,19 +608,23 @@ func (user *User) updateInDb(db *sqlx.DB, nameInDb string, authzProvider sql.Nul
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	errResponse = multiCreateGroupInDb(db, user.Groups, userInDb.ID)
-	if errResponse != nil {
-		return errResponse
+	if len(user.Groups) != 0 {
+		errResponse = multiCreateGroupInDb(tx, user.Groups, userInDb.ID)
+		if errResponse != nil {
+			return errResponse
+		}
 	}
-	errResponse = multiCreatePolicyInDb(db, user.Policies, userInDb.ID)
-	if errResponse != nil {
-		return errResponse
+	if len(user.Policies) != 0 {
+		errResponse = multiCreatePolicyInDb(db, tx, user.Policies, userInDb.ID)
+		if errResponse != nil {
+			return errResponse
+		}
 	}
 
 	return nil
 }
 
-func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *ErrorResponse {
+func multiCreatePolicyInDb(db * sqlx.DB, tx *sqlx.Tx, Policies []PolicyBinding, userID int) *ErrorResponse {
 	var err error = nil
 	newPolicies := make([] struct {
 		policyBinding PolicyBinding
@@ -630,6 +635,7 @@ func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *E
 	}
 	userPolicyStmt := multiInsertStmt("usr_policy(usr_id,policy_id)", len(Policies))
 	userPolicyRows := []interface{}{}
+	newPolicyWithoutResourceQuantity := 0
 	for _, policyBinding := range Policies {
 		var policyID int64
 		policyInDb, err := policyWithName(db, policyBinding.Policy)
@@ -638,9 +644,9 @@ func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *E
 			return newErrorResponse(msg, 500, &err)
 		}
 		if policyInDb == nil {
-			// policy does not exist
+			// policy does not exist, insert the policy, get ID.
 			stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-			row := db.QueryRowx(stmt, policyBinding.Policy, "")
+			row := tx.QueryRowx(stmt, policyBinding.Policy, "")
 			err := row.Scan(&policyID)
 
 			if err != nil {
@@ -652,6 +658,10 @@ func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *E
 				policyBinding PolicyBinding
 				policyID      int64
 			}{policyBinding: policyBinding, policyID: policyID})
+			// When the policy is new and the policy only binds role
+			if policyBinding.Resource == "" {
+				newPolicyWithoutResourceQuantity = newPolicyWithoutResourceQuantity + 1
+			}
 		} else {
 			policyID = policyInDb.ID
 		}
@@ -660,39 +670,44 @@ func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *E
 	}
 
 	policyRoleStmt := multiInsertStmt("policy_role(policy_id, role_id)", len(newPolicies))
-	policyResourceStmt := multiInsertStmt("policy_resource(policy_id, resource_id)", len(newPolicies))
+	policyResourceStmt := multiInsertStmt("policy_resource(policy_id, resource_id)", len(newPolicies)-newPolicyWithoutResourceQuantity)
 	policyRoleRows := []interface{}{}
 	policyResourceRows := []interface{}{}
 
 	if len(newPolicies) != 0 {
-		// New policy requires binding of role and resource
+		// new policy requires binding of role and resource
 		for i, policy := range newPolicies {
-			// Create policy with resource and role
+			// create policy with resource and role
 			policyRoleStmt = strings.Replace(policyRoleStmt, "$"+strconv.Itoa(i*2+2),
 				"(SELECT id FROM role WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
-			policyResourceStmt = strings.Replace(policyResourceStmt, "$"+strconv.Itoa(i*2+2),
-				"(SELECT id FROM resource WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
+			if i < (len(newPolicies) - newPolicyWithoutResourceQuantity) {
+				policyResourceStmt = strings.Replace(policyResourceStmt, "$"+strconv.Itoa(i*2+2),
+					"(SELECT id FROM resource WHERE name = $"+strconv.Itoa(i*2+2)+")", 1)
+			}
 			policyRoleRows = append(policyRoleRows, policy.policyID)
+			if policy.policyBinding.Resource != "" {
+				policyResourceRows = append(policyResourceRows, policy.policyID)
+				policyResourceRows = append(policyResourceRows, UnderscoreEncode(policy.policyBinding.Resource))
+			}
 			policyRoleRows = append(policyRoleRows, policy.policyBinding.Role)
-			policyResourceRows = append(policyResourceRows, policy.policyID)
 			// Resource name needs to encode
-			policyResourceRows = append(policyResourceRows, UnderscoreEncode(policy.policyBinding.Resource))
 		}
-
-		_, err = db.Exec(policyRoleStmt, policyRoleRows...)
+		_, err = tx.Exec(policyRoleStmt, policyRoleRows...)
 		if err != nil {
 			msg := fmt.Sprintf("failed to bind Role with policy while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
 		}
 
-		_, err = db.Exec(policyResourceStmt, policyResourceRows...)
-		if err != nil {
-			msg := fmt.Sprintf("failed to bind Resource with policy while adding users: %s", err.Error())
-			return newErrorResponse(msg, 500, &err)
+		if len(newPolicies)-newPolicyWithoutResourceQuantity > 0 {
+			_, err = tx.Exec(policyResourceStmt, policyResourceRows...)
+			if err != nil {
+				msg := fmt.Sprintf("failed to bind Resource with policy while adding users: %s", err.Error())
+				return newErrorResponse(msg, 500, &err)
+			}
 		}
 	}
 
-	_, err = db.Exec(userPolicyStmt, userPolicyRows...)
+	_, err = tx.Exec(userPolicyStmt, userPolicyRows...)
 	if err != nil {
 		msg := fmt.Sprintf("failed to bind user with policy while adding users: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -700,7 +715,7 @@ func multiCreatePolicyInDb(db *sqlx.DB, Policies []PolicyBinding, userID int) *E
 	return nil
 }
 
-func multiCreateGroupInDb(db *sqlx.DB, Groups []string, userID int) *ErrorResponse {
+func multiCreateGroupInDb(tx *sqlx.Tx, Groups []string, userID int) *ErrorResponse {
 	if len(Groups) <= 0 {
 		return nil
 	}
@@ -715,8 +730,7 @@ func multiCreateGroupInDb(db *sqlx.DB, Groups []string, userID int) *ErrorRespon
 		userGroupRows = append(userGroupRows, userID)
 		userGroupRows = append(userGroupRows, groupName)
 	}
-
-	_, err := db.Exec(stmt, userGroupRows...)
+	_, err := tx.Exec(stmt, userGroupRows...)
 	if err != nil {
 		msg := fmt.Sprintf("failed to bind group while adding users: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -724,7 +738,8 @@ func multiCreateGroupInDb(db *sqlx.DB, Groups []string, userID int) *ErrorRespon
 	return nil
 }
 
-func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
+func (users *Users) multiCreateInDb(server *Server, w http.ResponseWriter, r *http.Request, ) *ErrorResponse {
+	db := server.db
 	tx, err := db.Beginx()
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
@@ -735,6 +750,30 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 	// then ONLY need to bind the policy to the user.
 
 	for _, user := range users.Users {
+		// fetch fence user
+		fenceUser, err := fetchFenceUser(server.fence, r, &user)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("could not fetch user from fence: %s", err.Error())
+			server.logger.Info("on fetch user from Fence: %s", msg)
+			//response := newErrorResponse(msg, 500, nil)
+			//_ = response.write(w, r)
+			return newErrorResponse(msg, 500, &err)
+		}
+		if fenceUser != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("user with this name already exists in Fence")
+			return newErrorResponse(msg, 500, &err)
+		}
+
+		userExist, err := arboristUserExist(server.db, user.Name)
+		if userExist {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("user with this name already exists in Arborist")
+			return newErrorResponse(msg, 500, &err)
+		}
+		_, err = createFenceUser(server.fence, r, &user)
+
 		var userID int
 		stmt := `
 			INSERT INTO usr(name, email)
@@ -742,7 +781,7 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			RETURNING id
 		`
 		row := tx.QueryRowx(stmt, user.Name, user.Email)
-		err := row.Scan(&userID)
+		err = row.Scan(&userID)
 		if err != nil {
 			_ = tx.Rollback()
 			// this should only fail because the user was not unique. return error
@@ -750,13 +789,14 @@ func (users *Users) multiCreateInDb(db *sqlx.DB) *ErrorResponse {
 			msg := fmt.Sprintf("failed to insert user: user with this ID already exists: %s", user.Name)
 			return newErrorResponse(msg, 409, &err)
 		}
-		errResponse := multiCreateGroupInDb(db, user.Groups, userID)
+
+		errResponse := multiCreateGroupInDb(tx, users.Groups, userID)
 		if errResponse != nil {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("Create user fail - create groups: %s", user.Name)
 			return newErrorResponse(msg, 500, &err)
 		}
-		errResponse = multiCreatePolicyInDb(db, user.Policies, userID)
+		errResponse = multiCreatePolicyInDb(db, tx, users.Policies, userID)
 		if errResponse != nil {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("Create user fail - create policies: %s", user.Name)
