@@ -1016,7 +1016,7 @@ func (server *Server) handleUsersCreate(w http.ResponseWriter, r *http.Request, 
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := users.multiCreateInDb(server.db)
+	errResponse := users.multiCreateInDb(server, w, r)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
