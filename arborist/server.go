@@ -1168,12 +1168,22 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
 	authzProvider := getAuthZProvider(r)
-	errResponse := revokeUserPolicyAll(server.db, username, authzProvider)
-	if errResponse != nil {
+	tx, err := server.db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
+	errResponse := revokeUserPolicyAll(tx, username, authzProvider)
+	if errResponse != nil {
+		_ = tx.Rollback()
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = tx.Commit()
 	if authzProvider.Valid {
 		server.logger.Info("revoked all %s policies for user %s", authzProvider.String, username)
 	} else {

@@ -591,7 +591,7 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 }
 
 func (user *User) updateInDb(tx *sqlx.Tx, nameInDb string, authzProvider sql.NullString) *ErrorResponse {
-	errResponse := revokeUserPolicyAllWithTransaction(tx, user.Name, authzProvider)
+	errResponse := revokeUserPolicyAll(tx, user.Name, authzProvider)
 	if errResponse != nil {
 		msg := "Update user fail - revoke user policy: " + user.Name
 		return newErrorResponse(msg, 500, nil)
@@ -884,26 +884,7 @@ func revokeUserPolicy(db *sqlx.DB, username string, policyName string, authzProv
 	return nil
 }
 
-func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
-	stmt := `
-		DELETE FROM usr_policy
-		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
-	`
-	var err error = nil
-	if authzProvider.Valid {
-		stmt += " AND authz_provider = $2"
-		_, err = db.Exec(stmt, username, authzProvider)
-	} else {
-		_, err = db.Exec(stmt, username)
-	}
-	if err != nil {
-		msg := "revoke policy query failed"
-		return newErrorResponse(msg, 500, &err)
-	}
-	return nil
-}
-
-func revokeUserPolicyAllWithTransaction(tx *sqlx.Tx, username string, authzProvider sql.NullString) *ErrorResponse {
+func revokeUserPolicyAll(tx *sqlx.Tx, username string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
