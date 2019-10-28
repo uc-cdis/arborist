@@ -983,10 +983,11 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	vars := r.URL.Query()
-	fenceUsers, err := fetchFenceUsers(server, w, r)
+	fenceUsers,fenceRequestStatusCode, err := fetchFenceUsers(server, w, r)
 	if err != nil {
+		fmt.Println(err)
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
-		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse := newErrorResponse(msg, fenceRequestStatusCode, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
