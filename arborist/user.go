@@ -211,11 +211,11 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	// fetch fence user
-	fenceUser, err := fetchFenceUser(server.fence, r, user)
+	fenceUser, statusCode, err := fetchFenceUser(server.fence, r, user)
 	if err != nil {
 		msg := fmt.Sprintf("could not fetch user from fence: %s", err.Error())
 		server.logger.Info("tried to update user but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 500, nil)
+		response := newErrorResponse(msg, statusCode, nil)
 		_ = response.write(w, r)
 		return
 	} else if fenceUser == nil {
@@ -281,14 +281,14 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	if create && fenceUser == nil {
-		_, err = createFenceUser(server.fence, r, user)
+		_, statusCode, err = createFenceUser(server.fence, r, user)
 	} else {
-		_, err = updateFenceUser(server.fence, r, user)
+		_, statusCode, err = updateFenceUser(server.fence, r, user)
 	}
 	if err != nil {
 		msg := "could not update user to fence: " + err.Error()
 		server.logger.Info("tried to update user but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 500, nil)
+		response := newErrorResponse(msg, statusCode, nil)
 		_ = response.write(w, r)
 		_ = tx.Rollback()
 		return
@@ -304,28 +304,28 @@ func createOrUpdateUser(server *Server, w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+func fetchFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, int, error) {
 	resp, err := fence.request(r, "/admin/user/"+user.Name, "GET", nil)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
-		return nil, nil
+		return nil, resp.StatusCode, nil
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.New(resp.Status)
+		return nil, resp.StatusCode, errors.New(resp.Status)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	fenceUser := FenceUser{}
 	err = json.Unmarshal(body, &fenceUser)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
-	return &fenceUser, nil
+	return &fenceUser, 200, nil
 }
 
 func fetchArboristUserID(tx *sqlx.Tx, username string) (int, error) {
@@ -341,59 +341,59 @@ func fetchArboristUserID(tx *sqlx.Tx, username string) (int, error) {
 	return 0, nil
 }
 
-func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+func createFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, int, error) {
 	values := map[string]interface{}{}
 	values["name"] = user.Name
 	values["display_name"] = user.PreferredName
 	values["email"] = user.Email
 	resp, err := fence.request(r, "/admin/user", "POST", values)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		err := errors.New(resp.Status)
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	fenceUser := FenceUser{}
 	err = json.Unmarshal(body, &fenceUser)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
-	return &fenceUser, nil
+	return &fenceUser, 200, nil
 }
 
-func updateFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, error) {
+func updateFenceUser(fence *FenceServer, r *http.Request, user *User) (*FenceUser, int, error) {
 	values := map[string]interface{}{}
 	values["active"] = user.Active
 	values["display_name"] = user.PreferredName
 	values["email"] = user.Email
 	resp, err := fence.request(r, "/admin/user/"+user.Name, "PUT", values)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		err := errors.New(resp.Status)
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	fenceUser := FenceUser{}
 	err = json.Unmarshal(body, &fenceUser)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
-	return &fenceUser, nil
+	return &fenceUser, 200, nil
 }
 
-func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*FenceUsers, error) {
+func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*FenceUsers, int, error) {
 	vars := r.URL.Query()
 	var page string
 	var pageSize string
@@ -413,7 +413,7 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 		}
 		resp, err := server.fence.request(r, path, "GET", nil)
 		if err != nil {
-			return nil, err
+			return nil, 500, err
 		}
 		fenceResp = resp
 	} else {
@@ -423,25 +423,25 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 		path = path + "?" + strings.Join(params, "&")
 		resp, err := server.fence.request(r, path, "GET", nil)
 		if err != nil {
-			return nil, err
+			return nil, 500, err
 		}
 		fenceResp = resp
 	}
 	defer fenceResp.Body.Close()
 	if fenceResp.StatusCode != 200 {
 		err := errors.New(fenceResp.Status)
-		return nil, err
+		return nil, fenceResp.StatusCode, err
 	}
 	body, err := ioutil.ReadAll(fenceResp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
 	fenceUsers := FenceUsers{}
 	err = json.Unmarshal(body, &fenceUsers)
 	if err != nil {
-		return nil, err
+		return nil, 500, err
 	}
-	return &fenceUsers, nil
+	return &fenceUsers, 200, nil
 }
 
 func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagination) ([]UserFromQuery, *Pagination, error) {
@@ -753,28 +753,35 @@ func (users *Users) multiCreateInDb(server *Server, w http.ResponseWriter, r *ht
 
 	for _, user := range users.Users {
 		// fetch fence user
-		fenceUser, err := fetchFenceUser(server.fence, r, &user)
+		fenceUser, statusCode, err := fetchFenceUser(server.fence, r, &user)
 		if err != nil {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("could not fetch user from fence: %s", err.Error())
 			server.logger.Info("on fetch user from Fence: %s", msg)
 			//response := newErrorResponse(msg, 500, nil)
 			//_ = response.write(w, r)
-			return newErrorResponse(msg, 500, &err)
+			return newErrorResponse(msg, statusCode, &err)
 		}
 		if fenceUser != nil {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("user with this name already exists in Fence")
-			return newErrorResponse(msg, 500, &err)
+			return newErrorResponse(msg, 409, &err)
 		}
 
 		existUserID, err := fetchArboristUserID(tx, user.Name)
 		if existUserID != 0 {
 			_ = tx.Rollback()
 			msg := fmt.Sprintf("user with this name already exists in Arborist")
-			return newErrorResponse(msg, 500, &err)
+			return newErrorResponse(msg, 409, &err)
 		}
-		_, err = createFenceUser(server.fence, r, &user)
+
+		_, statusCode, err = createFenceUser(server.fence, r, &user)
+		if err != nil {
+			msg := "failed to insert user: " + err.Error()
+			server.logger.Info("tried to create user to fence but failed: %s", msg)
+			_ = tx.Rollback()
+			return newErrorResponse(msg, statusCode, nil)
+		}
 
 		var userID int
 		stmt := `
