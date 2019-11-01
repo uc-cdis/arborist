@@ -429,14 +429,14 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
-	user, err := userWithName(db, request.Username)
-	if err != nil {
-		return nil, newErrorResponse("resources query failed; couldn't find user", 500, &err)
-	}
-	if user == nil {
-		msg := fmt.Sprintf("user does not exist: `%s`", request.Username)
-		return nil, newErrorResponse(msg, 404, nil)
-	}
+	// user, err := userWithName(db, request.Username)
+	// if err != nil {
+	// 	return nil, newErrorResponse("resources query failed; couldn't find user", 500, &err)
+	// }
+	// if user == nil {
+	// 	msg := fmt.Sprintf("user does not exist: `%s`", request.Username)
+	// 	return nil, newErrorResponse(msg, 404, nil)
+	// }
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
@@ -521,7 +521,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err = db.Select(&resources, stmt, request.Username)
+		err := db.Select(&resources, stmt, request.Username)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username) failed",
@@ -568,7 +568,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err = db.Select(&resources, stmt, request.Username, request.ClientID)
+		err := db.Select(&resources, stmt, request.Username, request.ClientID)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username + client) failed",
@@ -590,17 +590,17 @@ type AuthMappingQuery struct {
 type AuthMapping map[string][]Action
 
 func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
-	userFromQuery, err := userWithName(db, username)
-	if err != nil {
-		errResponse := newErrorResponse("couldn't look up user; check format on username", 400, &err)
-		errResponse.log.Error(err.Error())
-		return nil, errResponse
-	}
-	if userFromQuery == nil {
-		msg := fmt.Sprintf("user does not exist: `%s`", username)
-		errResponse := newErrorResponse(msg, 400, &err)
-		return nil, errResponse
-	}
+	// userFromQuery, err := userWithName(db, username)
+	// if err != nil {
+	// 	errResponse := newErrorResponse("couldn't look up user; check format on username", 400, &err)
+	// 	errResponse.log.Error(err.Error())
+	// 	return nil, errResponse
+	// }
+	// if userFromQuery == nil {
+	// 	msg := fmt.Sprintf("user does not exist: `%s`", username)
+	// 	errResponse := newErrorResponse(msg, 400, &err)
+	// 	return nil, errResponse
+	// }
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -625,7 +625,7 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 	`
-	err = db.Select(&mappingQuery, stmt, username)
+	err := db.Select(&mappingQuery, stmt, username)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error(err.Error())
