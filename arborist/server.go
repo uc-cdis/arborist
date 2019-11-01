@@ -980,20 +980,23 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	vars := r.URL.Query()
-	fenceUsers,fenceRequestStatusCode, err := fetchFenceUsers(server, w, r)
-	if err != nil {
-		fmt.Println(err)
-		msg := fmt.Sprintf("users query failed: %s", err.Error())
-		errResponse := newErrorResponse(msg, fenceRequestStatusCode, nil)
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
+	fenceUsers := &FenceUsers{}
+	if server.fence != nil && server.fence.url != "" {
+		users, fenceRequestStatusCode, err := fetchFenceUsers(server, w, r)
+		if err != nil {
+			msg := fmt.Sprintf("users query failed: %s", err.Error())
+			errResponse := newErrorResponse(msg, fenceRequestStatusCode, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		fenceUsers = users
 	}
 	userNames := make([]string, 0)
 	for _, user := range fenceUsers.Users {
 		userNames = append(userNames, user.Name)
 	}
-	usersFromQuery, pagination, err := listUsersFromDb(server.db, r, userNames, &fenceUsers.Pagination)
+	usersFromQuery, pagination, err := listUsersFromDb(server.db, r, userNames, &fenceUsers.Pagination, server.fence != nil && server.fence.url != "")
 
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
@@ -1003,18 +1006,25 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	users := []User{}
-	for _, fenceUser := range fenceUsers.Users {
-		find := false
-		for _, userFromQuery := range usersFromQuery {
-			if fenceUser.Name == userFromQuery.Name {
-				users = append(users, userFromQuery.standardize(&fenceUser))
-				find = true
+	if server.fence != nil && server.fence.url != "" {
+		for _, fenceUser := range fenceUsers.Users {
+			find := false
+			for _, userFromQuery := range usersFromQuery {
+				if fenceUser.Name == userFromQuery.Name {
+					users = append(users, userFromQuery.standardize(&fenceUser))
+					find = true
+				}
+			}
+			if len(vars["groups[]"]) == 0 && len(vars["resources[]"]) == 0 && len(vars["roles[]"]) == 0 && !find {
+				users = append(users, fenceUser.standardize())
 			}
 		}
-		if len(vars["groups[]"]) == 0 && len(vars["resources[]"]) == 0 && len(vars["roles[]"]) == 0 && !find {
-			users = append(users, fenceUser.standardize())
+	} else {
+		for _, userFromQuery := range usersFromQuery {
+			users = append(users, userFromQuery.standardize(nil))
 		}
 	}
+
 	result := struct {
 		Users []User `json:"users"`
 		Pagination *Pagination `json:"pagination"`

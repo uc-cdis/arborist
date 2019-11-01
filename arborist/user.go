@@ -444,7 +444,7 @@ func fetchFenceUsers(server *Server, w http.ResponseWriter, r *http.Request) (*F
 	return &fenceUsers, 200, nil
 }
 
-func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagination) ([]UserFromQuery, *Pagination, error) {
+func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagination, inUserNames bool) ([]UserFromQuery, *Pagination, error) {
 	stmt := `
 		SELECT
 			usr.id,
@@ -526,9 +526,11 @@ func listUsersFromDb(db *sqlx.DB, r *http.Request, userNames []string, pag *Pagi
 			`
 		}
 	}
-	stmt = stmt + `
-		WHERE usr.name in ('` + strings.Join(userNames, "', '") + `')
-	`
+	if inUserNames {
+		stmt = stmt + `
+			WHERE usr.name in ('` + strings.Join(userNames, "', '") + `')
+		`
+	}
 	stmt = stmt + `
 		GROUP BY usr.id
 	`

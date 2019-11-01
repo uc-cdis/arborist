@@ -1,3 +1,3 @@
-UPDATE db_version SET (id, version) = (2, '2019-08-26T190435Z_expires_at');
+UPDATE db_version SET (id, version) = (3, '2019-09-03T155025Z_authz_provider');
 
 ALTER TABLE resource DROP COLUMN namespace;
