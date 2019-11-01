@@ -72,9 +72,6 @@ func (server *Server) Init() (*Server, error) {
 	if server.logger == nil {
 		return nil, errors.New("arborist server initialized without logger")
 	}
-	if server.fence == nil || server.fence.url == "" {
-		return nil, errors.New("arborist server initialized without fence url")
-	}
 
 	return server, nil
 }
