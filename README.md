@@ -63,7 +63,7 @@ createdb
 ./migrations/latest
 
 # example command to run the server (see also `--help`):
-./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/well-known/.jwks
+./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/.well-known/jwks
 ```
 
 ### Building With Docker
