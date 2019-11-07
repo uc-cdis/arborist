@@ -37,6 +37,7 @@ You will need these:
 
 - [Go](https://golang.org/dl/)
 - [PostgreSQL](https://www.postgresql.org/download/)
+- a Postgres superuser--Arborist uses the Postgres `ltree` extension module, and the `CREATE EXTENSION` command [must be run by a database superuser](https://www.postgresql.org/docs/9.6/contrib.html).
 
 ```bash
 # clone it
@@ -48,7 +49,8 @@ cd ~/go/src/github.com/uc-cdis/arborist
 # build the code
 make
 
-# set up database; use whatever values for database name etc. you like
+# set up database; use whatever values for database name etc. you like,
+# but PGUSER must be a postgres superuser
 export \
     PGDATABASE=arborist_test \
     PGUSER=username \
