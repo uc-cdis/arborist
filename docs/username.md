@@ -2,6 +2,8 @@
 
 This document describes how Arborist should behave when the user is or is not known to Arborist.
 
+(Note: As of 2019-Nov-13 this is not yet how Arborist _actually_ behaves.)
+
 ## Context
 
 Arborist always has 2 default groups:
@@ -28,6 +30,8 @@ These endpoints return everything the user has access to, including anonymous an
 - Username is specified and it is in Arborist's database: return user's policies + anonymous and logged-in policies.
 - Username is specified but it is not in Arborist's database: return anonymous and logged-in policies.
 - No username can be found: return the anonymous policies.
+
+>Background: Originally `auth/mapping` only took the username from a query parameter. Then the revproxy needed to expose the endpoint so that Windmill could hit it. But we couldn't allow users to hit `auth/mapping` with arbitrary usernames. So the revproxy does not forward any query parameters, and we added the JWT fallback in Arborist.
 
 ## GET user/{username} and GET user/{username}/... endpoints
 
