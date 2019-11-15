@@ -458,6 +458,110 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	// setupAnonymousPolicies creates policies for the Anonymous group
+	// and returns the policies, resource paths, and auth mapping for the group.
+	setupAnonymousPolicies := func(t *testing.T) ([]arborist.Policy, []string, arborist.AuthMapping) {
+		// create test resources
+		resourcePath := "/anonymous-resource-path"
+		createResourceBytes(t, []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath)))
+		// create test role
+		roleName := "anonymous-test-role"
+		permissionName := "qwer"
+		serviceName := "zxcv"
+		methodName := permissionName
+		createRoleBytes(
+			t,
+			[]byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"permissions": [
+						{"id": "%s", "action": {"service": "%s", "method": "%s"}}
+					]
+				}`,
+				roleName,
+				permissionName,
+				serviceName,
+				methodName,
+			)),
+		)
+		// create test policy
+		policyName := "anonymous-test-policy"
+		createPolicyBytes(
+			t,
+			[]byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["%s"],
+					"role_ids": ["%s"]
+				}`,
+				policyName,
+				resourcePath,
+				roleName,
+			)),
+		)
+		// assign test policy to anonymous group
+		grantGroupPolicy(t, arborist.AnonymousGroup, policyName)
+
+		// return policy and authMapping
+		policy := arborist.Policy{policyName, "", []string{resourcePath}, []string{roleName}}
+		authMapping := map[string][]arborist.Action{
+			resourcePath: []arborist.Action{arborist.Action{serviceName, methodName}},
+		}
+		return []arborist.Policy{policy}, []string{resourcePath}, authMapping
+	}
+
+	// setupLoggedInPolicies creates policies for the LoggedIn group
+	// and returns the policies, resource paths, and auth mapping of the group.
+	setupLoggedInPolicies := func(t *testing.T) ([]arborist.Policy, []string, arborist.AuthMapping) {
+		// create test resources
+		resourcePath := "/loggedin-resource-path"
+		createResourceBytes(t, []byte(fmt.Sprintf(`{"path": "%s"}`, resourcePath)))
+		// create test role
+		roleName := "loggedin-test-role"
+		permissionName := "qwer"
+		serviceName := "zxcv"
+		methodName := permissionName
+		createRoleBytes(
+			t,
+			[]byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"permissions": [
+						{"id": "%s", "action": {"service": "%s", "method": "%s"}}
+					]
+				}`,
+				roleName,
+				permissionName,
+				serviceName,
+				methodName,
+			)),
+		)
+		// create test policy
+		policyName := "loggedin-test-policy"
+		createPolicyBytes(
+			t,
+			[]byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["%s"],
+					"role_ids": ["%s"]
+				}`,
+				policyName,
+				resourcePath,
+				roleName,
+			)),
+		)
+		// assign test policy to loggedIn group
+		grantGroupPolicy(t, arborist.LoggedInGroup, policyName)
+
+		// return policy and authMapping
+		policy := arborist.Policy{policyName, "", []string{resourcePath}, []string{roleName}}
+		authMapping := map[string][]arborist.Action{
+			resourcePath: []arborist.Action{arborist.Action{serviceName, methodName}},
+		}
+		return []arborist.Policy{policy}, []string{resourcePath}, authMapping
+	}
+
 	deleteEverything := func() {
 		_ = db.MustExec("DELETE FROM policy_role")
 		_ = db.MustExec("DELETE FROM policy_resource")
@@ -1323,7 +1427,7 @@ func TestServer(t *testing.T) {
 			req := newRequest("GET", "/user/nonexistent", nil)
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusNotFound {
-				httpError(t, w, "didn't get 404 for nonexistent group")
+				httpError(t, w, "didn't get 404 for nonexistent user")
 			}
 		})
 
@@ -1378,6 +1482,8 @@ func TestServer(t *testing.T) {
 			})
 		})
 
+		anonymousPolicies, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
+		loggedInPolicies, loggedInResourcePaths, _ := setupLoggedInPolicies(t)
 		t.Run("Read", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			url := fmt.Sprintf("/user/%s", username)
@@ -1387,20 +1493,38 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read user")
 			}
 			result := struct {
-				Name     string   `json:"name"`
-				Email    string   `json:"email"`
-				Policies []string `json:"policies"`
-				Groups   []string `json:"groups"`
+				Name     string `json:"name"`
+				Email    string `json:"email"`
+				Policies []struct {
+					Policy    string  `json:"policy"`
+					ExpiresAt *string `json:"expires_at"`
+				} `json:"policies"`
+				Groups []string `json:"groups"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
 				httpError(t, w, "couldn't read response from user read")
 			}
-			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, username, result.Name, msg)
-			assert.Equal(t, userEmail, result.Email, msg)
-			assert.Equal(t, []string{}, result.Policies, msg)
-			assert.Equal(t, []string{arborist.LoggedInGroup}, result.Groups, msg)
+			assert.Equalf(t, username, result.Name, "Wanted username: %v \t Got: %v", username, result.Name)
+			assert.Equalf(t, userEmail, result.Email, "Wanted email: %v \t Got: %v", userEmail, result.Email)
+			// expect to receive policies from user's groups (in this case, 0 policies
+			// are assigned to user) as well as policies from Anonymous and LoggedIn groups.
+			var expectedPolicyNames []string
+			for _, policy := range anonymousPolicies {
+				expectedPolicyNames = append(expectedPolicyNames, policy.Name)
+			}
+			for _, policy := range loggedInPolicies {
+				expectedPolicyNames = append(expectedPolicyNames, policy.Name)
+			}
+			var actualPolicyNames []string
+			for _, policy := range result.Policies {
+				actualPolicyNames = append(actualPolicyNames, policy.Policy)
+			}
+			assert.ElementsMatchf(t, expectedPolicyNames, actualPolicyNames, "Wanted policies: %v \t Got: %v", expectedPolicyNames, actualPolicyNames)
+			// expect to receive user's groups (in this case, 0 groups) as well
+			// as Anonymous and LoggedIn groups.
+			expectedGroups := []string{arborist.LoggedInGroup, arborist.AnonymousGroup}
+			assert.ElementsMatchf(t, expectedGroups, result.Groups, "Wanted groups: %v \t Got: %v", expectedGroups, result.Groups)
 		})
 
 		// do some preliminary setup so we have a policy to work with
@@ -1446,9 +1570,19 @@ func TestServer(t *testing.T) {
 				"didn't grant policy correctly; got response body: %s",
 				w.Body.String(),
 			)
-			assert.Len(t, result.Policies, 1, msg)
-			assert.Equal(t, policyName, result.Policies[0].Policy, msg)
-			assert.Nil(t, result.Policies[0].ExpiresAt, msg)
+			// expect that policy with policyName is in response
+			var actualPolicy struct {
+				Policy    string  `json:"policy"`
+				ExpiresAt *string `json:"expires_at"`
+			}
+			for _, policy := range result.Policies {
+				if policy.Policy == policyName {
+					actualPolicy = policy
+				}
+			}
+			assert.NotNil(t, actualPolicy, msg)
+			// expect the expiresAt field to be nil, because expiration was not set.
+			assert.Nil(t, actualPolicy.ExpiresAt, msg)
 
 			t.Run("PolicyNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -1494,11 +1628,16 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from user resources")
 			}
+			// expect to see resources from user's policies, as well as
+			// resources from Anonymous and LoggedIn policies.
+			expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+			expectedResources = append(expectedResources, resourcePath)
 			msg := fmt.Sprintf(
-				"didn't get expected resources; got response body: %s",
+				"didn't get expected resources; got response body: %s \t Wanted resources: %v",
 				w.Body.String(),
+				expectedResources,
 			)
-			assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+			assert.ElementsMatch(t, expectedResources, result.Resources, msg)
 
 			t.Run("UserNotFound", func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -1589,9 +1728,20 @@ func TestServer(t *testing.T) {
 			if err != nil {
 				httpError(t, w, "couldn't read response from user info")
 			}
-			assert.NotNil(t, result.Policies[0].ExpiresAt, "missing `expires_at` in response")
+			// Assert that the policy we added in GrantPolicyWithExpiration has expiration.
+			var addedPolicy struct {
+				Policy    string  `json:"policy"`
+				ExpiresAt *string `json:"expires_at"`
+			}
+			for _, policy := range result.Policies {
+				if policy.Policy == policyName {
+					addedPolicy = policy
+				}
+			}
+			assert.NotNilf(t, addedPolicy, "Expected to find policy %v in response: %v", addedPolicy, result.Policies)
+			assert.NotNil(t, addedPolicy.ExpiresAt, "missing `expires_at` in response")
 			expect, _ := time.Parse(time.RFC3339, timestamp)
-			got, _ := time.Parse(time.RFC3339, *result.Policies[0].ExpiresAt)
+			got, _ := time.Parse(time.RFC3339, *addedPolicy.ExpiresAt)
 			assert.True(t, expect.Equal(got), "wrong value for `expires_at`")
 		})
 
@@ -2318,6 +2468,8 @@ func TestServer(t *testing.T) {
 
 		t.Run("Mapping", func(t *testing.T) {
 			setupTestPolicy(t)
+			_, _, anonymousAuthMapping := setupAnonymousPolicies(t)
+			_, _, loggedInAuthMapping := setupLoggedInPolicies(t)
 			createUserBytes(t, userBody)
 			grantUserPolicy(t, username, policyName)
 
@@ -2341,7 +2493,139 @@ func TestServer(t *testing.T) {
 				url := fmt.Sprintf("/auth/mapping?username=%s", username)
 				req := newRequest("GET", url, nil)
 				handler.ServeHTTP(w, req)
+				// expect to receive user's auth mappings
 				testAuthMappingResponse(t, w)
+
+				// expect to also receive auth mappings of anonymous and logged-in policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
+				for resource, actions := range anonymousAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
+				for resource, actions := range loggedInAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+			})
+
+			t.Run("GET_userDoesNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				badUsername := "hulkhogan12"
+				url := fmt.Sprintf("/auth/mapping?username=%s", badUsername)
+				req := newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+
+				// expect a 200 OK response
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to only contain anonymous and loggedIn auth mappings.
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				expectedMappings := make(arborist.AuthMapping)
+				for k, v := range anonymousAuthMapping {
+					expectedMappings[k] = v
+				}
+				for k, v := range loggedInAuthMapping {
+					expectedMappings[k] = v
+				}
+				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous and logged-in groups in response: %v", expectedMappings)
+				for resource, actions := range result {
+					assert.Contains(t, expectedMappings, resource, msg)
+					assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
+				}
+			})
+
+			t.Run("GETwithJWT", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := "/auth/mapping"
+				req := newRequest("GET", url, nil)
+				token := TestJWT{username: username}
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+				testAuthMappingResponse(t, w)
+
+				// expect result to contain authMappings of anonymous and logged-in policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
+				for resource, actions := range anonymousAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
+				for resource, actions := range loggedInAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+			})
+
+			t.Run("GETwithJWT_userDoesNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := "/auth/mapping"
+				req := newRequest("GET", url, nil)
+				badUsername := "hulkhogan12"
+				token := TestJWT{username: badUsername}
+				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+				handler.ServeHTTP(w, req)
+
+				// expect a 200 OK response
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to only contain anonymous and loggedIn auth mappings.
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				expectedMappings := make(arborist.AuthMapping)
+				for k, v := range anonymousAuthMapping {
+					expectedMappings[k] = v
+				}
+				for k, v := range loggedInAuthMapping {
+					expectedMappings[k] = v
+				}
+				msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous and logged-in groups: %v", expectedMappings)
+				for resource, actions := range result {
+					assert.Contains(t, expectedMappings, resource, msg)
+					assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
+				}
+			})
+
+			t.Run("GET_noUsernameProvided", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := "/auth/mapping"
+				req := newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "expected to get policies for Anonymous group; got bad response instead")
+				}
+
+				// expect a 200 OK response
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to contain only authMappings of anonymous policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected these auth mappings from anonymous group: %v \t Got: %v", anonymousAuthMapping, result)
+				for resource, actions := range result {
+					assert.Contains(t, anonymousAuthMapping, resource, msg)
+					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
+				}
 			})
 
 			t.Run("POST", func(t *testing.T) {
@@ -2349,7 +2633,76 @@ func TestServer(t *testing.T) {
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
 				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
+				// expect to receive user's auth mappings
 				testAuthMappingResponse(t, w)
+				// expect to also receive auth mappings of anonymous and logged-in policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
+				for resource, actions := range anonymousAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
+				for resource, actions := range loggedInAuthMapping {
+					assert.Contains(t, result, resource, msg)
+					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+			})
+
+			t.Run("POST_userDoesNotExist", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				badUsername := "hulkhogan12"
+				body := []byte(fmt.Sprintf(`{"username": "%s"}`, badUsername))
+				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+
+				// expect a 200 OK response
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to only contain anonymous and loggedIn auth mappings.
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				expectedMappings := make(arborist.AuthMapping)
+				for k, v := range anonymousAuthMapping {
+					expectedMappings[k] = v
+				}
+				for k, v := range loggedInAuthMapping {
+					expectedMappings[k] = v
+				}
+				msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous and logged-in groups: %v", expectedMappings)
+				for resource, actions := range result {
+					assert.Contains(t, expectedMappings, resource, msg)
+					assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
+				}
+			})
+
+			t.Run("POST_noUsernameProvided", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte("")
+				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+
+				// expect a 200 OK response
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to contain only authMappings of anonymous policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous group: %v", anonymousAuthMapping)
+				for resource, actions := range result {
+					assert.Contains(t, anonymousAuthMapping, resource, msg)
+					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
+				}
 			})
 		})
 
@@ -2915,6 +3268,8 @@ func TestServer(t *testing.T) {
 			createPolicyBytes(t, policyBody)
 			grantUserPolicy(t, username, policyName)
 
+			_, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
+			_, loggedInResourcePaths, _ := setupLoggedInPolicies(t)
 			t.Run("Granted", func(t *testing.T) {
 				token := TestJWT{username: username}
 				body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
@@ -2927,6 +3282,9 @@ func TestServer(t *testing.T) {
 					if w.Code != http.StatusOK {
 						httpError(t, w, "auth resources request failed")
 					}
+					// expect to receive the resources from the policy granted to the user,
+					// as well as the resources from the policies granted to the
+					// anonymous and loggedin groups.
 					result := struct {
 						Resources []string `json:"resources"`
 					}{}
@@ -2934,9 +3292,15 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg := fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
-					// check the response returning tags is also correct
+					expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+					expectedResources = append(expectedResources, resourcePath)
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive tags corresponding to resources from the
+					// policy granted to the user and from the policies granted
+					// to the Anonymous and LoggedIn groups.
 					w = httptest.NewRecorder()
 					req = newRequest("GET", "/auth/resources?tags", nil)
 					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
@@ -2949,18 +3313,75 @@ func TestServer(t *testing.T) {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
 					msg = fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, 1, len(result.Resources), msg)
-					if len(result.Resources) != 1 {
-						t.Fatal()
+					expectedTags := make([]string, 0)
+					for _, resourcePath := range expectedResources {
+						resource := getResourceWithPath(t, resourcePath)
+						expectedTags = append(expectedTags, resource.Tag)
 					}
-					tag := result.Resources[0]
-					resource := getResourceWithPath(t, resourcePath)
-					assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in expectedResources
+						// which has this tag.
+						assert.Containsf(t, expectedTags, tag, "tag %s not found in%v", tag, expectedTags)
+					}
 				})
 
-				t.Run("POST", func(t *testing.T) {
+				t.Run("GET_userDoesNotExist", func(t *testing.T) {
 					w := httptest.NewRecorder()
-					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					req := newRequest("GET", "/auth/resources", nil)
+					badUsername := "hulkhogan12"
+					token := TestJWT{username: badUsername}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// expect to receive only the resources in policies granted
+					// to the Anonymous and LoggedIn groups.
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive only tags corresponding to resources
+					// in policies granted to the Anonymous and LoggedIn groups.
+					w = httptest.NewRecorder()
+					req = newRequest("GET", "/auth/resources?tags", nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					expectedTags := make([]string, 0)
+					for _, resourcePath := range expectedResources {
+						resource := getResourceWithPath(t, resourcePath)
+						expectedTags = append(expectedTags, resource.Tag)
+					}
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in expectedResources
+						// which has this tag.
+						assert.Containsf(t, expectedTags, tag, "tag %s not found in expectedTags %v", tag, expectedTags)
+					}
+				})
+
+				t.Run("GET_noUsernameProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("GET", "/auth/resources", nil)
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusOK {
 						httpError(t, w, "auth resources request failed")
@@ -2972,9 +3393,66 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg := fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
-					// check the response returning tags is also correct
+
+					// expect to receive only resources from policies granted to
+					// the Anonymous group.
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, anonymousResourcePaths)
+					assert.ElementsMatch(t, anonymousResourcePaths, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive tags corresponding to resources from
+					// the policies granted to the Anonymous group.
+					w = httptest.NewRecorder()
+					req = newRequest("GET", "/auth/resources?tags", nil)
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					anonymousTags := make([]string, 0)
+					for _, resourcePath := range anonymousResourcePaths {
+						resource := getResourceWithPath(t, resourcePath)
+						anonymousTags = append(anonymousTags, resource.Tag)
+					}
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in anonymousResourcePaths
+						// which has this tag.
+						assert.Containsf(t, anonymousTags, tag, "tag %s not found in anonymousTags %v", tag, anonymousTags)
+					}
+				})
+
+				t.Run("POST", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// expect to receive the resources from the policy granted to the user,
+					// as well as the resources from the policies granted to the
+					// anonymous and loggedin groups.
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+					expectedResources = append(expectedResources, resourcePath)
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive tags corresponding to resources from the
+					// policy granted to the user and from the policies granted
+					// to the Anonymous and LoggedIn groups.
 					w = httptest.NewRecorder()
 					req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
 					handler.ServeHTTP(w, req)
@@ -2986,13 +3464,119 @@ func TestServer(t *testing.T) {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
 					msg = fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, 1, len(result.Resources), msg)
-					if len(result.Resources) != 1 {
-						t.Fatal()
+					expectedTags := make([]string, 0)
+					for _, resourcePath := range expectedResources {
+						resource := getResourceWithPath(t, resourcePath)
+						expectedTags = append(expectedTags, resource.Tag)
 					}
-					tag := result.Resources[0]
-					resource := getResourceWithPath(t, resourcePath)
-					assert.Equal(t, resource.Tag, tag, "mismatched tag from auth resources list")
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in expectedResources
+						// which has this tag.
+						assert.Containsf(t, expectedTags, tag, "tag %s not found in %v", tag, expectedTags)
+					}
+				})
+
+				t.Run("POST_userDoesNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					badUsername := "hulkhogan12"
+					token := TestJWT{username: badUsername}
+					body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// expect to receive the resources from the policies granted to the
+					// anonymous and loggedin groups.
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive tags corresponding to resources from the
+					// policies granted to the Anonymous and LoggedIn groups.
+					w = httptest.NewRecorder()
+					req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					expectedTags := make([]string, 0)
+					for _, resourcePath := range expectedResources {
+						resource := getResourceWithPath(t, resourcePath)
+						expectedTags = append(expectedTags, resource.Tag)
+					}
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in expectedResources
+						// which has this tag.
+						assert.Containsf(t, expectedTags, tag, "tag %s not found in %v", tag, expectedTags)
+					}
+				})
+
+				t.Run("POST_noUsernameProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					// send request with no body
+					req := newRequest("POST", "/auth/resources", nil)
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// expect to receive the resources from the policies granted to the
+					// anonymous group.
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					expectedResources := anonymousResourcePaths
+					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// check the response returning tags is also correct:
+					// expect to receive tags corresponding to resources from the
+					// policies granted to the Anonymous group.
+					w = httptest.NewRecorder()
+					// send request without a body
+					req = newRequest("POST", "/auth/resources?tags", nil)
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					expectedTags := make([]string, 0)
+					for _, resourcePath := range expectedResources {
+						resource := getResourceWithPath(t, resourcePath)
+						expectedTags = append(expectedTags, resource.Tag)
+					}
+					// result.Resources actually contains tags, not resources, when
+					// using GET `/auth/resources?tags`.
+					for _, tag := range result.Resources {
+						// assert there is some resource in expectedResources
+						// which has this tag.
+						assert.Containsf(t, expectedTags, tag, "tag %s not found in %v", tag, expectedTags)
+					}
 				})
 
 				t.Run("Policies", func(t *testing.T) {
