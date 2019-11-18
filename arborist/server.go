@@ -28,6 +28,7 @@ type Server struct {
 	jwtApp JWTDecoder
 	logger *LogHandler
 	stmts  *CachedStmts
+	fence  *FenceServer
 }
 
 func NewServer() *Server {
@@ -47,6 +48,17 @@ func (server *Server) WithJWTApp(jwtApp JWTDecoder) *Server {
 func (server *Server) WithDB(db *sqlx.DB) *Server {
 	server.db = db
 	server.stmts = NewCachedStmts(db)
+	return server
+}
+
+func (server *Server) WithFence(fenceUrl *string) *Server {
+	fenceServer := &FenceServer{}
+	if strings.HasSuffix(*fenceUrl, "/") {
+		fenceServer.url = string([]byte(*fenceUrl)[:len(*fenceUrl) - 1])
+	} else {
+		fenceServer.url = *fenceUrl
+	}
+	server.fence = fenceServer
 	return server
 }
 
@@ -113,6 +125,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
 	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
+	router.Handle("/resource/namespace", http.HandlerFunc(server.handleResourceWithNamespace)).Methods("GET")
+	router.Handle("/resource/namespace/{namespace}", http.HandlerFunc(server.handleResourceByNamespace)).Methods("GET")
 	router.Handle("/resource/tag/{tag}", http.HandlerFunc(server.handleResourceReadByTag)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
@@ -125,7 +139,9 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
+	router.Handle("/users", http.HandlerFunc(server.parseJSON(server.handleUsersCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
+	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PUT")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
@@ -806,6 +822,49 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 	_ = jsonResponseFrom(resource, http.StatusOK).write(w, r)
 }
 
+func (server *Server) handleResourceByNamespace(w http.ResponseWriter, r *http.Request) {
+	namespace := mux.Vars(r)["namespace"]
+	resourcesFromQuery, err := resourceWithNamespace(server.db, namespace)
+	resources := []ResourceOut{}
+	for _, resourceFromQuery := range resourcesFromQuery {
+		resources = append(resources, resourceFromQuery.standardize())
+	}
+	if err != nil {
+		msg := fmt.Sprintf("resources with namespace query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	result := struct {
+		Resources []ResourceOut `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleResourceWithNamespace(w http.ResponseWriter, r *http.Request) {
+	resourcesFromQuery, err := resourceWithNamespace(server.db, "")
+	resources := []ResourceOut{}
+	for _, resourceFromQuery := range resourcesFromQuery {
+		resources = append(resources, resourceFromQuery.standardize())
+	}
+	if err != nil {
+		msg := fmt.Sprintf("resources with namespace query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	result := struct {
+		Resources []ResourceOut `json:"resources"`
+	}{
+		Resources: resources,
+	}
+	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
 func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Request) {
 	tag := mux.Vars(r)["tag"]
 	resourceFromQuery, err := resourceWithTag(server.db, tag)
@@ -920,7 +979,25 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
-	usersFromQuery, err := listUsersFromDb(server.db)
+	vars := r.URL.Query()
+	fenceUsers := &FenceUsers{}
+	if server.fence != nil && server.fence.url != "" {
+		users, fenceRequestStatusCode, err := fetchFenceUsers(server, w, r)
+		if err != nil {
+			msg := fmt.Sprintf("users query failed: %s", err.Error())
+			errResponse := newErrorResponse(msg, fenceRequestStatusCode, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		fenceUsers = users
+	}
+	userNames := make([]string, 0)
+	for _, user := range fenceUsers.Users {
+		userNames = append(userNames, user.Name)
+	}
+	usersFromQuery, pagination, err := listUsersFromDb(server.db, r, userNames, &fenceUsers.Pagination, server.fence != nil && server.fence.url != "")
+
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -929,15 +1006,60 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	users := []User{}
-	for _, userFromQuery := range usersFromQuery {
-		users = append(users, userFromQuery.standardize())
+	if server.fence != nil && server.fence.url != "" {
+		for _, fenceUser := range fenceUsers.Users {
+			find := false
+			for _, userFromQuery := range usersFromQuery {
+				if fenceUser.Name == userFromQuery.Name {
+					users = append(users, userFromQuery.standardize(&fenceUser))
+					find = true
+				}
+			}
+			if len(vars["groups[]"]) == 0 && len(vars["resources[]"]) == 0 && len(vars["roles[]"]) == 0 && !find {
+				users = append(users, fenceUser.standardize())
+			}
+		}
+	} else {
+		for _, userFromQuery := range usersFromQuery {
+			users = append(users, userFromQuery.standardize(nil))
+		}
 	}
+
 	result := struct {
 		Users []User `json:"users"`
+		Pagination *Pagination `json:"pagination"`
 	}{
 		Users: users,
+		Pagination: pagination,
 	}
 	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUsersCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	users := &Users{}
+	err := json.Unmarshal(body, users)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse users from JSON: %s", err.Error())
+		server.logger.Info("tried to create users but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	errResponse := users.multiCreateInDb(server, w, r)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	for _, user := range users.Users {
+		server.logger.Info("created user %s", user.Name)
+	}
+	created := struct {
+		Created *Users `json:"created"`
+	}{
+		Created: users,
+	}
+	_ = jsonResponseFrom(created, 201).write(w, r)
 }
 
 func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -982,8 +1104,24 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	user := userFromQuery.standardize()
+	user := userFromQuery.standardize(nil)
 	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, body []byte) {
+	user := &User{}
+	err := json.Unmarshal(body, user)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse user from JSON: %s", err.Error())
+		server.logger.Info("tried to update user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	user.Name = mux.Vars(r)["username"]
+	createOrUpdateUser(server, w, r, user, false)
+	server.logger.Info("update user %s", user.Name)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -1038,12 +1176,22 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
 	authzProvider := getAuthZProvider(r)
-	errResponse := revokeUserPolicyAll(server.db, username, authzProvider)
-	if errResponse != nil {
+	tx, err := server.db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
+	errResponse := revokeUserPolicyAll(tx, username, authzProvider)
+	if errResponse != nil {
+		_ = tx.Rollback()
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	_ = tx.Commit()
 	if authzProvider.Valid {
 		server.logger.Info("revoked all %s policies for user %s", authzProvider.String, username)
 	} else {

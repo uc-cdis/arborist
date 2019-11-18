@@ -318,6 +318,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
+  /resource/namespace:
+    get:
+      tags:
+        - resource
+      description: >-
+        List all resources which has been created in arborist and namespace is true.
+      responses:
+        200:
+          description: JSON representation of resource list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      $ref: '#/components/schemas/Resource'
+  /resource/namespace/{resourcePath}:
+    parameters:
+      - in: path
+        name: resourcePath
+        required: true
+        schema:
+          type: string
+        allowReserved: true
+        description: >-
+          List all resources under namespace whose path is `resourcePath`.
+          When resourcePath is `default`, return all resources whose ancestor's
+          namespace is true.
+    get:
+      tags:
+        - resource
+      description: Read the resource given by the path
+      responses:
+        200:
+          description: JSON representation of the specified resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      $ref: '#/components/schemas/Resource'
   /role:
     get:
       tags:
@@ -614,12 +662,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
+  /users:
+    post:
+      tags:
+        - user
+      description: Create a new user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              $ref: '#/components/schemas/Users'
+      responses:
+        201:
+          description: Create success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
   /user:
     get:
       tags:
         - user
       description: >-
         List all the users registered in arborist.
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+          required: false
+          description: the display_name or email in fence to return results for
+        - in: query
+          name: page
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: page_size
+          schema:
+            type: string
+          required: false
       responses:
         200:
           description: list of users
@@ -662,6 +745,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        404:
+          description: user not found
+    put:
+      tags:
+        - user
+      description: >-
+        Update the information for a specific user.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        204:
+          description: success
         404:
           description: user not found
     delete:
@@ -1170,6 +1268,10 @@ components:
           example: "/programs"
         description:
           type: string
+        tag:
+          type: string
+        namespace:
+          type: boolean
         subresources:
           type: array
           description: nested Resource items
@@ -1318,12 +1420,56 @@ components:
             timestamp in RFC 3339 format specifying the time at which the
             user's access to this group should expire
           example: '2019-08-12T12:34:56Z'
+    Users:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        policies:
+          type: array
+          items:
+            properties:
+              policy:
+                type: string
+              role:
+                type: string
+              resource:
+                type: string
+              expires_at:
+                type: string
+        groups:
+          type: array
+          items:
+            type: string
     User:
       type: object
       properties:
         name:
           type: string
           example: 'username'
+        preferred_username:
+          type: string
+          example: 'preferred name'
+        active:
+          type: boolean
+        groups_with_policies:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              policies:
+                type: object
+                properties:
+                  policy:
+                    type: string
+                    example: 'policy'
+                  expires_at:
+                    type: string
+                    example: '2019-08-12T12:34:56Z'
         email:
           type: string
           example: 'user@example.net'

@@ -169,11 +169,13 @@ func TestServer(t *testing.T) {
 		fmt.Println("couldn't reach db; make sure arborist has correct database configuration!")
 		t.Fatal(err)
 	}
+	fenceUrl := ""
 	server, err := arborist.
 		NewServer().
 		WithLogger(logger).
 		WithJWTApp(jwtApp).
 		WithDB(db).
+		WithFence(&fenceUrl).
 		Init()
 	if err != nil {
 		t.Fatal(err)
@@ -213,8 +215,10 @@ func TestServer(t *testing.T) {
 	username := "wasd"
 	userBody := []byte(fmt.Sprintf(
 		`{
-			"name": "%s"
+			"name": "%s",
+		 	"preferred_username": "%s"
 		}`,
+		username,
 		username,
 	))
 	clientID := "qazwsx"
@@ -256,7 +260,8 @@ func TestServer(t *testing.T) {
 		}
 		result := struct {
 			Created struct {
-				Name string `json:"name"`
+				Name              string `json:"name"`
+				PreferredUsername string `json:"preferred_username"`
 			} `json:"created"`
 		}{}
 		err = json.Unmarshal(w.Body.Bytes(), &result)
@@ -1332,10 +1337,12 @@ func TestServer(t *testing.T) {
 			body := []byte(fmt.Sprintf(
 				`{
 					"name": "%s",
-					"email": "%s"
+					"email": "%s",
+					"preferred_username": "%s"
 				}`,
 				username,
 				userEmail,
+				username,
 			))
 			req := newRequest("POST", "/user", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
@@ -1355,10 +1362,12 @@ func TestServer(t *testing.T) {
 				body := []byte(fmt.Sprintf(
 					`{
 						"name": "%s",
-						"email": "%s"
+						"email": "%s",
+						"preferred_username": "%s"
 					}`,
 					username,
 					userEmail,
+					username,
 				))
 				req := newRequest("POST", "/user", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
@@ -1398,7 +1407,6 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, username, result.Name, msg)
-			assert.Equal(t, userEmail, result.Email, msg)
 			assert.Equal(t, []string{}, result.Policies, msg)
 			assert.Equal(t, []string{arborist.LoggedInGroup}, result.Groups, msg)
 		})
@@ -1956,10 +1964,10 @@ func TestServer(t *testing.T) {
 
 		t.Run("AddUsers", func(t *testing.T) {
 			for _, testUsername := range testGroupUsers {
-				createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s"}`, testUsername)))
+				createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s", "preferred_username": "%s"}`, testUsername, testUsername)))
 				w := httptest.NewRecorder()
 				groupUserURL := fmt.Sprintf("/group/%s/user", testGroupName)
-				body := []byte(fmt.Sprintf(`{"username": "%s"}`, testUsername))
+				body := []byte(fmt.Sprintf(`{"username": "%s", "preferred_username": "%s"}`, testUsername, testUsername))
 				req := newRequest("POST", groupUserURL, bytes.NewBuffer(body))
 				req.Header.Add("X-AuthZ-Provider", "xxx")
 				handler.ServeHTTP(w, req)

@@ -84,6 +84,20 @@ func (policyFromQuery *PolicyFromQuery) standardize() Policy {
 	return policy
 }
 
+func fetchPolicyID(tx *sqlx.Tx, name string) (int, error) {
+	var policyIDs []int
+
+	err := tx.Select(&policyIDs, "SELECT ID FROM policy WHERE name = '"+name+"'")
+
+	if err != nil {
+		return 0, err
+	}
+	if len(policyIDs) > 0 {
+		return policyIDs[0], nil
+	}
+	return 0, nil
+}
+
 func policyWithName(db *sqlx.DB, name string) (*PolicyFromQuery, error) {
 	stmt := `
 		SELECT
