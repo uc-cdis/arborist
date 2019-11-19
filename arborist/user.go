@@ -87,14 +87,31 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
 			(
-				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at))
-				FROM usr_policy
-				INNER JOIN policy ON policy.id = usr_policy.policy_id
-				WHERE usr_policy.usr_id = usr.id
+				SELECT json_agg(json_build_object('policy', all_policies.name, 'expires_at', all_policies.expires_at))
+				FROM (
+					SELECT policy.name AS name, usr_policy.expires_at AS expires_at
+					FROM usr_policy
+					INNER JOIN policy ON policy.id = usr_policy.policy_id
+					WHERE usr_policy.usr_id = usr.id
+					UNION
+					SELECT policy.name AS name, usr_grp.expires_at AS expires_at
+					FROM usr_grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					INNER JOIN policy ON policy.id = grp_policy.policy_id
+					WHERE usr_grp.usr_id = usr.id
+					UNION
+					SELECT policy.name AS name, NULL AS expires_at
+					FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					INNER JOIN policy ON policy.id = grp_policy.policy_id
+					WHERE grp.name IN ('anonymous', 'logged-in')
+				) AS all_policies
 			) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr_grp.usr_id = usr.id
-		LEFT JOIN grp ON grp.id = usr_grp.grp_id
+		LEFT JOIN grp ON (
+			grp.id = usr_grp.grp_id OR grp.name IN ('anonymous', 'logged-in')
+		)
 		WHERE usr.name = $1
 		GROUP BY usr.id
 	`
@@ -107,7 +124,6 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 		return nil, nil
 	}
 	user := users[0]
-	user.Groups = append(user.Groups, LoggedInGroup)
 	return &user, nil
 }
 
