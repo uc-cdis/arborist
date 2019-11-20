@@ -402,6 +402,9 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 		method = methodQS[0]
 	}
 	// get JWT from auth header and decode it
+	// If no request, pass a nil authRequest to makeAuthResourcesResponse.
+	// This indicates that there is no username provided, i.e. that server should
+	// return only anonymous resources. (See docs/username.md for more details.)
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		msg := "auth request missing auth header"
@@ -429,13 +432,92 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
+	// If no user info is passed with the request, return anonymous policies only.
+	// See docs/username.md for more detail.
+	noUserProvided := request == nil
+	if noUserProvided {
+		resources := []ResourceFromQuery{}
+		stmt := `
+			SELECT DISTINCT
+				resource.id,
+				resource.name,
+				resource.path,
+				resource.tag,
+				resource.description,
+				array(
+					SELECT child.path
+					FROM resource AS child
+					WHERE child.path ~ (
+						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+					)
+				) AS subresources
+			FROM (
+				SELECT grp_policy.policy_id
+				FROM grp
+				JOIN grp_policy ON grp_policy.grp_id = grp.id
+				WHERE grp.name = 'anonymous'
+			) policies
+			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+			LEFT JOIN resource ON resource.path <@ roots.path
+		`
+		err := db.Select(&resources, stmt)
+		if err != nil {
+			fmt.Printf("DEBUG DEBUG DEBUG aaah %v\n", err)
+			errResponse := newErrorResponse(
+				"resources query (using no username) failed",
+				500,
+				&err,
+			)
+			return nil, errResponse
+		}
+		return resources, nil
+	}
+
+	// Get user from request.
 	user, err := userWithName(db, request.Username)
 	if err != nil {
 		return nil, newErrorResponse("resources query failed; couldn't find user", 500, &err)
 	}
+	// If user is not found, return resources for anonymous and logged-in policies only.
+	// See docs/username.md for more detail.
 	if user == nil {
-		msg := fmt.Sprintf("user does not exist: `%s`", request.Username)
-		return nil, newErrorResponse(msg, 404, nil)
+		resources := []ResourceFromQuery{}
+		stmt := `
+			SELECT DISTINCT
+				resource.id,
+				resource.name,
+				resource.path,
+				resource.tag,
+				resource.description,
+				array(
+					SELECT child.path
+					FROM resource AS child
+					WHERE child.path ~ (
+						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+					)
+				) AS subresources
+			FROM (
+				SELECT grp_policy.policy_id
+				FROM grp
+				JOIN grp_policy ON grp_policy.grp_id = grp.id
+				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+			) policies
+			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+			LEFT JOIN resource ON resource.path <@ roots.path
+		`
+		err = db.Select(&resources, stmt)
+		if err != nil {
+			fmt.Printf("DEBUG DEBUG DEBUG aaah %v\n", err)
+			errResponse := newErrorResponse(
+				"resources query (using no username) failed",
+				500,
+				&err,
+			)
+			return nil, errResponse
+		}
+		return resources, nil
 	}
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {

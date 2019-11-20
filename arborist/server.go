@@ -478,6 +478,15 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
+	// If no JWT is provided, pass a nil authRequest to makeAuthResourcesResponse.
+	// This indicates that there is no username provided, i.e. that server should
+	// return only anonymous resources. (See docs/username.md for more details.)
+	noJWT := r.Header.Get("Authorization") == ""
+	if noJWT {
+		authRequest = nil
+		server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+		return
+	}
 	authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
