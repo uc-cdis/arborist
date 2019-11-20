@@ -2689,20 +2689,8 @@ func TestServer(t *testing.T) {
 				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
 
-				// expect a 200 OK response
-				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
-
-				// expect result to contain only authMappings of anonymous policies
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous group: %v", anonymousAuthMapping)
-				for resource, actions := range result {
-					assert.Contains(t, anonymousAuthMapping, resource, msg)
-					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
-				}
+				// expect a 400 response
+				assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
 			})
 		})
 
@@ -3506,56 +3494,6 @@ func TestServer(t *testing.T) {
 					// policies granted to the Anonymous and LoggedIn groups.
 					w = httptest.NewRecorder()
 					req = newRequest("POST", "/auth/resources?tags", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusOK {
-						httpError(t, w, "auth resources request failed")
-					}
-					err = json.Unmarshal(w.Body.Bytes(), &result)
-					if err != nil {
-						httpError(t, w, "couldn't read response from auth resources")
-					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
-					expectedTags := make([]string, 0)
-					for _, resourcePath := range expectedResources {
-						resource := getResourceWithPath(t, resourcePath)
-						expectedTags = append(expectedTags, resource.Tag)
-					}
-					// result.Resources actually contains tags, not resources, when
-					// using GET `/auth/resources?tags`.
-					for _, tag := range result.Resources {
-						// assert there is some resource in expectedResources
-						// which has this tag.
-						assert.Containsf(t, expectedTags, tag, "tag %s not found in %v", tag, expectedTags)
-					}
-				})
-
-				t.Run("POST_noUsernameProvided", func(t *testing.T) {
-					w := httptest.NewRecorder()
-					// send request with no body
-					req := newRequest("POST", "/auth/resources", nil)
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusOK {
-						httpError(t, w, "auth resources request failed")
-					}
-					// expect to receive the resources from the policies granted to the
-					// anonymous group.
-					result := struct {
-						Resources []string `json:"resources"`
-					}{}
-					err = json.Unmarshal(w.Body.Bytes(), &result)
-					if err != nil {
-						httpError(t, w, "couldn't read response from auth resources")
-					}
-					expectedResources := anonymousResourcePaths
-					msg := fmt.Sprintf("got resources: %v \t Wanted: %v", result.Resources, expectedResources)
-					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
-
-					// check the response returning tags is also correct:
-					// expect to receive tags corresponding to resources from the
-					// policies granted to the Anonymous group.
-					w = httptest.NewRecorder()
-					// send request without a body
-					req = newRequest("POST", "/auth/resources?tags", nil)
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusOK {
 						httpError(t, w, "auth resources request failed")
