@@ -427,6 +427,12 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	return &authRequest, nil
 }
 
+// func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
+// }
+
+// func authorizedResourcesForUser(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
+// }
+
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// If no user info is passed with the request, return anonymous policies only.
@@ -667,80 +673,13 @@ type AuthMappingQuery struct {
 
 type AuthMapping map[string][]Action
 
-func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
-	// If no username provided, we want to return authMappings for Anonymous groups.
-	// (See docs/username.md for a more detailed explanation.)
-	if username == "" {
-		mappingQuery := []AuthMappingQuery{}
-		stmt := `
-			SELECT DISTINCT resource.path, permission.service, permission.method
-			FROM
-			(
-				SELECT grp_policy.policy_id FROM grp
-				INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous'
-			) AS policies
-			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-			INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
-			INNER JOIN permission ON permission.role_id = policy_role.role_id
-			INNER JOIN resource ON resource.path <@ roots.path
-		`
-		err := db.Select(&mappingQuery, stmt)
-		if err != nil {
-			errResponse := newErrorResponse("mapping query failed", 500, &err)
-			errResponse.log.Error(err.Error())
-			return nil, errResponse
-		}
-		mapping := make(AuthMapping)
-		for _, authMap := range mappingQuery {
-			path := formatDbPath(authMap.Path)
-			action := Action{Service: authMap.Service, Method: authMap.Method}
-			mapping[path] = append(mapping[path], action)
-		}
-		return mapping, nil
-
-	}
-
-	userFromQuery, err := userWithName(db, username)
-	if err != nil {
-		errResponse := newErrorResponse("couldn't look up user; check format on username", 400, &err)
-		errResponse.log.Error(err.Error())
-		return nil, errResponse
-	}
-	// If user not found in db, we want to return authMappings for Anonymous
-	// and LoggedIn groups.
-	// (See docs/username.md for a more detailed explanation.)
-	if userFromQuery == nil {
-		mappingQuery := []AuthMappingQuery{}
-		stmt := `
-			SELECT DISTINCT resource.path, permission.service, permission.method
-			FROM
-			(
-				SELECT grp_policy.policy_id FROM grp
-				INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
-			) AS policies
-			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-			INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
-			INNER JOIN permission ON permission.role_id = policy_role.role_id
-			INNER JOIN resource ON resource.path <@ roots.path
-		`
-		err = db.Select(&mappingQuery, stmt)
-		if err != nil {
-			errResponse := newErrorResponse("mapping query failed", 500, &err)
-			errResponse.log.Error(err.Error())
-			return nil, errResponse
-		}
-		mapping := make(AuthMapping)
-		for _, authMap := range mappingQuery {
-			path := formatDbPath(authMap.Path)
-			action := Action{Service: authMap.Service, Method: authMap.Method}
-			mapping[path] = append(mapping[path], action)
-		}
-		return mapping, nil
-	}
+// authMappingForUser gets the auth mapping for the user with this username.
+// The user's auth mapping includes the permissions of the `anonymous` and
+// `logged-in` groups.
+// If there is no user with this username in the db, this function will NOT
+// throw an error, but will return only the auth mapping of the `anonymous`
+// and `logged-in` groups.
+func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -765,7 +704,51 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 	`
-	err = db.Select(&mappingQuery, stmt, username)
+	err := db.Select(&mappingQuery, stmt, username)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	mapping := make(AuthMapping)
+	for _, authMap := range mappingQuery {
+		path := formatDbPath(authMap.Path)
+		action := Action{Service: authMap.Service, Method: authMap.Method}
+		mapping[path] = append(mapping[path], action)
+	}
+	return mapping, nil
+}
+
+// authMappingForGroups returns the auth mapping of resources associated with groups.
+func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorResponse) {
+	mappingQuery := []AuthMappingQuery{}
+	stmt := `
+		SELECT DISTINCT resource.path, permission.service, permission.method
+		FROM
+		(
+			SELECT grp_policy.policy_id FROM grp
+			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+			WHERE grp.name IN (?)
+		) AS policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
+		INNER JOIN permission ON permission.role_id = policy_role.role_id
+		INNER JOIN resource ON resource.path <@ roots.path
+	`
+	// sqlx.In allows safely binding variable numbers of arguments as bindvars.
+	// See https://jmoiron.github.io/sqlx/#inQueries,
+	query, args, err := sqlx.In(stmt, groups)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	// sqlx.In requires that queries be formatted using the `?` bindvar syntax.
+	// In order for us to execute the query on our db (as of 2019-11-21, we use Postgres,
+	// which uses the `$1` bindvar syntax) we need to call db.Rebind.
+	query = db.Rebind(query)
+	err = db.Select(&mappingQuery, query, args...)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error(err.Error())

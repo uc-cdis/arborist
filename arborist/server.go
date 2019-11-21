@@ -222,25 +222,45 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
+	// Try to get username from request
 	username := ""
-	usernameQS, ok := r.URL.Query()["username"]
-	if ok {
+	noUsernameProvided := false
+	// Search for username in query string
+	if usernameQS, ok := r.URL.Query()["username"]; ok {
 		username = usernameQS[0]
 	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		// Fall back to JWT for username. Added for Arborist UI integration...
+		// If no username in query string, fall back to JWT for username. Added for Arborist UI integration...
 		server.logger.Info("No username in query args; falling back to jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		aud := []string{"openid"}
 		info, err := server.decodeToken(userJWT, aud)
 		if err != nil {
-			server.logger.Info("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+			server.logger.Info(msg)
+			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 		} else {
 			server.logger.Info("found username in jwt: %s", info.username)
 			username = info.username
 		}
+	} else {
+		noUsernameProvided = true
 	}
-	mappings, errResponse := authMapping(server.db, username)
+
+	// If no username in query string and no JWT provided, return the
+	// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
+	if noUsernameProvided {
+		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
+		return
+	}
+
+	mappings, errResponse := authMappingForUser(server.db, username)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -269,7 +289,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
-	mappings, errResponse := authMapping(server.db, requestBody.Username)
+	mappings, errResponse := authMappingForUser(server.db, requestBody.Username)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
