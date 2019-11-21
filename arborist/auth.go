@@ -402,9 +402,6 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 		method = methodQS[0]
 	}
 	// get JWT from auth header and decode it
-	// If no request, pass a nil authRequest to makeAuthResourcesResponse.
-	// This indicates that there is no username provided, i.e. that server should
-	// return only anonymous resources. (See docs/username.md for more details.)
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		msg := "auth request missing auth header"
@@ -463,7 +460,6 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		`
 		err := db.Select(&resources, stmt)
 		if err != nil {
-			fmt.Printf("DEBUG DEBUG DEBUG aaah %v\n", err)
 			errResponse := newErrorResponse(
 				"resources query (using no username) failed",
 				500,
@@ -509,7 +505,6 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		`
 		err = db.Select(&resources, stmt)
 		if err != nil {
-			fmt.Printf("DEBUG DEBUG DEBUG aaah %v\n", err)
 			errResponse := newErrorResponse(
 				"resources query (using no username) failed",
 				500,

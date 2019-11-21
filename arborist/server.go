@@ -260,6 +260,11 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
 		errResponse = newErrorResponse(msg, 400, nil)
 	}
+	if requestBody.Username == "" {
+		msg := "missing `username` argument"
+		server.logger.Info(msg)
+		errResponse = newErrorResponse(msg, 400, nil)
+	}
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
