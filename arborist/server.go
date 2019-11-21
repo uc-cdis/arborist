@@ -222,20 +222,20 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
-	// Try to get username from request
+	// Try to get username from request by first checking query string, then JWT.
 	username := ""
-	noUsernameProvided := false
-	// Search for username in query string
-	if usernameQS, ok := r.URL.Query()["username"]; ok {
+	usernameQS, ok := r.URL.Query()["username"]
+	if ok {
 		username = usernameQS[0]
 	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		// If no username in query string, fall back to JWT for username. Added for Arborist UI integration...
+		// Fall back to JWT for username. Added for Arborist UI integration...
 		server.logger.Info("No username in query args; falling back to jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		aud := []string{"openid"}
 		info, err := server.decodeToken(userJWT, aud)
 		if err != nil {
+			// Return 400 on failure to decode JWT
 			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
@@ -244,12 +244,8 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 			username = info.username
 		}
 	} else {
-		noUsernameProvided = true
-	}
-
-	// If no username in query string and no JWT provided, return the
-	// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
-	if noUsernameProvided {
+		// If no username in query string and no JWT provided, return the
+		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
 		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
@@ -260,7 +256,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	mappings, errResponse := authMappingForUser(server.db, username)
+	mappings, errResponse := authMapping(server.db, username)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -289,7 +285,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
-	mappings, errResponse := authMappingForUser(server.db, requestBody.Username)
+	mappings, errResponse := authMapping(server.db, requestBody.Username)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -502,7 +498,7 @@ func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.
 		_ = errResponse.write(w, r)
 		return
 	}
-	authResources, errResponse := authorizedResourcesForUser(server.db, authRequest)
+	authResources, errResponse := authorizedResources(server.db, authRequest)
 	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
@@ -552,7 +548,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 	if request.User.Policies != nil {
 		authRequest.Policies = request.User.Policies
 	}
-	authResources, errResponse := authorizedResourcesForUser(server.db, authRequest)
+	authResources, errResponse := authorizedResources(server.db, authRequest)
 	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
@@ -1117,7 +1113,7 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 		Service:  service,
 		Method:   method,
 	}
-	resourcesFromQuery, errResponse := authorizedResourcesForUser(server.db, request)
+	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return

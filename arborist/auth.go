@@ -427,58 +427,8 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	return &authRequest, nil
 }
 
-func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
-	resources := []ResourceFromQuery{}
-	stmt := `
-		SELECT DISTINCT
-			resource.id,
-			resource.name,
-			resource.path,
-			resource.tag,
-			resource.description,
-			array(
-				SELECT child.path
-				FROM resource AS child
-				WHERE child.path ~ (
-					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
-				)
-			) AS subresources
-		FROM (
-			SELECT grp_policy.policy_id
-			FROM grp
-			JOIN grp_policy ON grp_policy.grp_id = grp.id
-			WHERE grp.name IN (?)
-		) policies
-		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-		LEFT JOIN resource ON resource.path <@ roots.path
-	`
-	// sqlx.In allows safely binding variable numbers of arguments as bindvars.
-	// See https://jmoiron.github.io/sqlx/#inQueries,
-	query, args, err := sqlx.In(stmt, groups)
-	if err != nil {
-		errResponse := newErrorResponse("mapping query failed", 500, &err)
-		errResponse.log.Error(err.Error())
-		return nil, errResponse
-	}
-	// sqlx.In requires that queries be formatted using the `?` bindvar syntax.
-	// In order for us to execute the query on our db (as of 2019-11-21, we use Postgres,
-	// which uses the `$1` bindvar syntax) we need to call db.Rebind.
-	query = db.Rebind(query)
-	err = db.Select(&resources, query, args...)
-	if err != nil {
-		errResponse := newErrorResponse(
-			"resources query (using no username) failed",
-			500,
-			&err,
-		)
-		return nil, errResponse
-	}
-	return resources, nil
-}
-
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
-func authorizedResourcesForUser(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
+func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
@@ -624,6 +574,54 @@ func authorizedResourcesForUser(db *sqlx.DB, request *AuthRequest) ([]ResourceFr
 	}
 }
 
+func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
+	resources := []ResourceFromQuery{}
+	stmt := `
+		SELECT DISTINCT
+			resource.id,
+			resource.name,
+			resource.path,
+			resource.tag,
+			resource.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM (
+			SELECT grp_policy.policy_id
+			FROM grp
+			JOIN grp_policy ON grp_policy.grp_id = grp.id
+			WHERE grp.name IN (?)
+		) policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		LEFT JOIN resource ON resource.path <@ roots.path
+	`
+	// sqlx.In allows safely binding variable numbers of arguments as bindvars.
+	// See https://jmoiron.github.io/sqlx/#inQueries,
+	query, args, err := sqlx.In(stmt, groups)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax
+	query = db.Rebind(query)
+	err = db.Select(&resources, query, args...)
+	if err != nil {
+		errResponse := newErrorResponse(
+			"resources query (using no username) failed",
+			500,
+			&err,
+		)
+		return nil, errResponse
+	}
+	return resources, nil
+}
+
 type AuthMappingQuery struct {
 	Path    string `json:"path"`
 	Service string `json:"service"`
@@ -632,13 +630,13 @@ type AuthMappingQuery struct {
 
 type AuthMapping map[string][]Action
 
-// authMappingForUser gets the auth mapping for the user with this username.
+// authMapping gets the auth mapping for the user with this username.
 // The user's auth mapping includes the permissions of the `anonymous` and
 // `logged-in` groups.
 // If there is no user with this username in the db, this function will NOT
 // throw an error, but will return only the auth mapping of the `anonymous`
 // and `logged-in` groups.
-func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -703,9 +701,7 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 		errResponse.log.Error(err.Error())
 		return nil, errResponse
 	}
-	// sqlx.In requires that queries be formatted using the `?` bindvar syntax.
-	// In order for us to execute the query on our db (as of 2019-11-21, we use Postgres,
-	// which uses the `$1` bindvar syntax) we need to call db.Rebind.
+	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax
 	query = db.Rebind(query)
 	err = db.Select(&mappingQuery, query, args...)
 	if err != nil {
