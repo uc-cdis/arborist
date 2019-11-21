@@ -427,99 +427,58 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	return &authRequest, nil
 }
 
-// func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
-// }
-
-// func authorizedResourcesForUser(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
-// }
+func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
+	resources := []ResourceFromQuery{}
+	stmt := `
+		SELECT DISTINCT
+			resource.id,
+			resource.name,
+			resource.path,
+			resource.tag,
+			resource.description,
+			array(
+				SELECT child.path
+				FROM resource AS child
+				WHERE child.path ~ (
+					CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
+				)
+			) AS subresources
+		FROM (
+			SELECT grp_policy.policy_id
+			FROM grp
+			JOIN grp_policy ON grp_policy.grp_id = grp.id
+			WHERE grp.name IN (?)
+		) policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		LEFT JOIN resource ON resource.path <@ roots.path
+	`
+	// sqlx.In allows safely binding variable numbers of arguments as bindvars.
+	// See https://jmoiron.github.io/sqlx/#inQueries,
+	query, args, err := sqlx.In(stmt, groups)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	// sqlx.In requires that queries be formatted using the `?` bindvar syntax.
+	// In order for us to execute the query on our db (as of 2019-11-21, we use Postgres,
+	// which uses the `$1` bindvar syntax) we need to call db.Rebind.
+	query = db.Rebind(query)
+	err = db.Select(&resources, query, args...)
+	if err != nil {
+		errResponse := newErrorResponse(
+			"resources query (using no username) failed",
+			500,
+			&err,
+		)
+		return nil, errResponse
+	}
+	return resources, nil
+}
 
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
-func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
-	// If no user info is passed with the request, return anonymous policies only.
-	// See docs/username.md for more detail.
-	noUserProvided := request == nil
-	if noUserProvided {
-		resources := []ResourceFromQuery{}
-		stmt := `
-			SELECT DISTINCT
-				resource.id,
-				resource.name,
-				resource.path,
-				resource.tag,
-				resource.description,
-				array(
-					SELECT child.path
-					FROM resource AS child
-					WHERE child.path ~ (
-						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
-					)
-				) AS subresources
-			FROM (
-				SELECT grp_policy.policy_id
-				FROM grp
-				JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous'
-			) policies
-			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-			LEFT JOIN resource ON resource.path <@ roots.path
-		`
-		err := db.Select(&resources, stmt)
-		if err != nil {
-			errResponse := newErrorResponse(
-				"resources query (using no username) failed",
-				500,
-				&err,
-			)
-			return nil, errResponse
-		}
-		return resources, nil
-	}
-
-	// Get user from request.
-	user, err := userWithName(db, request.Username)
-	if err != nil {
-		return nil, newErrorResponse("resources query failed; couldn't find user", 500, &err)
-	}
-	// If user is not found, return resources for anonymous and logged-in policies only.
-	// See docs/username.md for more detail.
-	if user == nil {
-		resources := []ResourceFromQuery{}
-		stmt := `
-			SELECT DISTINCT
-				resource.id,
-				resource.name,
-				resource.path,
-				resource.tag,
-				resource.description,
-				array(
-					SELECT child.path
-					FROM resource AS child
-					WHERE child.path ~ (
-						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
-					)
-				) AS subresources
-			FROM (
-				SELECT grp_policy.policy_id
-				FROM grp
-				JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
-			) policies
-			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-			LEFT JOIN resource ON resource.path <@ roots.path
-		`
-		err = db.Select(&resources, stmt)
-		if err != nil {
-			errResponse := newErrorResponse(
-				"resources query (using no username) failed",
-				500,
-				&err,
-			)
-			return nil, errResponse
-		}
-		return resources, nil
-	}
+func authorizedResourcesForUser(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if request.Policies != nil && len(request.Policies) > 0 {
 		values := ""
@@ -605,7 +564,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err = db.Select(&resources, stmt, request.Username)
+		err := db.Select(&resources, stmt, request.Username)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username) failed",
@@ -652,7 +611,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err = db.Select(&resources, stmt, request.Username, request.ClientID)
+		err := db.Select(&resources, stmt, request.Username, request.ClientID)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username + client) failed",

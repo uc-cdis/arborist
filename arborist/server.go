@@ -488,13 +488,12 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
-	// If no JWT is provided, pass a nil authRequest to makeAuthResourcesResponse.
-	// This indicates that there is no username provided, i.e. that server should
-	// return only anonymous resources. (See docs/username.md for more details.)
+	// If no username is provided through the JWT, return only `anonymous` policies.
+	// See `docs/username.md` for more details.
 	noJWT := r.Header.Get("Authorization") == ""
 	if noJWT {
-		authRequest = nil
-		server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
+		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	}
 	authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
@@ -503,7 +502,8 @@ func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.
 		_ = errResponse.write(w, r)
 		return
 	}
-	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+	authResources, errResponse := authorizedResourcesForUser(server.db, authRequest)
+	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
 func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -552,22 +552,17 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 	if request.User.Policies != nil {
 		authRequest.Policies = request.User.Policies
 	}
-	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+	authResources, errResponse := authorizedResourcesForUser(server.db, authRequest)
+	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
-func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.Request, authRequest *AuthRequest, errResponse *ErrorResponse) {
+func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.Request, resourcesFromQuery []ResourceFromQuery, errResponse *ErrorResponse) {
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 
-	resourcesFromQuery, errResponse := authorizedResources(server.db, authRequest)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
 	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
@@ -1122,7 +1117,7 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 		Service:  service,
 		Method:   method,
 	}
-	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
+	resourcesFromQuery, errResponse := authorizedResourcesForUser(server.db, request)
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
