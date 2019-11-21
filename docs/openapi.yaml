@@ -1,7 +1,7 @@
 openapi: 3.0.1
 info:
   title: Arborist
-  version: 1.1.1
+  version: 2.3.2
   description: authorization microservice to handle ABAC based on configured policies
   license:
     name: 'Apache 2.0'
@@ -22,14 +22,36 @@ paths:
         - auth
       description: >-
         Return a mapping from the resources the specified user can access, to
-        the actions which they are authorized for on those resources.
+        the actions which they are authorized for on those resources. This includes
+        the mappings available to members of the `anonymous` and `logged-in` groups, 
+        which apply to all users (anonymous) and to all logged-in users (logged-in). 
+
+
+        This endpoint accepts either a username in the query string or a username
+        in a token in the Authorization header. If no username is provided in the query
+        string, the endpoint will use the username in the token in the Authorization
+        header.
+
+
+        If the specified user is not recognized by arborist, this endpoint returns
+        ONLY the mappings available to members of the `anonymous` and `logged-in` groups.
+
+
+        If no username is provided (i.e., if there is no username passed in the query
+        string AND no token is provided in the Authorization header), this endpoint returns ONLY the mappings 
+        available to members of the `anonymous` group.
       parameters:
         - in: query
           name: username
           schema:
             type: string
-          required: true
+          required: false
           description: the username in arborist to return results for
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+          required: false
       responses:
         200:
           description: successful response
@@ -40,20 +62,28 @@ paths:
                   map from resource paths as keys, to lists of actions
                 type: object
                 example: {"/programs/DEV": [{"service": "*", "method": "read"}, {"service": "*", "method": "read-storage"}]}
-        400:
+        401:
           description: >-
-            the input was somehow invalid; probably missing username
+            Authorization header or token failed to validate (authentication error)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserError'
+                $ref: '#/components/schemas/Unauthenticated'
     post:
       tags:
         - auth
       description: >-
         Return a mapping from the resources the specified user can access, to
-        the actions which they are authorized for on those resources.
+        the actions which they are authorized for on those resources. This includes
+        the mappings available to members of the `anonymous` and `logged-in` groups, 
+        which apply to all users (anonymous) and to all logged-in users (logged-in). 
+
+
+        If the specified user is not recognized by arborist, this endpoint returns
+        ONLY the mappings available to members of the `anonymous` and `logged-in` groups.
+
       requestBody:
+
         content:
           application/json:
             schema:
@@ -125,13 +155,33 @@ paths:
       description: >-
         Given a user token in the Authorization header, return a list of
         resources which are accessible to the user (using any action) according
-        to the policies listed in the token.
+        to the policies listed in the token. This includes the resources available 
+        to members of the `anonymous` and `logged-in` groups, which apply to all users 
+        (anonymous) and to all logged-in users (logged-in).
+
+
+        If the specified user is not recognized by arborist, this endpoint returns
+        ONLY the resources available to members of the `anonymous` and `logged-in` groups.
+
+
+        If no username is provided (i.e., if no token is provided in the Authorization header)
+        this endpoint returns ONLY the resources available to members of the `anonymous` group.
+
+
+        If the `?tags` query string parameter is passed, this endpoint returns the resource
+        tags for the resources, not the resources themselves.
       parameters:
         - in: header
           name: Authorization
           schema:
             type: string
           required: true
+        - in: query
+          name: tags
+          required: false
+          schema:
+            type: string
+          description: Instructs the endpoint to return resource tags instead of resources.
       responses:
         200:
           description: >-
@@ -151,9 +201,26 @@ paths:
       tags:
         - auth
       description: >-
-        Given a user token, return a list of resources which are accessible to
-        the user (using any action) according to the policies listed in the
-        token.
+        Given a user token in the body of the request, return a list of
+        resources which are accessible to the user (using any action) according
+        to the policies listed in the token. This includes the resources available 
+        to members of the `anonymous` and `logged-in` groups, which apply to all users 
+        (anonymous) and to all logged-in users (logged-in).
+
+
+        If the specified user is not recognized by arborist, this endpoint returns
+        ONLY the resources available to members of the `anonymous` and `logged-in` groups.
+
+
+        If the `?tags` query string parameter is passed, this endpoint returns the resource
+        tags for the resources, not the resources themselves.
+      parameters:
+        - in: query
+          name: tags
+          required: false
+          schema:
+            type: string
+          description: Instructs the endpoint to return resource tags instead of resources.
       requestBody:
         content:
           application/json:
@@ -654,7 +721,7 @@ paths:
       tags:
         - user
       description: >-
-        Read the information for a specific user.
+        Read the information for a specific user. 
       responses:
         200:
           description: user information
@@ -729,6 +796,28 @@ paths:
       responses:
         204:
           description: successfully revoked
+        404:
+          description: user not found
+  /user/{username}/resources:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    get:
+      tags:
+        - user
+      description: >-
+        Returns the resources available to a specific user. 
+      responses:
+        200:
+          description: Resources available to this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
         404:
           description: user not found
   /client:
