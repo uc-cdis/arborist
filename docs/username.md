@@ -2,8 +2,6 @@
 
 This document describes how Arborist should behave when the user is or is not known to Arborist.
 
-(Note: As of 2019-Nov-13 this is not yet how Arborist _actually_ behaves.)
-
 ## Context
 
 Arborist always has 2 default groups:
