@@ -3256,7 +3256,7 @@ func TestServer(t *testing.T) {
 			createPolicyBytes(t, policyBody)
 			grantUserPolicy(t, username, policyName)
 
-			_, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
+			anonymousPolicies, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
 			_, loggedInResourcePaths, _ := setupLoggedInPolicies(t)
 			t.Run("Granted", func(t *testing.T) {
 				token := TestJWT{username: username}
@@ -3539,6 +3539,42 @@ func TestServer(t *testing.T) {
 					}
 					msg := fmt.Sprintf("got response body: %s", w.Body.String())
 					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+				})
+
+				// Setup for GET_noDuplicatedMappings:
+				// Add the policies in the `anonymous` group to the user.
+				// Adding the policies of the `anonymous` group to the user also adds
+				// the resources of the `anonymous` group to the user.
+				for _, policy := range anonymousPolicies {
+					grantUserPolicy(t, username, policy.Name)
+				}
+				t.Run("GET_noDuplicatedMappings", func(t *testing.T) {
+					// Expect these shared mappings to not be duplicated in AuthMapping response.
+					w := httptest.NewRecorder()
+					req := newRequest("GET", "/auth/resources", nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					// expect to receive the resources from the policy granted to the user,
+					// as well as the resources from the policies granted to the
+					// anonymous and loggedin groups.
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+
+					// Assert that there are no duplicates in the slice.
+					// (ElementsMatch compares slices ignoring the order of the elements,
+					// so it will fail if one slice contains duplicate values).
+					expectedResources := append(anonymousResourcePaths, loggedInResourcePaths...)
+					expectedResources = append(expectedResources, resourcePath)
+					msg := fmt.Sprintf("got resources: %v \t Expected resources: %v", result.Resources, expectedResources)
+					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
 				})
 			})
 
