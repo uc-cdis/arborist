@@ -427,6 +427,12 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	return &authRequest, nil
 }
 
+// authorizedResouces returns the resources that are accessible (with any action)
+// to the username in AuthRequest. This includes the resources accessible to the
+// `anonymous` and `logged-in` groups. If the username in AuthRequest does not exist
+// in the db, this this function will NOT throw an error, but will return only
+// the resources accessible to the `anonymous` and `logged-in` groups.
+//
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
@@ -574,6 +580,8 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 	}
 }
 
+// authorizedResoucesForGroups returns the resources that are accessible (with any action)
+// to these groups.
 func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
 	resources := []ResourceFromQuery{}
 	stmt := `
