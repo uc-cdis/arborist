@@ -1,7 +1,7 @@
 openapi: 3.0.1
 info:
   title: Arborist
-  version: 2.3.2
+  version: 2.4.0
   description: authorization microservice to handle ABAC based on configured policies
   license:
     name: 'Apache 2.0'
@@ -817,7 +817,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/AuthResourcesResponse'
         404:
           description: user not found
   /client:
