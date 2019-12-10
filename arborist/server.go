@@ -484,7 +484,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
-	// If no username is provided through the JWT, return only `anonymous` policies.
+	// If no JWT is provided, return only `anonymous` policies.
 	// See `docs/username.md` for more details.
 	noJWT := r.Header.Get("Authorization") == ""
 	if noJWT {
@@ -496,6 +496,14 @@ func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
+		return
+	}
+	// If no username is provided in the JWT, return only `anonymous` policies.
+	// See `docs/username.md` for more details.
+	noUsernameInJWT := authRequest.Username == ""
+	if noUsernameInJWT {
+		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
+		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	}
 	authResources, errResponse := authorizedResources(server.db, authRequest)
