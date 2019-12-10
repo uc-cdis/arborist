@@ -416,6 +416,20 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	revokeUserPolicy := func(t *testing.T, username string, policyName string) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
+		req := newRequest(
+			"DELETE",
+			url,
+			nil,
+		)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			httpError(t, w, "couldn't delete user policy")
+		}
+	}
+
 	grantClientPolicy := func(t *testing.T, clientID string, policyName string) {
 		w := httptest.NewRecorder()
 		url := fmt.Sprintf("/client/%s/policy", clientID)
@@ -2473,6 +2487,9 @@ func TestServer(t *testing.T) {
 			createUserBytes(t, userBody)
 			grantUserPolicy(t, username, policyName)
 
+			// testAuthMappingResponse checks whether the AuthMapping in the HTTP
+			// response 'w' contains the correct resources and actions that belong to the user.
+			// This includes the resources and actions that belong to the anonymous and loggedIn groups.
 			testAuthMappingResponse := func(t *testing.T, w *httptest.ResponseRecorder) {
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, 200, w.Code, msg)
@@ -2486,23 +2503,9 @@ func TestServer(t *testing.T) {
 				action := arborist.Action{Service: serviceName, Method: methodName}
 				msg = fmt.Sprintf("result does not contain expected action %s", action)
 				assert.Contains(t, result[resourcePath], action, msg)
-			}
 
-			t.Run("GET", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				url := fmt.Sprintf("/auth/mapping?username=%s", username)
-				req := newRequest("GET", url, nil)
-				handler.ServeHTTP(w, req)
-				// expect to receive user's auth mappings
-				testAuthMappingResponse(t, w)
-
-				// expect to also receive auth mappings of anonymous and logged-in policies
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
+				// Expect response to also contain anonymous and loggedIn groups.
+				msg = fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
 				for resource, actions := range anonymousAuthMapping {
 					assert.Contains(t, result, resource, msg)
 					assert.ElementsMatch(t, result[resource], actions, msg)
@@ -2512,6 +2515,15 @@ func TestServer(t *testing.T) {
 					assert.Contains(t, result, resource, msg)
 					assert.ElementsMatch(t, result[resource], actions, msg)
 				}
+			}
+
+			t.Run("GET", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/auth/mapping?username=%s", username)
+				req := newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				// expect to receive user's auth mappings, as well as auth mappings of anonymous and logged-in policies
+				testAuthMappingResponse(t, w)
 			})
 
 			t.Run("GET_userDoesNotExist", func(t *testing.T) {
@@ -2551,24 +2563,8 @@ func TestServer(t *testing.T) {
 				token := TestJWT{username: username}
 				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 				handler.ServeHTTP(w, req)
+				// expect to receive user's auth mappings, as well as auth mappings of anonymous and logged-in policies
 				testAuthMappingResponse(t, w)
-
-				// expect result to contain authMappings of anonymous and logged-in policies
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
-				for resource, actions := range anonymousAuthMapping {
-					assert.Contains(t, result, resource, msg)
-					assert.ElementsMatch(t, result[resource], actions, msg)
-				}
-				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
-				for resource, actions := range loggedInAuthMapping {
-					assert.Contains(t, result, resource, msg)
-					assert.ElementsMatch(t, result[resource], actions, msg)
-				}
 			})
 
 			t.Run("GETwithJWT_userDoesNotExist", func(t *testing.T) {
@@ -2633,24 +2629,8 @@ func TestServer(t *testing.T) {
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
 				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
-				// expect to receive user's auth mappings
-				testAuthMappingResponse(t, w)
 				// expect to also receive auth mappings of anonymous and logged-in policies
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
-				for resource, actions := range anonymousAuthMapping {
-					assert.Contains(t, result, resource, msg)
-					assert.ElementsMatch(t, result[resource], actions, msg)
-				}
-				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
-				for resource, actions := range loggedInAuthMapping {
-					assert.Contains(t, result, resource, msg)
-					assert.ElementsMatch(t, result[resource], actions, msg)
-				}
+				testAuthMappingResponse(t, w)
 			})
 
 			t.Run("POST_userDoesNotExist", func(t *testing.T) {
@@ -3541,14 +3521,15 @@ func TestServer(t *testing.T) {
 					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
 				})
 
-				// Setup for GET_noDuplicatedMappings:
-				// Add the policies in the `anonymous` group to the user.
-				// Adding the policies of the `anonymous` group to the user also adds
-				// the resources of the `anonymous` group to the user.
-				for _, policy := range anonymousPolicies {
-					grantUserPolicy(t, username, policy.Name)
-				}
 				t.Run("GET_noDuplicatedMappings", func(t *testing.T) {
+
+					// Setup: Add the policies in the `anonymous` group to the user.
+					// Adding the policies of the `anonymous` group to the user also adds
+					// the resources of the `anonymous` group to the user.
+					for _, policy := range anonymousPolicies {
+						grantUserPolicy(t, username, policy.Name)
+					}
+
 					// Expect these shared mappings to not be duplicated in AuthMapping response.
 					w := httptest.NewRecorder()
 					req := newRequest("GET", "/auth/resources", nil)
@@ -3575,6 +3556,11 @@ func TestServer(t *testing.T) {
 					expectedResources = append(expectedResources, resourcePath)
 					msg := fmt.Sprintf("got resources: %v \t Expected resources: %v", result.Resources, expectedResources)
 					assert.ElementsMatch(t, expectedResources, result.Resources, msg)
+
+					// Teardown: remove the policies we just added.
+					for _, policy := range anonymousPolicies {
+						revokeUserPolicy(t, username, policy.Name)
+					}
 				})
 			})
 
