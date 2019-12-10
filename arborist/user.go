@@ -104,19 +104,25 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 					FROM grp
 					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
 					INNER JOIN policy ON policy.id = grp_policy.policy_id
-					WHERE grp.name IN ('anonymous', 'logged-in')
+					WHERE grp.name IN ($2, $3) 
 				) AS all_policies
 			) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr_grp.usr_id = usr.id
 		LEFT JOIN grp ON (
-			grp.id = usr_grp.grp_id OR grp.name IN ('anonymous', 'logged-in')
+			grp.id = usr_grp.grp_id OR grp.name IN ($2, $3)
 		)
 		WHERE usr.name = $1
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
-	err := db.Select(&users, stmt, name)
+	err := db.Select(
+		&users,
+		stmt,
+		name,           // $1
+		AnonymousGroup, // $2
+		LoggedInGroup,  // $3
+	)
 	if err != nil {
 		return nil, err
 	}

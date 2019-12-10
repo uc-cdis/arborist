@@ -127,7 +127,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT policy_id FROM grp_policy
 					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					WHERE grp.name = 'anonymous'
+					WHERE grp.name = $6
 				) AS policies
 				LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				LEFT JOIN resource ON resource.id = policy_resource.resource_id
@@ -151,6 +151,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			len(request.Policies) == 0, // $3
 			pq.Array(request.Policies), // $4
 			resource,                   // $5
+			AnonymousGroup,             // $6
 		)
 	} else if tag != "" {
 		err = request.stmts.Select(
@@ -159,7 +160,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT policy_id FROM grp_policy
 					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					WHERE grp.name = 'anonymous'
+					WHERE grp.name = $6
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
@@ -183,6 +184,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			len(request.Policies) == 0, // $3
 			pq.Array(request.Policies), // $4
 			resource,                   // $5
+			AnonymousGroup,             // $6
 		)
 	} else {
 		err = errors.New("missing resource in auth request")
@@ -225,7 +227,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 					UNION
 					SELECT grp_policy.policy_id FROM grp
 					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+					WHERE grp.name IN ($7, $8)
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
@@ -250,6 +252,8 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			len(request.Policies) == 0, // $4
 			pq.Array(request.Policies), // $5
 			resource,                   // $6
+			AnonymousGroup,             // $7
+			LoggedInGroup,              // $8
 		)
 	} else if tag != "" {
 		err = request.stmts.Select(
@@ -267,7 +271,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 					UNION
 					SELECT grp_policy.policy_id FROM grp
 					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-					WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+					WHERE grp.name IN ($7, $8)
 				) AS policies
 				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 				JOIN resource ON resource.id = policy_resource.resource_id
@@ -292,6 +296,8 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			len(request.Policies) == 0, // $4
 			pq.Array(request.Policies), // $5
 			tag,                        // $6
+			AnonymousGroup,             // $7
+			LoggedInGroup,              // $8
 		)
 	} else {
 		err = errors.New("missing resource in auth request")
@@ -514,13 +520,19 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				SELECT grp_policy.policy_id
 				FROM grp
 				JOIN grp_policy ON grp_policy.grp_id = grp.id
-				WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+				WHERE grp.name IN ($2, $3)
 			) policies
 			INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err := db.Select(&resources, stmt, request.Username)
+		err := db.Select(
+			&resources,
+			stmt,
+			request.Username, // $1
+			AnonymousGroup,   // $2
+			LoggedInGroup,    // $3
+		)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username) failed",
@@ -661,7 +673,7 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 			UNION
 			SELECT grp_policy.policy_id FROM grp
 			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-			WHERE grp.name = 'anonymous' OR grp.name = 'logged-in'
+			WHERE grp.name IN ($2, $3)
 		) AS policies
 		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
@@ -669,7 +681,13 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 	`
-	err := db.Select(&mappingQuery, stmt, username)
+	err := db.Select(
+		&mappingQuery,
+		stmt,
+		username,       // $1
+		AnonymousGroup, // $2
+		LoggedInGroup,  // $3
+	)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error(err.Error())
