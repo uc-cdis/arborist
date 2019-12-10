@@ -168,7 +168,7 @@ paths:
         this endpoint returns ONLY the resources available to members of the `anonymous` group.
 
 
-        If the `?tags` query string parameter is passed, this endpoint returns the resource
+        If the `tags` query string parameter is passed, this endpoint returns the resource
         tags for the resources, not the resources themselves.
       parameters:
         - in: header
@@ -212,7 +212,7 @@ paths:
         ONLY the resources available to members of the `anonymous` and `logged-in` groups.
 
 
-        If the `?tags` query string parameter is passed, this endpoint returns the resource
+        If the `tags` query string parameter is passed, this endpoint returns the resource
         tags for the resources, not the resources themselves.
       parameters:
         - in: query
