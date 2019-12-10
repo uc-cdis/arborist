@@ -486,6 +486,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 	}
 	resources := []ResourceFromQuery{}
 	if request.ClientID == "" {
+		if request.Username == "" {
+			return nil, newErrorResponse("missing username in auth request", 400, nil)
+		}
 		// alternative: SELECT DISTINCT * FROM resource WHERE resource.path <@ ARRAY(SELECT resource.path FROM (SELECT usr_policy.policy_id FROM usr JOIN usr_policy ON usr.id = usr_policy.usr_id WHERE usr.name = $1) policies INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id INNER JOIN resource ON resource.id = policy_resource.resource_id);
 		stmt := `
 			SELECT DISTINCT
