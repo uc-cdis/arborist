@@ -239,12 +239,24 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
-		} else {
-			server.logger.Info("found username in jwt: %s", info.username)
-			username = info.username
+			return
 		}
+		server.logger.Info("found username in jwt: %s", info.username)
+		username = info.username
+	}
+
+	usernameProvided := username != ""
+	if usernameProvided {
+		mappings, errResponse := authMapping(server.db, username)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
+		return
 	} else {
-		// If no username in query string and no JWT provided, return the
+		// If no username provided in query string or JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
 		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
 		if errResponse != nil {
@@ -255,14 +267,6 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 		return
 	}
-
-	mappings, errResponse := authMapping(server.db, username)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
