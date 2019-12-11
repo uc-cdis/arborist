@@ -492,12 +492,12 @@ func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.
 	usernameInJWT := false
 	if hasJWT {
 		authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
-		usernameInJWT = authRequest.Username != ""
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
 			return
 		}
+		usernameInJWT = authRequest.Username != ""
 	}
 
 	if hasJWT && usernameInJWT {
