@@ -89,7 +89,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	// 2. Policies in user's groups:
 	//		- Policies granted to groups the user is a member of expire when the user's membership
 	// 		in that group expires (`usr_group.expires_at`).
-	// 3. Polcies granted to the Anonymous and LoggedIn groups:
+	// 3. Policies granted to the Anonymous and LoggedIn groups:
 	// 		- Membership in the built-in groups does not expire. We use expires_at = NULL to represent
 	// 		'no expiration for this policy'.
 	stmt := `
