@@ -80,6 +80,18 @@ func (userFromQuery *UserFromQuery) standardize() User {
 }
 
 func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
+	// NOTE @mpingram 2019-12-11: An explanation of the user's policies and their expiration
+	// dates returned from this query.
+	// The user's policies can come from three different sources, and policies from different
+	// sources expire in different ways:
+	// 1. Policies granted to the user:
+	// 		- Policies granted to the user have an expiration date (`usr_policy.expires_at`).
+	// 2. Policies in user's groups:
+	//		- Policies granted to groups the user is a member of expire when the user's membership
+	// 		in that group expires (`usr_group.expires_at`).
+	// 3. Polcies granted to the Anonymous and LoggedIn groups:
+	// 		- Membership in the built-in groups does not expire. We use expires_at = NULL to represent
+	// 		'no expiration for this policy'.
 	stmt := `
 		SELECT
 			usr.id,
