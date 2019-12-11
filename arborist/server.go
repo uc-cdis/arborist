@@ -488,30 +488,29 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
-	// If no JWT is provided, return only `anonymous` policies.
-	// See `docs/username.md` for more details.
-	noJWT := r.Header.Get("Authorization") == ""
-	if noJWT {
+	hasJWT := r.Header.Get("Authorization") != ""
+	usernameInJWT := false
+	if hasJWT {
+		authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
+		usernameInJWT = authRequest.Username != ""
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+	}
+
+	if hasJWT && usernameInJWT {
+		authResources, errResponse := authorizedResources(server.db, authRequest)
+		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
+		return
+	} else {
+		// If no JWT is provided or no username in JWT, return only `anonymous` policies.
+		// See `docs/username.md` for more details.
 		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
 		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	}
-	authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	// If no username is provided in the JWT, return only `anonymous` policies.
-	// See `docs/username.md` for more details.
-	noUsernameInJWT := authRequest.Username == ""
-	if noUsernameInJWT {
-		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
-		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
-		return
-	}
-	authResources, errResponse := authorizedResources(server.db, authRequest)
-	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
 func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http.Request, body []byte) {
