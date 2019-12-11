@@ -1024,6 +1024,30 @@ paths:
             provided, or user doesn't exist
         404:
           description: group does not exist
+  /group/{groupName}/user/{username}:
+    parameters:
+      - in: path
+        name: groupName
+        required: true
+        schema:
+          type: string
+        description: the groupName for a group registered in arborist
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for the user to remove from the group
+      - $ref: "#/components/parameters/authzProvider"
+    delete:
+      tags:
+        - group
+      description: Remove a user from this group.
+      responses:
+        204:
+          description: successfully removed user from group
+        500:
+          description: unable to remove user from group
 components:
   schemas:
     AuthRequestBody:
