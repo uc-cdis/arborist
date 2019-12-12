@@ -2,8 +2,6 @@
 
 This document describes how Arborist should behave when the user is or is not known to Arborist.
 
-(Note: As of 2019-Nov-13 this is not yet how Arborist _actually_ behaves.)
-
 ## Context
 
 Arborist always has 2 default groups:
@@ -22,14 +20,18 @@ The `user/...` endpoints are part of an admin-facing API, so returning a 404 err
 
 If we need the list of anonymous or logged-in policies, we can hit the `group/{groupname}` endpoint.
 
-## GET, POST auth/mapping and GET auth/resources endpoints
+## GET, POST auth/mapping and GET, POST auth/resources endpoints
 
-The `auth/mapping` endpoint accepts a username as an optional query parameter. If the username is not specified, we try to get it from the JWT. The `auth/resources` endpoints only uses the JWT.
+The GET `auth/mapping` endpoint accepts a username as an optional query parameter. If the username is not specified, we try to get it from the JWT in the 'Authorization' header.
+The GET `auth/resources` endpoint only passes the username in a JWT in the 'Authorization' header. 
+The POST `auth/mapping` and POST `auth/resources` endpoints pass the username in the request body.
 
 These endpoints return everything the user has access to, including anonymous and logged-in policies, following this logic:
 - Username is specified and it is in Arborist's database: return user's policies + anonymous and logged-in policies.
 - Username is specified but it is not in Arborist's database: return anonymous and logged-in policies.
-- No username can be found: return the anonymous policies.
+
+Additionally, the GET auth/mapping and GET auth/resources endpoints have this behavior:
+- No username provided (I.e., no username provided in query string, and no JWT is passed in the Authorization header): return anonymous policies only.
 
 >Background: Originally `auth/mapping` only took the username from a query parameter. Then the revproxy needed to expose the endpoint so that Windmill could hit it. But we couldn't allow users to hit `auth/mapping` with arbitrary usernames. So the revproxy does not forward any query parameters, and we added the JWT fallback in Arborist.
 

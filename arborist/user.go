@@ -80,6 +80,18 @@ func (userFromQuery *UserFromQuery) standardize() User {
 }
 
 func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
+	// NOTE @mpingram 2019-12-11: An explanation of the user's policies and their expiration
+	// dates returned from this query.
+	// The user's policies can come from three different sources, and policies from different
+	// sources expire in different ways:
+	// 1. Policies granted to the user:
+	// 		- Policies granted to the user have an expiration date (`usr_policy.expires_at`).
+	// 2. Policies in user's groups:
+	//		- Policies granted to groups the user is a member of expire when the user's membership
+	// 		in that group expires (`usr_group.expires_at`).
+	// 3. Policies granted to the Anonymous and LoggedIn groups:
+	// 		- Membership in the built-in groups does not expire. We use expires_at = NULL to represent
+	// 		'no expiration for this policy'.
 	stmt := `
 		SELECT
 			usr.id,
@@ -87,19 +99,42 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 			usr.email,
 			array_remove(array_agg(DISTINCT grp.name), NULL) AS groups,
 			(
-				SELECT json_agg(json_build_object('policy', policy.name, 'expires_at', usr_policy.expires_at))
-				FROM usr_policy
-				INNER JOIN policy ON policy.id = usr_policy.policy_id
-				WHERE usr_policy.usr_id = usr.id
+				SELECT json_agg(json_build_object('policy', all_policies.name, 'expires_at', all_policies.expires_at))
+				FROM (
+					SELECT policy.name AS name, usr_policy.expires_at AS expires_at
+					FROM usr_policy
+					INNER JOIN policy ON policy.id = usr_policy.policy_id
+					WHERE usr_policy.usr_id = usr.id
+					UNION
+					SELECT policy.name AS name, usr_grp.expires_at AS expires_at
+					FROM usr_grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+					INNER JOIN policy ON policy.id = grp_policy.policy_id
+					WHERE usr_grp.usr_id = usr.id
+					UNION
+					SELECT policy.name AS name, NULL AS expires_at
+					FROM grp
+					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+					INNER JOIN policy ON policy.id = grp_policy.policy_id
+					WHERE grp.name IN ($2, $3) 
+				) AS all_policies
 			) AS policies
 		FROM usr
 		LEFT JOIN usr_grp ON usr_grp.usr_id = usr.id
-		LEFT JOIN grp ON grp.id = usr_grp.grp_id
+		LEFT JOIN grp ON (
+			grp.id = usr_grp.grp_id OR grp.name IN ($2, $3)
+		)
 		WHERE usr.name = $1
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
-	err := db.Select(&users, stmt, name)
+	err := db.Select(
+		&users,
+		stmt,
+		name,           // $1
+		AnonymousGroup, // $2
+		LoggedInGroup,  // $3
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +142,6 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 		return nil, nil
 	}
 	user := users[0]
-	user.Groups = append(user.Groups, LoggedInGroup)
 	return &user, nil
 }
 
