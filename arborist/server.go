@@ -222,6 +222,7 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
+	// Try to get username from request by first checking query string, then JWT.
 	username := ""
 	usernameQS, ok := r.URL.Query()["username"]
 	if ok {
@@ -234,19 +235,38 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		aud := []string{"openid"}
 		info, err := server.decodeToken(userJWT, aud)
 		if err != nil {
-			server.logger.Info("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
-		} else {
-			server.logger.Info("found username in jwt: %s", info.username)
-			username = info.username
+			// Return 400 on failure to decode JWT
+			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+			server.logger.Info(msg)
+			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
+			return
 		}
+		server.logger.Info("found username in jwt: %s", info.username)
+		username = info.username
 	}
-	mappings, errResponse := authMapping(server.db, username)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
+
+	usernameProvided := username != ""
+	if usernameProvided {
+		mappings, errResponse := authMapping(server.db, username)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
+		return
+	} else {
+		// If no username provided in query string or JWT, return the
+		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
+		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 		return
 	}
-	_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -468,13 +488,29 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
-	authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
+	hasJWT := r.Header.Get("Authorization") != ""
+	usernameInJWT := false
+	if hasJWT {
+		authRequest, errResponse = authRequestFromGET(server.decodeToken, r)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		usernameInJWT = authRequest.Username != ""
+	}
+
+	if hasJWT && usernameInJWT {
+		authResources, errResponse := authorizedResources(server.db, authRequest)
+		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
+		return
+	} else {
+		// If no JWT is provided or no username in JWT, return only `anonymous` policies.
+		// See `docs/username.md` for more details.
+		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
+		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	}
-	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
 }
 
 func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -523,22 +559,17 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 	if request.User.Policies != nil {
 		authRequest.Policies = request.User.Policies
 	}
-	server.makeAuthResourcesResponse(w, r, authRequest, errResponse)
+	authResources, errResponse := authorizedResources(server.db, authRequest)
+	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
-func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.Request, authRequest *AuthRequest, errResponse *ErrorResponse) {
+func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.Request, resourcesFromQuery []ResourceFromQuery, errResponse *ErrorResponse) {
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
 
-	resourcesFromQuery, errResponse := authorizedResources(server.db, authRequest)
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
 	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
