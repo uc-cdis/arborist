@@ -123,7 +123,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 
 	// new "overwrite role" endpoint
-	router.Handle("/role/{roleID}", http.HandlerFunc(server.parseJSON(server.handleRoleOverwrite))).Methods("POST")
+	router.Handle("/role/{roleID}", http.HandlerFunc(server.parseJSON(server.handleRoleOverwrite))).Methods("PUT")
 
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
