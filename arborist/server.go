@@ -121,6 +121,10 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
 	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
+
+	// new "update role" endpoint
+	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleUpdate)).Methods("PUT")
+
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
@@ -935,6 +939,52 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	}
 	role := roleFromQuery.standardize()
 	_ = jsonResponseFrom(role, http.StatusOK).write(w, r)
+}
+
+// new method for action "update role"
+// updates existing role,
+// or creates it if it doesn't already exist
+//
+// http response codes reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PUT
+func (server *Server) handleRoleUpdate(w http.ResponseWriter, r *http.Request) {
+
+	// extract role name
+	name := mux.Vars(r)["roleID"]
+
+	// query db for this role
+	roleFromQuery, err := roleWithName(server.db, name)
+	if err != nil {
+		msg := fmt.Sprintf("role query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	// if it doesn't exist in the db, then create the role
+	if roleFromQuery == nil {
+		role := roleFromQuery.standardize()
+		errResponse := role.createInDb(server.db)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		server.logger.Info("created role %s", role.Name)
+		created := struct {
+			Created *Role `json:"created"`
+		}{
+			Created: &role,
+		}
+		_ = jsonResponseFrom(created, 201).write(w, r)
+		return
+	}
+
+	// HERE - if it DOES exist in the db - update it
+
+	// # from handleRoleRead()
+	// role := roleFromQuery.standardize()
+	// _ = jsonResponseFrom(role, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
