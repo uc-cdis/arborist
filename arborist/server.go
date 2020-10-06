@@ -123,7 +123,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 
 	// new "update role" endpoint
-	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleUpdate)).Methods("PUT")
+	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleOverwrite)).Methods("PUT")
 
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
@@ -946,7 +946,7 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 // or creates it if it doesn't already exist
 //
 // http response codes reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PUT
-func (server *Server) handleRoleUpdate(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request) {
 
 	// extract role name
 	name := mux.Vars(r)["roleID"]
