@@ -122,8 +122,8 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
 
-	// new "update role" endpoint
-	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleOverwrite)).Methods("PUT")
+	// new "overwrite role" endpoint
+	router.Handle("/role/{roleID}", http.HandlerFunc(server.parseJSON(server.handleRoleOverwrite))).Methods("POST")
 
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
@@ -941,12 +941,12 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	_ = jsonResponseFrom(role, http.StatusOK).write(w, r)
 }
 
-// new method for action "update role"
+// new method for action "overwrite role"
 // updates existing role,
 // or creates it if it doesn't already exist
 //
 // http response codes reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PUT
-func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 
 	// extract role name
 	name := mux.Vars(r)["roleID"]
@@ -963,7 +963,15 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 
 	// if it doesn't exist in the db, then create the role
 	if roleFromQuery == nil {
-		role := roleFromQuery.standardize()
+		role := &Role{}
+		err := json.Unmarshal(body, role)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
+			server.logger.Info("tried to create role but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
 		errResponse := role.createInDb(server.db)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
@@ -974,7 +982,7 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		created := struct {
 			Created *Role `json:"created"`
 		}{
-			Created: &role,
+			Created: role,
 		}
 		_ = jsonResponseFrom(created, 201).write(w, r)
 		return
