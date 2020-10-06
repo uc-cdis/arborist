@@ -942,16 +942,12 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // new method for action "overwrite role"
-// updates existing role,
+// overwrites existing role,
 // or creates it if it doesn't already exist
 //
 // http response codes reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PUT
 func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
-
-	// extract role name
 	name := mux.Vars(r)["roleID"]
-
-	// query db for this role
 	roleFromQuery, err := roleWithName(server.db, name)
 	if err != nil {
 		msg := fmt.Sprintf("role query failed: %s", err.Error())
@@ -961,7 +957,6 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// if it doesn't exist in the db, then create the role
 	if roleFromQuery == nil {
 		role := &Role{}
 		err := json.Unmarshal(body, role)
@@ -988,11 +983,8 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// HERE - if it DOES exist in the db - update it
+	// HERE - overwrite existing role
 
-	// # from handleRoleRead()
-	// role := roleFromQuery.standardize()
-	// _ = jsonResponseFrom(role, http.StatusOK).write(w, r)
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
