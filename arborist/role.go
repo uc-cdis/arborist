@@ -210,6 +210,10 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
+func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
+	return nil
+}
+
 func (role *Role) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM role WHERE name = $1"
 	_, err := db.Exec(stmt, role.Name)
