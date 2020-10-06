@@ -211,6 +211,75 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 }
 
 func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
+	errResponse := role.validate()
+	if errResponse != nil {
+		return errResponse
+	}
+
+	tx, err := db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	var roleID int
+	stmt := `
+		INSERT INTO role(name, description)
+		VALUES ($1, $2)
+		ON CONFLICT(name) DO UPDATE
+		SET description = $2
+		RETURNING id
+	`
+	row := tx.QueryRowx(stmt, role.Name, role.Description)
+	err = row.Scan(&roleID)
+	if err != nil {
+		// handle err
+		// not sure what the possible errors are here
+	}
+
+	// good through here //
+
+	// create permissions as necessary
+	// permissions are unique per combination of role_id + name
+	permissionTable := "permission(role_id, name, service, method, constraints, description)"
+	stmt = multiInsertStmt(permissionTable, len(role.Permissions))
+	stmt += " ON CONFLICT DO NOTHING"
+	permissionRows := []interface{}{}
+	for _, permission := range role.Permissions {
+		constraints, err := json.Marshal(permission.Constraints)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf(
+				"couldn't write constraints for permission %s: %s",
+				permission.Name,
+				err.Error(),
+			)
+			return newErrorResponse(msg, 500, &err)
+		}
+		row := []interface{}{
+			roleID,
+			permission.Name,
+			permission.Action.Service,
+			permission.Action.Method,
+			constraints,
+			permission.Description,
+		}
+		permissionRows = append(permissionRows, row...)
+	}
+	_, err = tx.Exec(stmt, permissionRows...)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't create permissions: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
 	return nil
 }
 
