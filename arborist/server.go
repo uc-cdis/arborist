@@ -942,10 +942,6 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // new method for action "overwrite role"
-// overwrites existing role,
-// or creates it if it doesn't already exist
-//
-// http response codes reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PUT
 func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	name := mux.Vars(r)["roleID"]
 	roleFromQuery, err := roleWithName(server.db, name)
@@ -957,17 +953,21 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	role := &Role{}
+	err = json.Unmarshal(body, role)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
+		server.logger.Info("tried to create role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	var errResponse *ErrorResponse
+
+	// role doesn't exist in db - create it
 	if roleFromQuery == nil {
-		role := &Role{}
-		err := json.Unmarshal(body, role)
-		if err != nil {
-			msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
-			server.logger.Info("tried to create role but input was invalid: %s", msg)
-			response := newErrorResponse(msg, 400, nil)
-			_ = response.write(w, r)
-			return
-		}
-		errResponse := role.createInDb(server.db)
+		errResponse = role.createInDb(server.db)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -983,8 +983,20 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// HERE - overwrite existing role
-
+	// role exists in db - overwrite it
+	errResponse = role.overwriteInDb(server.db)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info("updated role %s", role.Name)
+	updated := struct {
+		Updated *Role `json:"updated"`
+	}{
+		Updated: role,
+	}
+	_ = jsonResponseFrom(updated, 200).write(w, r)
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
