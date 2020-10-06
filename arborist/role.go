@@ -233,18 +233,23 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 	row := tx.QueryRowx(stmt, role.Name, role.Description)
 	err = row.Scan(&roleID)
 	if err != nil {
-		// handle err
-		// not sure what the possible errors are here
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't overwrite role: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
 	}
 
-	// good through here //
-
-	// create permissions as necessary
+	// upsert permissions
 	// permissions are unique per combination of role_id + name
-	permissionTable := "permission(role_id, name, service, method, constraints, description)"
-	stmt = multiInsertStmt(permissionTable, len(role.Permissions))
-	stmt += " ON CONFLICT DO NOTHING"
-	permissionRows := []interface{}{}
+	stmt = `
+		INSERT INTO permission(role_id, name, service, method, constraints, description)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(role_id, name) DO UPDATE
+		SET 
+			service     = $3
+			method      = $4
+			constraints = $5
+			description = $6
+	`
 	for _, permission := range role.Permissions {
 		constraints, err := json.Marshal(permission.Constraints)
 		if err != nil {
@@ -256,21 +261,20 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 			)
 			return newErrorResponse(msg, 500, &err)
 		}
-		row := []interface{}{
+		_, err = tx.Exec(
+			stmt,
 			roleID,
 			permission.Name,
 			permission.Action.Service,
 			permission.Action.Method,
 			constraints,
 			permission.Description,
+		)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("couldn't overwrite permissions: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
 		}
-		permissionRows = append(permissionRows, row...)
-	}
-	_, err = tx.Exec(stmt, permissionRows...)
-	if err != nil {
-		_ = tx.Rollback()
-		msg := fmt.Sprintf("couldn't create permissions: %s", err.Error())
-		return newErrorResponse(msg, 500, &err)
 	}
 
 	err = tx.Commit()
