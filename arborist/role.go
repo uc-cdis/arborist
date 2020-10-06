@@ -245,9 +245,9 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(role_id, name) DO UPDATE
 		SET 
-			service     = $3
-			method      = $4
-			constraints = $5
+			service     = $3,
+			method      = $4,
+			constraints = $5,
 			description = $6
 	`
 	for _, permission := range role.Permissions {
