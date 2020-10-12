@@ -1165,6 +1165,9 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "foo", result.Name, msg)
 		})
 
+		// HERE - write test for new PUT /role/{role_name}
+		// t.Run("Overwrite", func(t *testing.T) {...})
+
 		t.Run("List", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/role", nil)
