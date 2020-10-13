@@ -1226,7 +1226,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from roles list")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, 1, len(result.Roles), msg)
+			assert.Equal(t, 2, len(result.Roles), msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {
