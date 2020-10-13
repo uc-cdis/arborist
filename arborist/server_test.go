@@ -1121,6 +1121,29 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from role creation")
 			}
 
+			t.Run("OverwriteCreate", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"id": "thisNewRole",
+					"permissions": [
+						{"id": "thisNewID", "action": {"service": "test-overwrite", "method": "bar"}}
+					]
+				}`)
+				req := newRequest("PUT", "/role/thisNewRole", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't create role")
+				}
+				// make one-off struct to read the response into
+				result := struct {
+					_ interface{} `json:"created"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from role creation")
+				}
+			})
+
 			t.Run("AlreadyExists", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				body := []byte(`{
@@ -1165,8 +1188,28 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "foo", result.Name, msg)
 		})
 
-		// HERE - write test for new PUT /role/{role_name}
-		// t.Run("Overwrite", func(t *testing.T) {...})
+		t.Run("Overwrite", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"id": "foo",
+				"permissions": [
+					{"id": "foo", "action": {"service": "*", "method": "bar"}}
+				]
+			}`)
+			req := newRequest("PUT", "/role/foo", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't update role")
+			}
+			// make one-off struct to read the response into
+			result := struct {
+				_ interface{} `json:"updated"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from role overwrite")
+			}
+		})
 
 		t.Run("List", func(t *testing.T) {
 			w := httptest.NewRecorder()
