@@ -121,10 +121,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
 	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
-
-	// new "overwrite role" endpoint
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.parseJSON(server.handleRoleOverwrite))).Methods("PUT")
-
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
@@ -941,7 +938,6 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	_ = jsonResponseFrom(role, http.StatusOK).write(w, r)
 }
 
-// new method for action "overwrite role"
 func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	name := mux.Vars(r)["roleID"]
 	roleFromQuery, err := roleWithName(server.db, name)
@@ -964,8 +960,6 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 	}
 
 	var errResponse *ErrorResponse
-
-	// role doesn't exist in db - create it
 	if roleFromQuery == nil {
 		errResponse = role.createInDb(server.db)
 		if errResponse != nil {
@@ -983,7 +977,6 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// role exists in db - overwrite it
 	errResponse = role.overwriteInDb(server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
