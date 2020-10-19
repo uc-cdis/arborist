@@ -939,23 +939,31 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	role := &Role{}
+	err := json.Unmarshal(body, role)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
+		server.logger.Info("tried to overwrite role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
 	name := mux.Vars(r)["roleID"]
+	if name != role.Name {
+		msg := fmt.Sprintf("roleID '%s' from URL did not match roleID '%s' from JSON", name, role.Name)
+		server.logger.Info("tried to overwrite role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
 	roleFromQuery, err := roleWithName(server.db, name)
 	if err != nil {
 		msg := fmt.Sprintf("role query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
-		return
-	}
-
-	role := &Role{}
-	err = json.Unmarshal(body, role)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
-		server.logger.Info("tried to create role but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
 		return
 	}
 
