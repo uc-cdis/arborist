@@ -1211,6 +1211,21 @@ func TestServer(t *testing.T) {
 			}
 		})
 
+		t.Run("FailOverwrite", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"id": "notFoo",
+				"permissions": [
+					{"id": "foo", "action": {"service": "*", "method": "bar"}}
+				]
+			}`)
+			req := newRequest("PUT", "/role/foo", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				httpError(t, w, "wrong response code from invalid role overwrite request")
+			}
+		})
+
 		t.Run("List", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/role", nil)
