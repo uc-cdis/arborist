@@ -135,8 +135,8 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 					SELECT 1 FROM policy_role
 					JOIN permission ON permission.role_id = policy_role.role_id
 					WHERE policy_role.policy_id = policies.policy_id
-					AND permission.service = $1 OR permission.service = '*'
-					AND permission.method = $2 OR permission.service = '*'
+					AND (permission.service = $1 OR permission.service = '*')
+					AND (permission.method = $2 OR permission.method = '*')
 				) AND (
 					$3 OR policies.policy_id IN (
 						SELECT id FROM policy
