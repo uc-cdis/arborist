@@ -3223,7 +3223,7 @@ func TestServer(t *testing.T) {
 				))
 				checkAuthSuccess(t, authRequestBody, true)
 			})
-		t.Run("CheckingStar", func(t *testing.T) {
+			t.Run("CheckingStar", func(t *testing.T) {
 			createRoleBytes(
 				t,
 				[]byte(`{
