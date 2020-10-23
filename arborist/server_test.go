@@ -3224,29 +3224,29 @@ func TestServer(t *testing.T) {
 				checkAuthSuccess(t, authRequestBody, true)
 			})
 			t.Run("CheckingStar", func(t *testing.T) {
-			createRoleBytes(
-				t,
-				[]byte(`{
+				createRoleBytes(
+					t,
+					[]byte(`{
 						"id": "roleForAnonCheckingStar",
 						"permissions": [
 							{"id": "wanabeserviceStar", "action": {"service": "*", "method": "create"}}
 						]
 					}`),
-			)
-			createPolicyBytes(
-				t,
-				[]byte(fmt.Sprintf(
-					`{
+				)
+				createPolicyBytes(
+					t,
+					[]byte(fmt.Sprintf(
+						`{
 							"id": "policyForAnonCheckingStar",
 							"resource_paths": ["%s"],
 							"role_ids": ["roleForAnonCheckingStar"]
 						}`,
-					resourcePath,
-				)),
-			)
-			grantGroupPolicy(t, arborist.AnonymousGroup, "policyForAnonCheckingStar")
-			authRequestBody := []byte(fmt.Sprintf(
-				`{
+						resourcePath,
+					)),
+				)
+				grantGroupPolicy(t, arborist.AnonymousGroup, "policyForAnonCheckingStar")
+				authRequestBody := []byte(fmt.Sprintf(
+					`{
 						"user": {"token": ""},
 						"request": {
 							"resource": "%s",
@@ -3256,12 +3256,12 @@ func TestServer(t *testing.T) {
 							}
 						}
 					}`,
-				resourcePath,
-				serviceName,
-				"write", // Attempt to write when only allowed to create
-			))
-			checkAuthSuccess(t, authRequestBody, false)
-			})
+					resourcePath,
+					serviceName,
+					"write", // Attempt to write when only allowed to create
+				))
+				checkAuthSuccess(t, authRequestBody, false)
+				})
 		})
 
 		deleteEverything()
