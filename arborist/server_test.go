@@ -3261,7 +3261,7 @@ func TestServer(t *testing.T) {
 					"write", // Attempt to write when only allowed to create
 				))
 				checkAuthSuccess(t, authRequestBody, false)
-				})
+			})
 		})
 
 		deleteEverything()
