@@ -137,7 +137,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 	}
 	resource := ResourceOut{
 		Name:         UnderscoreDecode(resourceFromQuery.Name),
-		Path:         UnderscoreDecode(formatDbPath(resourceFromQuery.Path)),
+		Path:         formatDbPath(resourceFromQuery.Path),
 		Tag:          resourceFromQuery.Tag,
 		Subresources: subresources,
 	}
