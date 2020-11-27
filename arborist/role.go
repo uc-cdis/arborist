@@ -210,6 +210,83 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
+func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
+	errResponse := role.validate()
+	if errResponse != nil {
+		return errResponse
+	}
+
+	tx, err := db.Beginx()
+	if err != nil {
+		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	var roleID int
+	stmt := `
+		INSERT INTO role(name, description)
+		VALUES ($1, $2)
+		ON CONFLICT(name) DO UPDATE
+		SET description = $2
+		RETURNING id
+	`
+	row := tx.QueryRowx(stmt, role.Name, role.Description)
+	err = row.Scan(&roleID)
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't overwrite role: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	// upsert permissions
+	// permissions are unique per combination of role_id + name
+	stmt = `
+		INSERT INTO permission(role_id, name, service, method, constraints, description)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(role_id, name) DO UPDATE
+		SET 
+			service     = $3,
+			method      = $4,
+			constraints = $5,
+			description = $6
+	`
+	for _, permission := range role.Permissions {
+		constraints, err := json.Marshal(permission.Constraints)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf(
+				"couldn't write constraints for permission %s: %s",
+				permission.Name,
+				err.Error(),
+			)
+			return newErrorResponse(msg, 500, &err)
+		}
+		_, err = tx.Exec(
+			stmt,
+			roleID,
+			permission.Name,
+			permission.Action.Service,
+			permission.Action.Method,
+			constraints,
+			permission.Description,
+		)
+		if err != nil {
+			_ = tx.Rollback()
+			msg := fmt.Sprintf("couldn't overwrite permissions: %s", err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		_ = tx.Rollback()
+		msg := fmt.Sprintf("couldn't commit database transaction: %s", err.Error())
+		return newErrorResponse(msg, 500, &err)
+	}
+
+	return nil
+}
+
 func (role *Role) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM role WHERE name = $1"
 	_, err := db.Exec(stmt, role.Name)

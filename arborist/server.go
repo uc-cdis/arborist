@@ -121,6 +121,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
 	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleRead)).Methods("GET")
+	router.Handle("/role/{roleID}", http.HandlerFunc(server.parseJSON(server.handleRoleOverwrite))).Methods("PUT")
 	router.Handle("/role/{roleID}", http.HandlerFunc(server.handleRoleDelete)).Methods("DELETE")
 
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
@@ -935,6 +936,68 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 	}
 	role := roleFromQuery.standardize()
 	_ = jsonResponseFrom(role, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	role := &Role{}
+	err := json.Unmarshal(body, role)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse role from JSON: %s", err.Error())
+		server.logger.Info("tried to overwrite role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	name := mux.Vars(r)["roleID"]
+	if name != role.Name {
+		msg := fmt.Sprintf("roleID '%s' from URL did not match roleID '%s' from JSON", name, role.Name)
+		server.logger.Info("tried to overwrite role but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	roleFromQuery, err := roleWithName(server.db, name)
+	if err != nil {
+		msg := fmt.Sprintf("role query failed: %s", err.Error())
+		errResponse := newErrorResponse(msg, 500, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	var errResponse *ErrorResponse
+	if roleFromQuery == nil {
+		errResponse = role.createInDb(server.db)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		server.logger.Info("created role %s", role.Name)
+		created := struct {
+			Created *Role `json:"created"`
+		}{
+			Created: role,
+		}
+		_ = jsonResponseFrom(created, 201).write(w, r)
+		return
+	}
+
+	errResponse = role.overwriteInDb(server.db)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info("updated role %s", role.Name)
+	updated := struct {
+		Updated *Role `json:"updated"`
+	}{
+		Updated: role,
+	}
+	_ = jsonResponseFrom(updated, 200).write(w, r)
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {

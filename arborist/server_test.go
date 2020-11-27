@@ -598,7 +598,7 @@ func TestServer(t *testing.T) {
 		_ = db.MustExec("DELETE FROM usr")
 	}
 
-	checkAuthSuccess := func(t *testing.T, body []byte) {
+	checkAuthSuccess := func(t *testing.T, body []byte, outcome bool) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/auth/request", bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
@@ -613,7 +613,7 @@ func TestServer(t *testing.T) {
 			httpError(t, w, "couldn't read response from auth request")
 		}
 		msg := fmt.Sprintf("got response body: %s", w.Body.String())
-		assert.Equal(t, true, result.Auth, msg)
+		assert.Equal(t, outcome, result.Auth, msg)
 	}
 
 	// testSetup should be used for any setup or teardown that should go in all
@@ -1121,6 +1121,29 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from role creation")
 			}
 
+			t.Run("OverwriteCreate", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"id": "thisNewRole",
+					"permissions": [
+						{"id": "thisNewID", "action": {"service": "test-overwrite", "method": "bar"}}
+					]
+				}`)
+				req := newRequest("PUT", "/role/thisNewRole", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't create role")
+				}
+				// make one-off struct to read the response into
+				result := struct {
+					_ interface{} `json:"created"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from role creation")
+				}
+			})
+
 			t.Run("AlreadyExists", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				body := []byte(`{
@@ -1165,6 +1188,44 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "foo", result.Name, msg)
 		})
 
+		t.Run("Overwrite", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"id": "foo",
+				"permissions": [
+					{"id": "foo", "action": {"service": "*", "method": "bar"}}
+				]
+			}`)
+			req := newRequest("PUT", "/role/foo", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't update role")
+			}
+			// make one-off struct to read the response into
+			result := struct {
+				_ interface{} `json:"updated"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from role overwrite")
+			}
+		})
+
+		t.Run("FailOverwrite", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			body := []byte(`{
+				"id": "notFoo",
+				"permissions": [
+					{"id": "foo", "action": {"service": "*", "method": "bar"}}
+				]
+			}`)
+			req := newRequest("PUT", "/role/foo", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				httpError(t, w, "wrong response code from invalid role overwrite request")
+			}
+		})
+
 		t.Run("List", func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := newRequest("GET", "/role", nil)
@@ -1180,7 +1241,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from roles list")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, 1, len(result.Roles), msg)
+			assert.Equal(t, 2, len(result.Roles), msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {
@@ -3160,7 +3221,46 @@ func TestServer(t *testing.T) {
 					serviceName,
 					"read",
 				))
-				checkAuthSuccess(t, authRequestBody)
+				checkAuthSuccess(t, authRequestBody, true)
+			})
+			t.Run("CheckingStar", func(t *testing.T) {
+				createRoleBytes(
+					t,
+					[]byte(`{
+						"id": "roleForAnonCheckingStar",
+						"permissions": [
+							{"id": "wanabeserviceStar", "action": {"service": "*", "method": "create"}}
+						]
+					}`),
+				)
+				createPolicyBytes(
+					t,
+					[]byte(fmt.Sprintf(
+						`{
+							"id": "policyForAnonCheckingStar",
+							"resource_paths": ["%s"],
+							"role_ids": ["roleForAnonCheckingStar"]
+						}`,
+						resourcePath,
+					)),
+				)
+				grantGroupPolicy(t, arborist.AnonymousGroup, "policyForAnonCheckingStar")
+				authRequestBody := []byte(fmt.Sprintf(
+					`{
+						"user": {"token": ""},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					resourcePath,
+					serviceName,
+					"write", // Attempt to write when only allowed to create
+				))
+				checkAuthSuccess(t, authRequestBody, false)
 			})
 		})
 
