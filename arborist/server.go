@@ -110,6 +110,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.parseJSON(server.handlePolicyOverwrite))).Methods("PUT")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
+	router.Handle("/policy/{policyIDs}", http.HandlerFunc(server.parseJSON(server.handleBulkPoliciesOverwrite))).Methods("PUT")
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
 	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
@@ -673,6 +674,13 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		Updated: policy,
 	}
 	_ = jsonResponseFrom(updated, 201).write(w, r)
+}
+
+func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	policies := []Policy{}
+	for i, policy := range policies {
+		fmt.Print(i, policy)
+	}
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
