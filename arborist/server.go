@@ -681,7 +681,11 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	// for i, policy := range policies {
 	// 	fmt.Print(i, policy)
 	// }
-	fmt.Println(body)
+	policy := []Policy{}
+	for _, b := range body {
+		err := json.Unmarshal(b, policy)
+		fmt.Printf(policy)
+	}
 	fmt.Println("Value isadsadsa dadsasdadsaass")
 }
 
