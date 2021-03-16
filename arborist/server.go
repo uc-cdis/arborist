@@ -648,6 +648,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	policy := &Policy{}
 	err := json.Unmarshal(body, policy)
+	fmt.Println(err)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
 		server.logger.Info("tried to create policy but input was invalid: %s", msg)
