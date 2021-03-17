@@ -22,6 +22,10 @@ type PolicyResource struct {
 	Resource int64 `db:"resource_id"`
 }
 
+type BulkPolicy struct {
+	Policies []Policy
+}
+
 // UnmarshalJSON defines the way that a `Policy` gets read when unmarshalling:
 //
 //     json.Unmarshal(bytes, &policy)
