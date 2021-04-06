@@ -692,24 +692,26 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 		return
 	}
 	fmt.Println(policies)
-	for _, policy := range policies {
-		if mux.Vars(r)["policyID"] != "" {
-			policy.Name = mux.Vars(r)["policyID"]
-		}
-		errResponse := transactify(server.db, policy.updateBulkInDb)
-		if errResponse != nil {
-			errResponse.log.write(server.logger)
-			_ = errResponse.write(w, r)
-			return
-		}
-		server.logger.Info("overwrote policy %s", policy.Name)
-		updated := struct {
-			Updated Policy `json:"updated"`
-		}{
-			Updated: policy,
-		}
-		_ = jsonResponseFrom(updated, 201).write(w, r)
-	}
+	errResponse := transactify(server.db, policies.updateBulkInDb)
+	print(errResponse)
+	// for _, policy := range policies {
+	// 	if mux.Vars(r)["policyID"] != "" {
+	// 		policy.Name = mux.Vars(r)["policyID"]
+	// 	}
+	// 	errResponse := transactify(server.db, policy.updateBulkInDb)
+	// 	if errResponse != nil {
+	// 		errResponse.log.write(server.logger)
+	// 		_ = errResponse.write(w, r)
+	// 		return
+	// 	}
+	// 	server.logger.Info("overwrote policy %s", policy.Name)
+	// 	updated := struct {
+	// 		Updated Policy `json:"updated"`
+	// 	}{
+	// 		Updated: policy,
+	// 	}
+	// 	_ = jsonResponseFrom(updated, 201).write(w, r)
+	// }
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
