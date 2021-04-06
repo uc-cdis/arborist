@@ -345,7 +345,7 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (policies []Policy) updateBulkInDb(tx *sql.Tx) *ErrorResponse {
+func (policies []Policy) updateBulkInDb(tx *sql.Tx) {
 
 	// TODO: Need to validate policies
 	// errResponse := policies.validate()
@@ -354,4 +354,5 @@ func (policies []Policy) updateBulkInDb(tx *sql.Tx) *ErrorResponse {
 	for _, policy := range policies {
 		fmt.Println(policy)
 	}
+	return
 }
