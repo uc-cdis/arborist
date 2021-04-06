@@ -693,7 +693,7 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	}
 	fmt.Println(policies)
 	errResponse := transactify(server.db, policies.updateBulkInDb)
-	print(errResponse)
+	fmt.println(errResponse)
 	// for _, policy := range policies {
 	// 	if mux.Vars(r)["policyID"] != "" {
 	// 		policy.Name = mux.Vars(r)["policyID"]
