@@ -344,3 +344,18 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 
 	return nil
 }
+
+func (policies []Policy) updateBulkInDb(tx *sql.Tx) *ErrorResponse {
+
+	// TODO: Need to validate policies
+	// errResponse := policies.validate()
+
+	stmt := "INSERT INTO policy (id, name, description) VALUES"
+	for _, policy := range policies {
+		fmt.Println(policy)
+		fmt.Println(policy.id)
+		fmt.Println(policy.name)
+		fmt.Println(policy.description)
+
+	}
+}
