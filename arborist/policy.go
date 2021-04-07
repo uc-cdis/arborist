@@ -24,6 +24,10 @@ type PolicyResource struct {
 
 type Policies []Policy
 
+// type Policies struct {
+// 	policies []Policy
+// }
+
 // UnmarshalJSON defines the way that a `Policy` gets read when unmarshalling:
 //
 //     json.Unmarshal(bytes, &policy)
@@ -343,14 +347,20 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (policies *Policies) updateBulkInDb(tx *sql.Tx) {
+func (policies Policies) updateBulkInDb(tx *sqlx.Tx) *ErrorResponse {
 
 	// TODO: Need to validate policies
 	// errResponse := policies.validate()
 
+	// errResponse := policies.validate()
+	// if errResponse != nil {
+	// 	return errResponse
+	// }
+	// errResponse := nil
 	stmt := "INSERT INTO policy (id, name, description) VALUES"
 	for _, policy := range policies {
 		fmt.Println(policy)
 	}
-	return
+	fmt.Println(stmt)
+	return nil
 }

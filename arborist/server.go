@@ -682,7 +682,7 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	// for i, policy := range policies {
 	// 	fmt.Print(i, policy)
 	// }
-	policies := []Policy{}
+	policies := &Policies{}
 	err := json.Unmarshal(body, &policies)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policies from JSON: %s", err.Error())
@@ -693,7 +693,11 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	}
 	fmt.Println(policies)
 	errResponse := transactify(server.db, policies.updateBulkInDb)
-	fmt.println(errResponse)
+	if err != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
 	// for _, policy := range policies {
 	// 	if mux.Vars(r)["policyID"] != "" {
 	// 		policy.Name = mux.Vars(r)["policyID"]
