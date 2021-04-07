@@ -22,10 +22,6 @@ type PolicyResource struct {
 	Resource int64 `db:"resource_id"`
 }
 
-type BulkPolicy struct {
-	Policies []Policy
-}
-
 type Policies []Policy
 
 // UnmarshalJSON defines the way that a `Policy` gets read when unmarshalling:
@@ -347,7 +343,7 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (policies []Policies) updateBulkInDb(tx *sql.Tx) {
+func (policies *Policies) updateBulkInDb(tx *sql.Tx) {
 
 	// TODO: Need to validate policies
 	// errResponse := policies.validate()
