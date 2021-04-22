@@ -678,44 +678,44 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
-	// policies := []Policy{}
+	policies := []Policy{}
 	// for i, policy := range policies {
 	// 	fmt.Print(i, policy)
 	// }
-	policies := &Policies{}
-	err := json.Unmarshal(body, &policies)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse policies from JSON: %s", err.Error())
-		server.logger.Info("tried to create policies but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
-	fmt.Println(policies)
-	errResponse := transactify(server.db, policies.updateBulkInDb)
-	if err != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	// for _, policy := range policies {
-	// 	if mux.Vars(r)["policyID"] != "" {
-	// 		policy.Name = mux.Vars(r)["policyID"]
-	// 	}
-	// 	errResponse := transactify(server.db, policy.updateBulkInDb)
-	// 	if errResponse != nil {
-	// 		errResponse.log.write(server.logger)
-	// 		_ = errResponse.write(w, r)
-	// 		return
-	// 	}
-	// 	server.logger.Info("overwrote policy %s", policy.Name)
-	// 	updated := struct {
-	// 		Updated Policy `json:"updated"`
-	// 	}{
-	// 		Updated: policy,
-	// 	}
-	// 	_ = jsonResponseFrom(updated, 201).write(w, r)
+	// policies := &Policies{}
+	// err := json.Unmarshal(body, &policies)
+	// if err != nil {
+	// 	msg := fmt.Sprintf("could not parse policies from JSON: %s", err.Error())
+	// 	server.logger.Info("tried to create policies but input was invalid: %s", msg)
+	// 	response := newErrorResponse(msg, 400, nil)
+	// 	_ = response.write(w, r)
+	// 	return
 	// }
+	// fmt.Println(policies)
+	// errResponse := transactify(server.db, policies.updateBulkInDb)
+	// if err != nil {
+	// 	errResponse.log.write(server.logger)
+	// 	_ = errResponse.write(w, r)
+	// 	return
+	// }
+	for _, policy := range policies {
+		if mux.Vars(r)["policyID"] != "" {
+			policy.Name = mux.Vars(r)["policyID"]
+		}
+		errResponse := transactify(server.db, policy.updateInDb)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		server.logger.Info("overwrote policy %s", policy.Name)
+		updated := struct {
+			Updated Policy `json:"updated"`
+		}{
+			Updated: policy,
+		}
+		_ = jsonResponseFrom(updated, 201).write(w, r)
+	}
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {

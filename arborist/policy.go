@@ -357,9 +357,12 @@ func (policies Policies) updateBulkInDb(tx *sqlx.Tx) *ErrorResponse {
 	// 	return errResponse
 	// }
 	// errResponse := nil
-	stmt := "INSERT INTO policy (id, name, description) VALUES"
+	stmt := "UPDATE policy SET description"
 	for _, policy := range policies {
-		fmt.Println(policy)
+		stmt += "(" + policy.Name + ", " + policy.Description
+		fmt.Println(policy.Name)
+		fmt.Println(policy.Description)
+		fmt.Println(policy.ResourcePaths)
 	}
 	fmt.Println(stmt)
 	return nil
