@@ -702,6 +702,8 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 		if mux.Vars(r)["policyID"] != "" {
 			policy.Name = mux.Vars(r)["policyID"]
 		}
+		fmt.Println("-----------------------------------------")
+		fmt.Println(policy)
 		errResponse := transactify(server.db, policy.updateInDb)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
