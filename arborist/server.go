@@ -681,6 +681,7 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	server.logger.Info("Starting bulk overwrite!------------")
 	policies := []Policy{}
 	for _, policy := range policies {
+		server.logger.Info("Starting loop")
 		server.logger.Info("Update policy %s", policy)
 		if mux.Vars(r)["policyID"] != "" {
 			policy.Name = mux.Vars(r)["policyID"]
