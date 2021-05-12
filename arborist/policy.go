@@ -348,24 +348,3 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 
 	return nil
 }
-
-func (policies Policies) updateBulkInDb(tx *sqlx.Tx) *ErrorResponse {
-
-	// TODO: Need to validate policies
-	// errResponse := policies.validate()
-
-	// errResponse := policies.validate()
-	// if errResponse != nil {
-	// 	return errResponse
-	// }
-	// errResponse := nil
-	stmt := "UPDATE policy SET description"
-	for _, policy := range policies {
-		stmt += "(" + policy.Name + ", " + policy.Description
-		fmt.Println(policy.Name)
-		fmt.Println(policy.Description)
-		fmt.Println(policy.ResourcePaths)
-	}
-	fmt.Println(stmt)
-	return nil
-}
