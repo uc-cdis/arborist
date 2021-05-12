@@ -678,27 +678,32 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	fmt.Println("print things please and thanks you!!!!!")
 	server.logger.Info("Starting bulk overwrite!------------")
-	// policies := []Policy{}
-	// // for _, policy := range policies {
-	// // 	server.logger.Info("Starting loop")
-	// // 	server.logger.Info("Update policy %s", policy)
-	// // 	if mux.Vars(r)["policyID"] != "" {
-	// // 		policy.Name = mux.Vars(r)["policyID"]
-	// // 	}
-	// // 	errResponse := transactify(server.db, policy.updateInDb)
-	// // 	if errResponse != nil {
-	// // 		errResponse.log.write(server.logger)
-	// // 		_ = errResponse.write(w, r)
-	// // 		return
-	// // 	}
-	// // 	server.logger.Info("overwrote policy %s", policy.Name)
-	// // 	// updated := struct {
-	// // 	// 	Updated Policy `json:"updated"`
-	// // 	// }{
-	// // 	// 	Updated: policy,
-	// // 	// }
-	// // }
+	policies := []Policy{}
+	server.logger.Info("---------------------------------------")
+	server.logger.Info("lala %s", policies)
+	fmt.Println("print things please and thanks you!")
+
+	for _, policy := range policies {
+		server.logger.Info("Starting loop")
+		server.logger.Info("Update policy %s", policy)
+		if mux.Vars(r)["policyID"] != "" {
+			policy.Name = mux.Vars(r)["policyID"]
+		}
+		errResponse := transactify(server.db, policy.updateInDb)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		server.logger.Info("overwrote policy %s", policy.Name)
+		// updated := struct {
+		// 	Updated Policy `json:"updated"`
+		// }{
+		// 	Updated: policy,
+		// }
+	}
 	_ = jsonResponseFrom("Donzo", 201).write(w, r)
 }
 
