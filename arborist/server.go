@@ -30,6 +30,11 @@ type Server struct {
 	stmts  *CachedStmts
 }
 
+type RequestPolicy struct {
+	PolicyName string `json:"policy_name"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
 func NewServer() *Server {
 	return &Server{}
 }
@@ -130,6 +135,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
+	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 	router.Handle("/user/{username}/resources", http.HandlerFunc(server.handleUserListResources)).Methods("GET")
@@ -678,7 +684,6 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
-	// policies := []Policy{}
 	var policies []Policy
 	err := json.Unmarshal(body, &policies)
 	fmt.Println(err)
@@ -691,8 +696,7 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	}
 
 	for _, policy := range policies {
-		server.logger.Info("Starting loop")
-		server.logger.Info("Update policy %s", policy)
+
 		if mux.Vars(r)["policyID"] != "" {
 			policy.Name = mux.Vars(r)["policyID"]
 		}
@@ -1164,6 +1168,48 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 	}
 	server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	username := mux.Vars(r)["username"]
+	server.logger.Info("IN ARBORIST")
+	server.logger.Info("Username: %s", username)
+	server.logger.Info("body: %s", body)
+
+	var requestPolicies []RequestPolicy
+	err := json.Unmarshal(body, &requestPolicies)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	for _, requestPolicy := range requestPolicies {
+		server.logger.Info("Starting loop")
+		server.logger.Info("Update policy %s", requestPolicy)
+		var expiresAt *time.Time
+		if requestPolicy.ExpiresAt != "" {
+			exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
+			if err != nil {
+				msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
+				server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
+				response := newErrorResponse(msg, 400, nil)
+				_ = response.write(w, r)
+				return
+			}
+			expiresAt = &exp
+		}
+		errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
+		_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+	}
 }
 
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
