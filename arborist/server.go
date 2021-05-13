@@ -678,22 +678,21 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
-	fmt.Println("print things please and thanks you!!!!!")
-	server.logger.Info("Starting bulk overwrite!------------")
 	policies := []Policy{}
 	server.logger.Info("---------------------------------------")
 	server.logger.Info("lala %s", body)
-	fmt.Println("print things please and thanks you!")
-	err := unmarshal(body, policies)
-	fmt.Println(err)
-
-	// if err != nil {
-	// 	err.log.write(server.logger)
-	// 	_ = err.write(w, r)
-	// 	return
-	// }
-
 	server.logger.Info("lala %s", policies)
+	server.logger.Info("---------------------------------------")
+
+	err := json.Unmarshal(body, policies)
+	fmt.Println(err)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
+		server.logger.Info("tried to create policy but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
 
 	for _, policy := range policies {
 		server.logger.Info("Starting loop")
