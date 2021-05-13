@@ -1174,7 +1174,6 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 	username := mux.Vars(r)["username"]
 	server.logger.Info("IN ARBORIST")
 	server.logger.Info("Username: %s", username)
-	server.logger.Info("body: %s", body)
 
 	var requestPolicies []RequestPolicy
 	err := json.Unmarshal(body, &requestPolicies)
@@ -1185,6 +1184,8 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 		_ = response.write(w, r)
 		return
 	}
+
+	server.logger.Info("REQUEST POLICIES: %s", requestPolicies)
 
 	for _, requestPolicy := range requestPolicies {
 		server.logger.Info("Starting loop")
