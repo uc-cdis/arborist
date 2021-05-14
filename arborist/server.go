@@ -1170,9 +1170,6 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 
 func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
 	username := mux.Vars(r)["username"]
-	server.logger.Info("IN ARBORIST")
-	server.logger.Info("Username: %s", username)
-
 	var requestPolicies []RequestPolicy
 	err := json.Unmarshal(body, &requestPolicies)
 	if err != nil {
@@ -1183,11 +1180,7 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	server.logger.Info("REQUEST POLICIES: %s", requestPolicies)
-
 	for _, requestPolicy := range requestPolicies {
-		server.logger.Info("Starting loop")
-		server.logger.Info("Update policy %s", requestPolicy)
 		var expiresAt *time.Time
 		if requestPolicy.ExpiresAt != "" {
 			exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
