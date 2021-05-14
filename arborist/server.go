@@ -1207,8 +1207,8 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 			return
 		}
 		server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
-		_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
