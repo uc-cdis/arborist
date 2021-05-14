@@ -31,7 +31,7 @@ type Server struct {
 }
 
 type RequestPolicy struct {
-	PolicyName string `json:"policy_name"`
+	PolicyName string `json:"policy"`
 	ExpiresAt  string `json:"expires_at"`
 }
 
@@ -686,7 +686,6 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	var policies []Policy
 	err := json.Unmarshal(body, &policies)
-	fmt.Println(err)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
 		server.logger.Info("tried to create policy but input was invalid: %s", msg)
@@ -696,7 +695,6 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	}
 
 	for _, policy := range policies {
-
 		if mux.Vars(r)["policyID"] != "" {
 			policy.Name = mux.Vars(r)["policyID"]
 		}
