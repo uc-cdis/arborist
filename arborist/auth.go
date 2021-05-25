@@ -21,8 +21,8 @@ type AuthRequestJSON_User struct {
 	Token string `json:"token"`
 	// The Policies field is optional, and if the request provides a token
 	// this gets filled in using the Token field.
-	Policies  []string `json:"policies,omitempty"`
-	Audiences []string `json:"aud,omitempty"`
+	Policies []string `json:"policies,omitempty"`
+	Scopes   []string `json:"scope,omitempty"`
 }
 
 func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
@@ -33,7 +33,7 @@ func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 	}
 	optionalFields := map[string]struct{}{
 		"policies": struct{}{},
-		"aud":      struct{}{},
+		"scope":    struct{}{},
 	}
 	err = validateJSON("auth request", requestJSON, fields, optionalFields)
 	if err != nil {
@@ -415,8 +415,8 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	}
 	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 	userJWT = strings.TrimPrefix(userJWT, "bearer ")
-	aud := []string{"openid"}
-	info, err := decode(userJWT, aud)
+	scopes := []string{"openid"}
+	info, err := decode(userJWT, scopes)
 	if err != nil {
 		return nil, newErrorResponse(err.Error(), 401, &err)
 	}
