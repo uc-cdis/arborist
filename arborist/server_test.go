@@ -87,7 +87,7 @@ func (testJWT *TestJWT) Encode() string {
 	if testJWT.policies == nil || len(testJWT.policies) == 0 {
 		payload = []byte(fmt.Sprintf(
 			`{
-				"aud": ["openid"],
+				"scope": ["openid"],
 				"exp": %d,
 				"sub": "0",
 				"context": {
@@ -105,7 +105,7 @@ func (testJWT *TestJWT) Encode() string {
 		policies := fmt.Sprintf(`["%s"]`, strings.Join(testJWT.policies, `", "`))
 		payload = []byte(fmt.Sprintf(
 			`{
-				"aud": ["openid"],
+				"scope": ["openid"],
 				"exp": %d,
 				"sub": "0",
 				"context": {
