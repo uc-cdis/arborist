@@ -26,7 +26,7 @@
 
 [[constraint]]
   name = "github.com/uc-cdis/go-authutils"
-  branch = "feat/initial"
+  branch = "fix/aud-scopes"
 
 [[constraint]]
   name = "github.com/gorilla/mux"
