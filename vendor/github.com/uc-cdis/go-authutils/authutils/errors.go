@@ -38,9 +38,9 @@ func expired(timestamp int64) error {
 	return errors.New(msg)
 }
 
-func missingAudience(missingAud string, containsAuds []string) error {
-	containsString := strings.Join(containsAuds, ", ")
-	msg := fmt.Sprintf("token missing required audience: %s; contains: %s\n", missingAud, containsString)
+func missingScope(missingScope string, containsScopes []string) error {
+	containsString := strings.Join(containsScopes, ", ")
+	msg := fmt.Sprintf("token missing required scope: %s; contains: %s\n", missingScope, containsString)
 	return errors.New(msg)
 }
 
