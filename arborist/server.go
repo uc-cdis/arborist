@@ -233,8 +233,8 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		server.logger.Info("No username in query args; falling back to jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
-		aud := []string{"openid"}
-		info, err := server.decodeToken(userJWT, aud)
+		scopes := []string{"openid"}
+		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
 			// Return 400 on failure to decode JWT
 			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
@@ -368,18 +368,18 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	var aud []string
-	if authRequestJSON.User.Audiences == nil {
-		aud = []string{"openid"}
+	var scopes []string
+	if authRequestJSON.User.Scopes == nil {
+		scopes = []string{"openid"}
 	} else {
-		aud = make([]string, len(authRequestJSON.User.Audiences))
-		copy(aud, authRequestJSON.User.Audiences)
+		scopes = make([]string, len(authRequestJSON.User.Scopes))
+		copy(scopes, authRequestJSON.User.Scopes)
 	}
 
 	isAnonymous := authRequestJSON.User.Token == ""
 	var info *TokenInfo
 	if !isAnonymous {
-		info, err = server.decodeToken(authRequestJSON.User.Token, aud)
+		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
 		if err != nil {
 			server.logger.Info(err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
@@ -538,15 +538,15 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 			return
 		}
 	*/
-	var aud []string
-	if request.User.Audiences == nil {
-		aud = []string{"openid"}
+	var scopes []string
+	if request.User.Scopes == nil {
+		scopes = []string{"openid"}
 	} else {
-		aud = make([]string, len(request.User.Audiences))
-		copy(aud, request.User.Audiences)
+		scopes = make([]string, len(request.User.Scopes))
+		copy(scopes, request.User.Scopes)
 	}
 
-	info, err := server.decodeToken(request.User.Token, aud)
+	info, err := server.decodeToken(request.User.Token, scopes)
 	if err != nil {
 		server.logger.Info(err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)

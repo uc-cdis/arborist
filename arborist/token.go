@@ -13,7 +13,7 @@ type TokenInfo struct {
 	policies []string
 }
 
-func (server *Server) decodeToken(token string, aud []string) (*TokenInfo, error) {
+func (server *Server) decodeToken(token string, scopes []string) (*TokenInfo, error) {
 	missingRequiredField := func(field string) error {
 		msg := fmt.Sprintf(
 			"failed to decode token: missing required field `%s`",
@@ -33,7 +33,7 @@ func (server *Server) decodeToken(token string, aud []string) (*TokenInfo, error
 	if err != nil {
 		return nil, fmt.Errorf("error decoding token: %s", err.Error())
 	}
-	expected := &authutils.Expected{Audiences: aud}
+	expected := &authutils.Expected{Scopes: scopes}
 	err = expected.Validate(claims)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding token: %s", err.Error())
