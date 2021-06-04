@@ -654,7 +654,6 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
 	policy := &Policy{}
 	err := json.Unmarshal(body, policy)
-	fmt.Println(err)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
 		server.logger.Info("tried to create policy but input was invalid: %s", msg)
@@ -705,13 +704,13 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 			return
 		}
 		server.logger.Info("overwrote policy %s", policy.Name)
-		// updated := struct {
-		// 	Updated Policy `json:"updated"`
-		// }{
-		// 	Updated: policy,
-		// }
 	}
-	_ = jsonResponseFrom("Donzo", 201).write(w, r)
+	updated := struct {
+		Updated []Policy `json:"updated"`
+	}{
+		Updated: policies,
+	}
+	_ = jsonResponseFrom(updated, 201).write(w, r)
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {

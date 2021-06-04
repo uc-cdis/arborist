@@ -306,8 +306,6 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 	}
 
 	var policyID int
-	fmt.Println(policy.Name)
-	fmt.Println(policy.Description)
 	stmt := "UPDATE policy SET description = $1 WHERE name = $2 RETURNING id"
 	row := tx.QueryRowx(stmt, policy.Description, policy.Name)
 	err := row.Scan(&policyID)
