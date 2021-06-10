@@ -108,30 +108,30 @@ func checkIssuer(claims *Claims, allowed []string) error {
 	return nil
 }
 
-// checkAudience validates the `aud` field in the claims.
-func checkAudience(claims *Claims, expected []string) error {
-	tokenAud, exists := (*claims)["aud"]
+// checkScope validates the `scope` field in the claims.
+func checkScope(claims *Claims, expected []string) error {
+	tokenScope, exists := (*claims)["scope"]
 	if !exists {
-		return missingField("aud")
+		return missingField("scope")
 	}
-	var aud []string
-	switch a := tokenAud.(type) {
+	var scope []string
+	switch a := tokenScope.(type) {
 	case []string:
-		aud = a
+		scope = a
 	case []interface{}:
 		for _, value := range a {
 			valueString, casted := value.(string)
 			if !casted {
-				return fieldTypeError("aud", tokenAud, "[]string")
+				return fieldTypeError("scope", tokenScope, "[]string")
 			}
-			aud = append(aud, valueString)
+			scope = append(scope, valueString)
 		}
 	default:
-		return fieldTypeError("aud", tokenAud, "[]string")
+		return fieldTypeError("scope", tokenScope, "[]string")
 	}
-	for _, expectedAud := range expected {
-		if !contains(expectedAud, aud) {
-			return missingAudience(expectedAud, aud)
+	for _, expectedScope := range expected {
+		if !contains(expectedScope, scope) {
+			return missingScope(expectedScope, scope)
 		}
 	}
 	return nil
@@ -157,8 +157,8 @@ func checkPurpose(claims *Claims, expected *string) error {
 // Expected represents some values which are used to validate the claims in a
 // token.
 type Expected struct {
-	// Audiences is a list of expected receivers or uses of the token.
-	Audiences []string `json:"aud"`
+	// Scopes is a list of expected uses of the token.
+	Scopes []string `json:"scope"`
 	// Expiration is the Unix timestamp at which the token becomes expired.
 	Expiration *int64 `json:"exp"`
 	// Issuers is a list of acceptable issuers to expect tokens to contain.
@@ -168,19 +168,10 @@ type Expected struct {
 	Purpose *string `json:"pur"`
 }
 
-// selfValidate ensures that the fields provided in Expected are valid. For
-// example, to validate some Claims the validator must identify with at least
-// one audience (`aud`) in the claims, so these may not be empty.
-//
 // See https://tools.ietf.org/html/rfc7519 for general information on JWTs and
 // basic validation, and see https://tools.ietf.org/html/rfc7523 for
 // considerations for validation specific to using JWTs for the OAuth2 flow.
 func (expected *Expected) selfValidate() error {
-	// Must expect at least one audience.
-	if len(expected.Audiences) == 0 {
-		return validationError("must validate against at least one audience")
-	}
-
 	if expected.Purpose != nil {
 		// Must expect one of these given purposes.
 		if !contains(*expected.Purpose, ALLOWED_PURPOSES) {
@@ -212,7 +203,7 @@ func (expected *Expected) Validate(claims *Claims) error {
 	if err := checkIssuer(claims, expected.Issuers); err != nil {
 		return err
 	}
-	if err := checkAudience(claims, expected.Audiences); err != nil {
+	if err := checkScope(claims, expected.Scopes); err != nil {
 		return err
 	}
 	if err := checkPurpose(claims, expected.Purpose); err != nil {

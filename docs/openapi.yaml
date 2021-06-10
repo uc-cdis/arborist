@@ -121,7 +121,10 @@ paths:
         however our usage so far is to use the permission model to capture the
         basic set of operations one might expect in ABAC (read/write, etc.)
         combined with the client service, and the path for the resource the user
-        is trying to access. If the given JWT has `azp` field, the permission of
+        is trying to access.
+        If using a list of `requests`, the response is positive if the user
+        has access to ALL items in the list.
+        If the given JWT has `azp` field, the permission of
         the corresponding client will be also checked; only when both the user
         and the client have permission can the response be positive.
       requestBody:
