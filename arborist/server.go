@@ -651,19 +651,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 	_ = jsonResponseFrom(created, 201).write(w, r)
 }
 
-func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
-	policy := &Policy{}
-	err := json.Unmarshal(body, policy)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
-		server.logger.Info("tried to create policy but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
-	// Overwrite policy name from json with policy name from query arg.
-	// After 3.0.0, when PUT /policy is deprecated and only PUT /policy/{policyID} is allowed,
-	// can remove the !="" check. For now, if policy name not found in url, default to name in json.
+func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, policy Policy) {
 	if mux.Vars(r)["policyID"] != "" {
 		policy.Name = mux.Vars(r)["policyID"]
 	}
@@ -674,6 +662,21 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	server.logger.Info("overwrote policy %s", policy.Name)
+}
+
+func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	policy := &Policy{}
+	err := json.Unmarshal(body, policy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
+		server.logger.Info("tried to create policy but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	server.overwritePolicy(w, r, *policy)
+
 	updated := struct {
 		Updated *Policy `json:"updated"`
 	}{
@@ -686,24 +689,15 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	var policies []Policy
 	err := json.Unmarshal(body, &policies)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse policy from JSON: %s", err.Error())
-		server.logger.Info("tried to create policy but input was invalid: %s", msg)
+		msg := fmt.Sprintf("could not parse policies from JSON: %s", err.Error())
+		server.logger.Info("tried to create policies but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
 		_ = response.write(w, r)
 		return
 	}
 
 	for _, policy := range policies {
-		if mux.Vars(r)["policyID"] != "" {
-			policy.Name = mux.Vars(r)["policyID"]
-		}
-		errResponse := transactify(server.db, policy.updateInDb)
-		if errResponse != nil {
-			errResponse.log.write(server.logger)
-			_ = errResponse.write(w, r)
-			return
-		}
-		server.logger.Info("overwrote policy %s", policy.Name)
+		server.overwritePolicy(w, r, policy)
 	}
 	updated := struct {
 		Updated []Policy `json:"updated"`
@@ -1133,10 +1127,7 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
 	username := mux.Vars(r)["username"]
-	requestPolicy := struct {
-		PolicyName string `json:"policy"`
-		ExpiresAt  string `json:"expires_at"`
-	}{}
+	requestPolicy := &RequestPolicy{}
 	err := json.Unmarshal(body, &requestPolicy)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
