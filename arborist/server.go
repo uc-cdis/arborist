@@ -1125,17 +1125,7 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
-func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
-	username := mux.Vars(r)["username"]
-	requestPolicy := &RequestPolicy{}
-	err := json.Unmarshal(body, &requestPolicy)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
-		server.logger.Info("tried to grant policy to user but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
+func (server *Server) userGrantPolicy(w http.ResponseWriter, r *http.Request, requestPolicy RequestPolicy, username string) {
 	var expiresAt *time.Time
 	if requestPolicy.ExpiresAt != "" {
 		exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
@@ -1155,6 +1145,20 @@ func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
+}
+
+func (server *Server) handleUserGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	username := mux.Vars(r)["username"]
+	requestPolicy := &RequestPolicy{}
+	err := json.Unmarshal(body, &requestPolicy)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to grant policy to user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+	server.userGrantPolicy(w, r, *requestPolicy, username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
@@ -1171,25 +1175,7 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 	}
 
 	for _, requestPolicy := range requestPolicies {
-		var expiresAt *time.Time
-		if requestPolicy.ExpiresAt != "" {
-			exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
-			if err != nil {
-				msg := "could not parse `expires_at` (must be in RFC 3339 format; see specification: https://tools.ietf.org/html/rfc3339#section-5.8)"
-				server.logger.Info("tried to grant policy to user but `expires_at` was invalid format")
-				response := newErrorResponse(msg, 400, nil)
-				_ = response.write(w, r)
-				return
-			}
-			expiresAt = &exp
-		}
-		errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
-		if errResponse != nil {
-			errResponse.log.write(server.logger)
-			_ = errResponse.write(w, r)
-			return
-		}
-		server.logger.Info("granted policy %s to user %s", requestPolicy.PolicyName, username)
+		server.userGrantPolicy(w, r, requestPolicy, username)
 	}
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }

@@ -1270,6 +1270,8 @@ func TestServer(t *testing.T) {
 
 		roleName := "bazgo-create"
 		policyName := "bazgo-create-b"
+		roleNameA := "bazgoA-create"
+		policyNameA := "bazgoA-create-b"
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -1314,6 +1316,24 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create role")
 			}
+			w = httptest.NewRecorder()
+			body = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"permissions": [
+						{
+							"id": "foo",
+							"action": {"service": "bazgoA", "method": "create"}
+						}
+					]
+				}`,
+				roleNameA,
+			))
+			req = newRequest("POST", "/role", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create role")
+			}
 			// create the policy
 			w = httptest.NewRecorder()
 			body = []byte(fmt.Sprintf(
@@ -1333,6 +1353,25 @@ func TestServer(t *testing.T) {
 			result := struct {
 				_ interface{} `json:"created"`
 			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			w = httptest.NewRecorder()
+			body = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["/a/b"],
+					"role_ids": ["%s"]
+				}`,
+				policyNameA,
+				roleNameA,
+			))
+			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create policy")
+			}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
@@ -1367,6 +1406,39 @@ func TestServer(t *testing.T) {
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusBadRequest {
 					httpError(t, w, "expected error creating policy with nonexistent resource")
+				}
+			})
+
+			t.Run("BulkPolicyOverwrite", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{[
+						{
+							"id": "%s",
+							"resource_paths": ["/a/z"],
+							"role_ids": ["%s"]
+						},
+						{
+							"id": "%s",
+							"resource_paths": ["/a/b"]
+							"role_ids": ["%s"]
+						}
+					]}`,
+					policyName, roleName, policyNameA, roleNameA,
+				))
+				req = newRequest("PUT", "/bulk/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't put policies")
+				}
+				result := struct {
+					Policy struct {
+						Paths []string `json:"resource_paths"`
+					} `json:"updated"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from resourece creation")
 				}
 			})
 		})
@@ -1439,7 +1511,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from policies list")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, 1, len(result.Policies), msg)
+			assert.Equal(t, 2, len(result.Policies), msg)
 			// TODO (rudyardrichter, 2019-04-15): more checks here on response
 		})
 
