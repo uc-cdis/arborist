@@ -812,6 +812,13 @@ paths:
         204:
           description: successfully revoked policies
   /user/{username}/bulk/policy:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
     post:
       tags:
         - user

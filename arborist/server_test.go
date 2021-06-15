@@ -1270,7 +1270,6 @@ func TestServer(t *testing.T) {
 
 		roleName := "bazgo-create"
 		policyName := "bazgo-create-b"
-		roleNameA := "bazgoA-create"
 		policyNameA := "bazgoA-create-b"
 
 		t.Run("Create", func(t *testing.T) {
@@ -1316,25 +1315,7 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create role")
 			}
-			w = httptest.NewRecorder()
-			body = []byte(fmt.Sprintf(
-				`{
-					"id": "%s",
-					"permissions": [
-						{
-							"id": "foo",
-							"action": {"service": "bazgoA", "method": "create"}
-						}
-					]
-				}`,
-				roleNameA,
-			))
-			req = newRequest("POST", "/role", bytes.NewBuffer(body))
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusCreated {
-				httpError(t, w, "couldn't create role")
-			}
-			// create the policy
+			// create policies
 			w = httptest.NewRecorder()
 			body = []byte(fmt.Sprintf(
 				`{
@@ -1365,7 +1346,7 @@ func TestServer(t *testing.T) {
 					"role_ids": ["%s"]
 				}`,
 				policyNameA,
-				roleNameA,
+				roleName,
 			))
 			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
 			handler.ServeHTTP(w, req)
@@ -1424,7 +1405,7 @@ func TestServer(t *testing.T) {
 							"role_ids": ["%s"]
 						}
 					]`,
-					policyName, roleName, policyNameA, roleNameA,
+					policyName, roleName, policyNameA, roleName,
 				))
 				req = newRequest("PUT", "/bulk/policy", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
@@ -1433,7 +1414,7 @@ func TestServer(t *testing.T) {
 				}
 				result := struct {
 					Policies struct {
-						policy[]string `json:"policy"`
+						policy []string `json:"policy"`
 					}
 				}{}
 				err = json.Unmarshal(w.Body.Bytes(), &result)
@@ -1758,7 +1739,7 @@ func TestServer(t *testing.T) {
 					policyName, policyNameA,
 				))
 				req := newRequest(
-					"POST", 
+					"POST",
 					url,
 					bytes.NewBuffer(body))
 				req.Header.Set("X-AuthZ-Provider", "xxx")

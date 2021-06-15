@@ -651,7 +651,10 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 	_ = jsonResponseFrom(created, 201).write(w, r)
 }
 
-func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, policy Policy) {
+func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, policy Policy) *ErrorResponse {
+	// Overwrite policy name from json with policy name from query arg.
+	// After 3.0.0, when PUT /policy is deprecated and only PUT /policy/{policyID} is allowed,
+	// can remove the !="" check. For now, if policy name not found in url, default to name in json.
 	if mux.Vars(r)["policyID"] != "" {
 		policy.Name = mux.Vars(r)["policyID"]
 	}
@@ -659,9 +662,10 @@ func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, po
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
-		return
+		return errResponse
 	}
 	server.logger.Info("overwrote policy %s", policy.Name)
+	return nil
 }
 
 func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -675,7 +679,10 @@ func (server *Server) handlePolicyOverwrite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	server.overwritePolicy(w, r, *policy)
+	errResponse := server.overwritePolicy(w, r, *policy)
+	if errResponse != nil {
+		return
+	}
 
 	updated := struct {
 		Updated *Policy `json:"updated"`
