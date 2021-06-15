@@ -110,6 +110,10 @@ func checkIssuer(claims *Claims, allowed []string) error {
 
 // checkScope validates the `scope` field in the claims.
 func checkScope(claims *Claims, expected []string) error {
+	// if token has a scope field but no scopes are expected this is fine
+	if len(expected) == 0 {
+		return nil
+	}
 	tokenScope, exists := (*claims)["scope"]
 	if !exists {
 		return missingField("scope")
