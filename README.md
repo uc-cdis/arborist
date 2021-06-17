@@ -17,7 +17,7 @@ perform the actions that being a `metadata-submitter` entails, for all resources
 under `project-abc`.
 
 In the Gen3 stack, arborist is integrated closely with fence. Fence acts as the
-central identify provider, issuing user tokens (in the form of JWTs) containing
+central identity provider, issuing user tokens (in the form of JWTs) containing
 the list of policies in the arborist model which are granted to that user. Other
 microservices needing to check user authorization to operate on a resource can
 statelessly verify the user's authorization, making a request to arborist with
