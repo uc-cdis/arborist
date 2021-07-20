@@ -196,6 +196,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
+		fmt.Print(err, "\n")
 		return nil, err
 	}
 	result := len(authorized) > 0 && authorized[0]
