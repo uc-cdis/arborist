@@ -107,7 +107,6 @@ type AuthResponse struct {
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var tag string
 	var err error
-	var pt1 error
 
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
@@ -119,7 +118,6 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	}
 
 	var authorized []bool
-	var pt1auth [10]string
 
 	if resource != "" {
 		// run authorization query
@@ -156,26 +154,9 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			AnonymousGroup,             // $6
 		)
 	} else if tag != "" {
-		pt1 = request.stmts.Select(
-			`
-				SELECT array_agg(resource.path) AS allowed FROM (
-					SELECT policy_id FROM grp_policy
-					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					WHERE grp.name = $6
-				) AS policies
-			`,
-			&pt1auth,
-			AnonymousGroup,             // $6
-		)
-
-		fmt.Print("POLICIES-----\n")
-		fmt.Print(pt1auth, "\n")
-		fmt.Print(pt1, "\n")
-
-
 		err = request.stmts.Select(
 			`
-			SELECT coalesce((SELECT resource.path AS request FROM resource WHERE resource.tag = $5) <@ allowed, FALSE) FROM (
+			SELECT coalesce((SELECT path AS request FROM resource WHERE tag = $5) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT policy_id FROM grp_policy
 					INNER JOIN grp ON grp_policy.grp_id = grp.id
@@ -202,7 +183,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			request.Method,             // $2
 			len(request.Policies) == 0, // $3
 			pq.Array(request.Policies), // $4
-			resource,                   // $5
+			tag,                   // $5
 			AnonymousGroup,             // $6
 		)
 	} else {
