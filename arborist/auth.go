@@ -179,10 +179,10 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			request.Service,            // $1
 			request.Method,             // $2
 		)
-		fmt.Print("POLICIES-----\n")
-		fmt.Print(pt1auth, "\n")
-		fmt.Print("POLICY_ROLE-----\n")
-		fmt.Print(pt2auth)
+		// fmt.Print("POLICIES-----\n")
+		// fmt.Print(pt1auth, "\n")
+		// fmt.Print("POLICY_ROLE-----\n")
+		// fmt.Print(pt2auth)
 
 
 		err = request.stmts.Select(
