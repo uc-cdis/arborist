@@ -107,6 +107,7 @@ type AuthResponse struct {
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var tag string
 	var err error
+	var pt1 error
 
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
