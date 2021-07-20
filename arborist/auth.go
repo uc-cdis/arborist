@@ -154,12 +154,37 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			AnonymousGroup,             // $6
 		)
 	} else if tag != "" {
-		fmt.Print("------------------------------ANONYMOUS\n")
-		fmt.Print(request.Service, "\n")
-		fmt.Print(request.Method, "\n")
-		fmt.Print(request.Policies, "\n")
-		fmt.Print(resource, "\n")
-		fmt.Print(AnonymousGroup, "\n")
+		pt1 = request.stmts.Select(
+			`
+				SELECT array_agg(resource.path) AS allowed FROM (
+					SELECT policy_id FROM grp_policy
+					INNER JOIN grp ON grp_policy.grp_id = grp.id
+					WHERE grp.name = $6
+				) AS policies
+			`,
+			&pt1auth,
+			AnonymousGroup,             // $6
+		)
+
+
+		pt2 = request.stmts.Select(
+			`
+				SELECT 1 FROM policy_role
+				JOIN permission ON permission.role_id = policy_role.role_id
+				WHERE policy_role.policy_id = policies.policy_id
+				AND (permission.service = $1 OR permission.service = '*')
+				AND (permission.method = $2 OR permission.method = '*')
+			`,
+			&pt2auth,
+			request.Service,            // $1
+			request.Method,             // $2
+		)
+		fmt.Print("POLICIES-----\n")
+		fmt.Print(pt1auth, "\n")
+		fmt.Print("POLICY_ROLE-----\n")
+		fmt.Print(pt2auth)
+
+
 		err = request.stmts.Select(
 			`
 			SELECT coalesce((SELECT resource.path AS request FROM resource WHERE resource.tag = $5) <@ allowed, FALSE) FROM (
@@ -182,7 +207,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($4)
 					)
 				)
-			) as test_alias
+			) as anonymous_select
 			`,
 			&authorized,
 			request.Service,            // $1
@@ -196,10 +221,11 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
-		fmt.Print(err, "\n")
 		return nil, err
 	}
 	result := len(authorized) > 0 && authorized[0]
+	fmt.Print("RESULT-----\n")
+	fmt.Print(result)
 	return &AuthResponse{result}, nil
 }
 
