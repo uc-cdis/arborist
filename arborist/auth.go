@@ -118,6 +118,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	}
 
 	var authorized []bool
+	var pt1auth [10]string
 
 	if resource != "" {
 		// run authorization query
@@ -166,23 +167,8 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			AnonymousGroup,             // $6
 		)
 
-
-		pt2 = request.stmts.Select(
-			`
-				SELECT 1 FROM policy_role
-				JOIN permission ON permission.role_id = policy_role.role_id
-				WHERE policy_role.policy_id = policies.policy_id
-				AND (permission.service = $1 OR permission.service = '*')
-				AND (permission.method = $2 OR permission.method = '*')
-			`,
-			&pt2auth,
-			request.Service,            // $1
-			request.Method,             // $2
-		)
-		// fmt.Print("POLICIES-----\n")
-		// fmt.Print(pt1auth, "\n")
-		// fmt.Print("POLICY_ROLE-----\n")
-		// fmt.Print(pt2auth)
+		fmt.Print("POLICIES-----\n")
+		fmt.Print(pt1auth, "\n")
 
 
 		err = request.stmts.Select(
