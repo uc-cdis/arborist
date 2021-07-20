@@ -108,8 +108,6 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var tag string
 	var err error
 
-	fmt.Print("------------------------------ANONYMOUS")
-	fmt.Print(request)
 	resource := request.Resource
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
@@ -121,6 +119,9 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 
 	var authorized []bool
 
+	fmt.Print("------------------------------ANONYMOUS")
+	fmt.Print(tag)
+	fmt.Print(resource)
 	if resource != "" {
 		// run authorization query
 		err = request.stmts.Select(
