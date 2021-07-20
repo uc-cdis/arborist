@@ -143,7 +143,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($4)
 					)
 				)
-			) _
+			) as test_alias
 			`,
 			&authorized,
 			request.Service,            // $1
