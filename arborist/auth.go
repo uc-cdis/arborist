@@ -143,7 +143,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($4)
 					)
 				)
-			) as testinghere
+			) _
 			`,
 			&authorized,
 			request.Service,            // $1
@@ -182,7 +182,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($4)
 					)
 				)
-			)
+			) as test_alias
 			`,
 			&authorized,
 			request.Service,            // $1
@@ -196,7 +196,6 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
-		fmt.Print("Added alias\n")
 		fmt.Print(err, "\n")
 		return nil, err
 	}
