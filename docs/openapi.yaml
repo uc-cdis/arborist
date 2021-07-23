@@ -684,6 +684,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotFound'
+  /bulk/policy:
+    put:
+      tags:
+        - policy
+      description: >-
+        Overwrite existing policies with new content. This endpoint requires a list of
+        fully-formed policies (and cannot patch over individual fields on the 
+        existing resources)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policies'
+      responses:
+        201:
+          description: Success; returns JSON representation of updated policies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    $ref: '#/components/schemas/Policies'
+        400:
+          description: invalid input (missing fields or fields have incorrect types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        404:
+          description: no policy exists with the given `policyID`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
   /user:
     get:
       tags:
@@ -776,6 +811,29 @@ paths:
       responses:
         204:
           description: successfully revoked policies
+  /user/{username}/bulk/policy:
+    parameters:
+      - in: path
+        name: username
+        required: true
+        schema:
+          type: string
+        description: the username for a user registered in arborist
+    post:
+      tags:
+        - user
+      description: >-
+        Grant list of policies to a user. The policy must exist already.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantUserPolicies'
+      responses:
+        204:
+          description: successful granted policies
+        404:
+          description: user not found, or policy not found
   /user/{username}/policy/{policyName}:
     parameters:
       - in: path
@@ -1400,6 +1458,11 @@ components:
           items:
             type: string
           example: ["/programs/DEV/projects/test"]
+    Policies:
+      type: array
+      description: list of policies
+      items:
+        $ref: '#/components/schemas/Policy'
     GrantPolicy:
       type: object
       properties:
@@ -1421,6 +1484,11 @@ components:
             timestamp in RFC 3339 format specifying the time at which the
             user's access to this policy should expire
           example: '2019-08-12T12:34:56Z'
+    GrantUserPolicies:
+      type: array
+      description: list of policies for a user
+      items:
+        $ref: '#/components/schemas/GrantUserPolicy'
     AddUserToGroup:
       type: object
       properties:

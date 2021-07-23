@@ -72,12 +72,12 @@
   version = "v1.3.0"
 
 [[projects]]
-  branch = "fix/aud-scopes"
-  digest = "1:9fe8c54911c168696c7c4201a756e58a31af550de843f7295249a1ad48291f6f"
+  digest = "1:7452feeb681646e8c8d615b1b17e06762c965c1d3f141fca4cd1fe3c45ca1315"
   name = "github.com/uc-cdis/go-authutils"
   packages = ["authutils"]
   pruneopts = "UT"
-  revision = "55a9e1ff89aee62d193a74d8846d9d62085fa88e"
+  revision = "6dad9ee8e66e9fca3e622bcaa4c0ba34e47a034a"
+  version = "0.1.1"
 
 [[projects]]
   branch = "master"

@@ -1270,6 +1270,7 @@ func TestServer(t *testing.T) {
 
 		roleName := "bazgo-create"
 		policyName := "bazgo-create-b"
+		policyNameA := "bazgoA-create-b"
 
 		t.Run("Create", func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -1314,7 +1315,7 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't create role")
 			}
-			// create the policy
+			// create policies
 			w = httptest.NewRecorder()
 			body = []byte(fmt.Sprintf(
 				`{
@@ -1333,6 +1334,25 @@ func TestServer(t *testing.T) {
 			result := struct {
 				_ interface{} `json:"created"`
 			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from resource creation")
+			}
+			w = httptest.NewRecorder()
+			body = []byte(fmt.Sprintf(
+				`{
+					"id": "%s",
+					"resource_paths": ["/a/b"],
+					"role_ids": ["%s"]
+				}`,
+				policyNameA,
+				roleName,
+			))
+			req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusCreated {
+				httpError(t, w, "couldn't create policy")
+			}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
@@ -1367,6 +1387,39 @@ func TestServer(t *testing.T) {
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusBadRequest {
 					httpError(t, w, "expected error creating policy with nonexistent resource")
+				}
+			})
+
+			t.Run("BulkPolicyOverwrite", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`[
+						{
+							"id": "%s",
+							"resource_paths": ["/a/b"],
+							"role_ids": ["%s"]
+						},
+						{
+							"id": "%s",
+							"resource_paths": ["/a/b"],
+							"role_ids": ["%s"]
+						}
+					]`,
+					policyName, roleName, policyNameA, roleName,
+				))
+				req = newRequest("PUT", "/bulk/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't put policies")
+				}
+				result := struct {
+					Policies struct {
+						policy []string `json:"policy"`
+					}
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from resource creation")
 				}
 			})
 		})
@@ -1439,7 +1492,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't read response from policies list")
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
-			assert.Equal(t, 1, len(result.Policies), msg)
+			assert.Equal(t, 2, len(result.Policies), msg)
 			// TODO (rudyardrichter, 2019-04-15): more checks here on response
 		})
 
@@ -1658,6 +1711,50 @@ func TestServer(t *testing.T) {
 			assert.NotNil(t, actualPolicy, msg)
 			// expect the expiresAt field to be nil, because expiration was not set.
 			assert.Nil(t, actualPolicy.ExpiresAt, msg)
+
+			t.Run("BulkGrantPolicy", func(t *testing.T) {
+				// create test policy
+				policyNameA := "pqrs"
+				createPolicyBytes(
+					t,
+					[]byte(fmt.Sprintf(
+						`{
+							"id": "%s",
+							"resource_paths": ["%s"],
+							"role_ids": ["%s"]
+						}`,
+						policyNameA,
+						resourcePath,
+						roleName,
+					)),
+				)
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/user/%s/bulk/policy", username)
+				body := []byte(fmt.Sprintf(
+					`
+					[
+						{"policy": "%s"},
+						{"policy": "%s"}
+					]`,
+					policyName, policyNameA,
+				))
+				req := newRequest(
+					"POST",
+					url,
+					bytes.NewBuffer(body))
+				req.Header.Set("X-AuthZ-Provider", "xxx")
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't grant policies to user")
+				}
+				w = httptest.NewRecorder()
+				url = fmt.Sprintf("/user/%s", username)
+				req = newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "couldn't read user")
+				}
+			})
 
 			t.Run("PolicyNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
