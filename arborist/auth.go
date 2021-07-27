@@ -156,7 +156,8 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	} else if tag != "" {
 		err = request.stmts.Select(
 			`
-			SELECT coalesce((SELECT path AS request FROM resource WHERE tag = $5) <@ allowed, FALSE) FROM (
+			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE)
+			FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT policy_id FROM grp_policy
 					INNER JOIN grp ON grp_policy.grp_id = grp.id
