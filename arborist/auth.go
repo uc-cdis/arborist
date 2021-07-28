@@ -155,6 +155,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		)
 	} else if tag != "" {
 		fmt.Print("AUTH TAG---------------------")
+		fmt.Print(tag)
 		err = request.stmts.Select(
 			`
 			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE)
@@ -185,7 +186,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			request.Method,             // $2
 			len(request.Policies) == 0, // $3
 			pq.Array(request.Policies), // $4
-			tag,                   // $5
+			tag,                   		// $5
 			AnonymousGroup,             // $6
 		)
 	} else {
