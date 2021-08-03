@@ -113,11 +113,21 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	if strings.HasPrefix(resource, "/") {
 		resource = FormatPathForDb(resource)
 	} else {
-		tag = resource
-		resource = ""
+		err = request.stmts.Select(
+			`
+			SELECT resource.path FROM resource WHERE resource.tag = $1)
+			`,
+			&resource,
+			resource,                   		// $1
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var authorized []bool
+	fmt.Print("RESOURCE-----\n")
+	fmt.Print(resource)
 
 	if resource != "" {
 		// run authorization query
@@ -151,47 +161,6 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			len(request.Policies) == 0, // $3
 			pq.Array(request.Policies), // $4
 			resource,                   // $5
-			AnonymousGroup,             // $6
-		)
-	} else if tag != "" {
-		fmt.Print("AUTH SQL---------------------\n")
-		fmt.Print(request.Service, "\n")
-		fmt.Print(request.Method, "\n")
-		fmt.Print(len(request.Policies) == 0, "\n")
-		fmt.Print(pq.Array(request.Policies), "\n")
-		fmt.Print(tag, "\n")
-		fmt.Print(AnonymousGroup, "\n")
-		err = request.stmts.Select(
-			`
-			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $5) <@ allowed, FALSE)
-			FROM (
-				SELECT array_agg(resource.path) AS allowed FROM (
-					SELECT policy_id FROM grp_policy
-					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					WHERE grp.name = $6
-				) AS policies
-				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-				JOIN resource ON resource.id = policy_resource.resource_id
-				WHERE EXISTS (
-					SELECT 1 FROM policy_role
-					JOIN permission ON permission.role_id = policy_role.role_id
-					WHERE policy_role.policy_id = policies.policy_id
-					AND (permission.service = $1 OR permission.service = '*')
-					AND (permission.method = $2 OR permission.method = '*')
-				) AND (
-					$3 OR policies.policy_id IN (
-						SELECT id FROM policy
-						WHERE policy.name = ANY($4)
-					)
-				)
-			) as anonymous_select
-			`,
-			&authorized,
-			request.Service,            // $1
-			request.Method,             // $2
-			len(request.Policies) == 0, // $3
-			pq.Array(request.Policies), // $4
-			tag,                   		// $5
 			AnonymousGroup,             // $6
 		)
 	} else {
