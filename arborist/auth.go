@@ -105,7 +105,6 @@ type AuthResponse struct {
 // Authorize a request where the end user is anonymous, so there is no token
 // involved, and access is granted only through the built-in anonymous group.
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
-	var tag string
 	var err error
 
 	resource := request.Resource
