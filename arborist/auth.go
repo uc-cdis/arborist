@@ -106,9 +106,9 @@ type AuthResponse struct {
 // involved, and access is granted only through the built-in anonymous group.
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var err error
+	var tag_path string
 
 	resource := request.Resource
-	tag_path := ""
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
 		resource = FormatPathForDb(resource)
