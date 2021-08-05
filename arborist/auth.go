@@ -108,6 +108,10 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var err error
 
 	resource := request.Resource
+	fmt.Print("REQUEST-----\n")
+	fmt.Print(request)
+	fmt.Print("REQUEST RESOURCE-----\n")
+	fmt.Print(request.Resource)
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
 		resource = FormatPathForDb(resource)
