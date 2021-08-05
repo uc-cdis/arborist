@@ -127,7 +127,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			return nil, err
 		}
 		else if len(tag_resource) > 0 {
-			resource = FormatPathForDb(tag_resource)
+			resource = FormatPathForDb(tag_resource[0])
 			fmt.Print("RESOURCE PATH-----\n")
 			fmt.Print(resource)
 		}
