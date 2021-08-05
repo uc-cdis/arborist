@@ -121,16 +121,12 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			resource,                   		// $1
 		)
 		resource = FormatPathForDb(tag_path)
-		fmt.Print("RESOURCE PATH-----\n")
-		fmt.Print(&resource)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	var authorized []bool
-	fmt.Print("RESOURCE-----\n")
-	fmt.Print(resource)
 
 	if resource != "" {
 		// run authorization query
