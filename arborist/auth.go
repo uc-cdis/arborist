@@ -116,9 +116,12 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			`
 			SELECT resource.path FROM resource WHERE resource.tag = $1
 			`,
-			&resource,
+			&tag_path,
 			resource,                   		// $1
 		)
+		resource = FormatPathForDb(tag_path)
+		fmt.Print("RESOURCE PATH-----\n")
+		fmt.Print(resource)
 		if err != nil {
 			return nil, err
 		}
