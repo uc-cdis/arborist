@@ -106,6 +106,7 @@ type AuthResponse struct {
 // involved, and access is granted only through the built-in anonymous group.
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	var err error
+	var tag_resource []string
 
 	resource := request.Resource
 	
@@ -117,8 +118,8 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			`
 			SELECT resource.path FROM resource WHERE resource.tag = $1
 			`,
-			resource,
-			request.Resource,                   		// $1
+			&tag_resource,
+			resource,                   		// $1
 		)
 		fmt.Print("RESOURCE PATH-----\n")
 		fmt.Print(resource)
