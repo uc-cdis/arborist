@@ -117,7 +117,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			SELECT resource.path FROM resource WHERE resource.tag = $1
 			`,
 			&resource,
-			resource,                   		// $1
+			request.Resource,                   		// $1
 		)
 		fmt.Print("RESOURCE PATH-----\n")
 		fmt.Print(resource)
