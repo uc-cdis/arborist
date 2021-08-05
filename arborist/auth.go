@@ -122,6 +122,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		fmt.Print("RESOURCE PATH-----\n")
 		fmt.Print(resource)
 		if err != nil {
+			fmt.Print("RESOURCE ERROR-----\n")
 			return nil, err
 		}
 	}
@@ -166,6 +167,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
+		fmt.Print("MAIN SQL ERROR-----\n")
 		return nil, err
 	}
 	result := len(authorized) > 0 && authorized[0]
