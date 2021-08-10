@@ -116,21 +116,19 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	} else {
 		err = request.stmts.Select(
 			`
-			SELECT resource.path FROM resource WHERE resource.tag = $1
+			coalesce((SELECT resource.path as tag FROM resource WHERE resource.tag = $1) <@ allowed, FALSE)
 			`,
 			&tag_resource,
 			resource,                   		// $1
 		)
 		
 		if err != nil {
-			fmt.Print("RESOURCE ERROR-----\n")
 			return nil, err
 		}
-		else if len(tag_resource) > 0 {
-			resource = FormatPathForDb(tag_resource[0])
-			fmt.Print("RESOURCE PATH-----\n")
-			fmt.Print(resource)
-		}
+
+		resource = FormatPathForDb(tag_resource[0])
+		fmt.Print("RESOURCE PATH-----\n")
+		fmt.Print(resource)
 	}
 
 	var authorized []bool
