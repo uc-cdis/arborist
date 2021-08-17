@@ -116,7 +116,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 	} else {
 		err = request.stmts.Select(
 			`
-			coalesce((SELECT resource.path as tag FROM resource WHERE resource.tag = $1) <@ allowed, FALSE)
+			select coalesce((SELECT resource.path as tag FROM resource WHERE resource.tag = $1) <@ allowed, FALSE)
 			`,
 			&tag_resource,
 			resource,                   		// $1
