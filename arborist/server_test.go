@@ -416,6 +416,28 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	grantExpiringUserPolicy := func(t *testing.T, username string, policyName string, expiresAt string) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/user/%s/policy", username)
+		policyBody := []byte(fmt.Sprintf(
+			`{
+				"policy": "%s",
+				"expires_at": "%s"
+			}`,
+			policyName,
+			expiresAt,
+		))
+		req := newRequest(
+			"POST",
+			url,
+			bytes.NewBuffer(policyBody),
+		)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			httpError(t, w, "couldn't grant policy to user")
+		}
+	}
+
 	revokeUserPolicy := func(t *testing.T, username string, policyName string) {
 		w := httptest.NewRecorder()
 		url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
@@ -2939,6 +2961,45 @@ func TestServer(t *testing.T) {
 				}
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, false, result.Auth, msg)
+			})
+
+			t.Run("ExpiredPolicy", func(t *testing.T) {
+				expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
+				grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+				w = httptest.NewRecorder()
+				token = TestJWT{username: username}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should fail
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, false, result.Auth, msg)
+				grantUserPolicy(t, username, policyName)
 			})
 
 			t.Run("BadRequest", func(t *testing.T) {
