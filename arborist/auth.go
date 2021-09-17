@@ -664,12 +664,12 @@ func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 		(
 			SELECT usr_policy.policy_id FROM usr
 			INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-			WHERE usr.name = $1
+			WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 			UNION
 			SELECT grp_policy.policy_id FROM usr
 			INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
 			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-			WHERE usr.name = $1
+			WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 			UNION
 			SELECT grp_policy.policy_id FROM grp
 			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id

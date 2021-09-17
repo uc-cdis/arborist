@@ -2804,6 +2804,24 @@ func TestServer(t *testing.T) {
 				}
 			})
 
+			t.Run("GET_expiredPolicy", func(t *testing.T) {
+				expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
+				grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+				w := httptest.NewRecorder()
+				url := fmt.Sprintf("/auth/mapping?username=%s", username)
+				req := newRequest("GET", url, nil)
+				handler.ServeHTTP(w, req)
+
+				result := make(map[string][]arborist.Action)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("result contains resource %s corresponding to expired policy %s", resourcePath, policyName)
+				assert.NotContains(t, result, resourcePath, msg)
+				grantUserPolicy(t, username, policyName)
+			})
+
 			t.Run("POST", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
