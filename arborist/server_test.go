@@ -402,27 +402,16 @@ func TestServer(t *testing.T) {
 		createPolicyBytes(t, policyBody)
 	}
 
-	grantUserPolicy := func(t *testing.T, username string, policyName string) {
-		w := httptest.NewRecorder()
-		url := fmt.Sprintf("/user/%s/policy", username)
-		req := newRequest(
-			"POST",
-			url,
-			bytes.NewBuffer([]byte(fmt.Sprintf(`{"policy": "%s"}`, policyName))),
-		)
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusNoContent {
-			httpError(t, w, "couldn't grant policy to user")
+	grantUserPolicy := func(t *testing.T, username string, policyName string, expiresAt string) {
+		if expiresAt != "null" {
+			expiresAt = fmt.Sprintf(`"%s"`, expiresAt)
 		}
-	}
-
-	grantExpiringUserPolicy := func(t *testing.T, username string, policyName string, expiresAt string) {
 		w := httptest.NewRecorder()
 		url := fmt.Sprintf("/user/%s/policy", username)
 		policyBody := []byte(fmt.Sprintf(
 			`{
 				"policy": "%s",
-				"expires_at": "%s"
+				"expires_at": %s
 			}`,
 			policyName,
 			expiresAt,
@@ -2665,7 +2654,7 @@ func TestServer(t *testing.T) {
 			_, _, anonymousAuthMapping := setupAnonymousPolicies(t)
 			_, _, loggedInAuthMapping := setupLoggedInPolicies(t)
 			createUserBytes(t, userBody)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 
 			// testAuthMappingResponse checks whether the AuthMapping in the HTTP
 			// response 'w' contains the correct resources and actions that belong to the user.
@@ -2806,7 +2795,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("GET_expiredPolicy", func(t *testing.T) {
 				expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
-				grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+				grantUserPolicy(t, username, policyName, expiredTimestamp)
 				w := httptest.NewRecorder()
 				url := fmt.Sprintf("/auth/mapping?username=%s", username)
 				req := newRequest("GET", url, nil)
@@ -2819,7 +2808,7 @@ func TestServer(t *testing.T) {
 				}
 				msg := fmt.Sprintf("result contains resource %s corresponding to expired policy %s", resourcePath, policyName)
 				assert.NotContains(t, result, resourcePath, msg)
-				grantUserPolicy(t, username, policyName)
+				grantUserPolicy(t, username, policyName, "null")
 			})
 
 			t.Run("POST", func(t *testing.T) {
@@ -2877,7 +2866,7 @@ func TestServer(t *testing.T) {
 		t.Run("Request", func(t *testing.T) {
 			setupTestPolicy(t)
 			createUserBytes(t, userBody)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 			w := httptest.NewRecorder()
 			token := TestJWT{username: username}
 			body := []byte(fmt.Sprintf(
@@ -2983,7 +2972,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("ExpiredPolicy", func(t *testing.T) {
 				expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
-				grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+				grantUserPolicy(t, username, policyName, expiredTimestamp)
 				w = httptest.NewRecorder()
 				token = TestJWT{username: username}
 				body = []byte(fmt.Sprintf(
@@ -3017,7 +3006,7 @@ func TestServer(t *testing.T) {
 				}
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, false, result.Auth, msg)
-				grantUserPolicy(t, username, policyName)
+				grantUserPolicy(t, username, policyName, "null")
 			})
 
 			t.Run("BadRequest", func(t *testing.T) {
@@ -3132,7 +3121,7 @@ func TestServer(t *testing.T) {
 		t.Run("RequestMultiple", func(t *testing.T) {
 			setupTestPolicy(t)
 			createUserBytes(t, userBody)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 			w := httptest.NewRecorder()
 			token := TestJWT{username: username}
 			// TODO (rudyardrichter, 2019-04-22): this works just for testing
@@ -3203,7 +3192,7 @@ func TestServer(t *testing.T) {
 						resourcePath,
 					)),
 				)
-				grantUserPolicy(t, username, "policyUsingStar")
+				grantUserPolicy(t, username, "policyUsingStar", "null")
 				w := httptest.NewRecorder()
 				token := TestJWT{username: username}
 				body := []byte(fmt.Sprintf(
@@ -3510,7 +3499,7 @@ func TestServer(t *testing.T) {
 			createResourceBytes(t, resourceBody)
 			createRoleBytes(t, roleBody)
 			createPolicyBytes(t, policyBody)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 
 			anonymousPolicies, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
 			_, loggedInResourcePaths, _ := setupLoggedInPolicies(t)
@@ -3673,7 +3662,7 @@ func TestServer(t *testing.T) {
 
 				t.Run("GET_expiredPolicy", func(t *testing.T) {
 					expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
-					grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+					grantUserPolicy(t, username, policyName, expiredTimestamp)
 
 					w := httptest.NewRecorder()
 					req := newRequest("GET", "/auth/resources", nil)
@@ -3693,7 +3682,7 @@ func TestServer(t *testing.T) {
 					msg := fmt.Sprintf("result contains resource %s corresponding to expired policy %s", resourcePath, policyName)
 					assert.NotContains(t, result.Resources, resourcePath, msg)
 
-					grantUserPolicy(t, username, policyName)
+					grantUserPolicy(t, username, policyName, "null")
 				})
 
 				t.Run("POST", func(t *testing.T) {
@@ -3828,7 +3817,7 @@ func TestServer(t *testing.T) {
 					// Adding the policies of the `anonymous` group to the user also adds
 					// the resources of the `anonymous` group to the user.
 					for _, policy := range anonymousPolicies {
-						grantUserPolicy(t, username, policy.Name)
+						grantUserPolicy(t, username, policy.Name, "null")
 					}
 
 					// Expect these shared mappings to not be duplicated in AuthMapping response.
@@ -3907,7 +3896,7 @@ func TestServer(t *testing.T) {
 			createResourceBytes(t, resourceBody)
 			createPolicyBytes(t, policyBody)
 			grantClientPolicy(t, clientID, policyName)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 
 			t.Run("Client", func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -4008,7 +3997,7 @@ func TestServer(t *testing.T) {
 			createRoleBytes(t, roleBody)
 			createPolicyBytes(t, policyBody)
 			createUserBytes(t, userBody)
-			grantUserPolicy(t, username, policyName)
+			grantUserPolicy(t, username, policyName, "null")
 			token := TestJWT{username: username}
 
 			t.Run("Authorized", func(t *testing.T) {
