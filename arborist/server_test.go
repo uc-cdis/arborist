@@ -3671,6 +3671,31 @@ func TestServer(t *testing.T) {
 					}
 				})
 
+				t.Run("GET_expiredPolicy", func(t *testing.T) {
+					expiredTimestamp := time.Now().Add(time.Duration(-1) * time.Minute).Format(time.RFC3339)
+					grantExpiringUserPolicy(t, username, policyName, expiredTimestamp)
+
+					w := httptest.NewRecorder()
+					req := newRequest("GET", "/auth/resources", nil)
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth mapping")
+					}
+					msg := fmt.Sprintf("result contains resource %s corresponding to expired policy %s", resourcePath, policyName)
+					assert.NotContains(t, result.Resources, resourcePath, msg)
+
+					grantUserPolicy(t, username, policyName)
+				})
+
 				t.Run("POST", func(t *testing.T) {
 					w := httptest.NewRecorder()
 					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
