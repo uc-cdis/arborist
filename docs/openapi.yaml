@@ -151,6 +151,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserError'
+  /auth/proxy:
+    get:
+      tags:
+        - auth
+      description: >-
+        Ask arborist to check authorization on a user request. A client of the
+        Gen3 auth stack sends the user's JWT to this endpoint, along with the
+        information about the user's specific request. The terminology used to
+        describe user requests is flexible and arborist does not "nail it down";
+        however our usage so far is to use the permission model to capture the
+        basic set of operations one might expect in ABAC (read/write, etc.)
+        combined with the client service, and the path for the resource the user
+        is trying to access.
+        If the given JWT has `azp` field, the permission of
+        the corresponding client will be also checked; only when both the user
+        and the client have permission can the response be positive.
+      parameters:
+        - in: query
+          name: resource
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: method
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequestBody'
+      responses:
+        200:
+          description: >-
+            Arborist successfully returned an authorization decision. NOTE
+            that a 200 status DOES NOT indicate authorization, only that the
+            input was valid. The `"ok"` field in the response indicates
+            authorization.
+        400:
+          description: >-
+            The input was somehow invalid; for example, a given resource does
+            not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserError'
+        401:
+          description: >-
+            The user is not logged in.
+        403:
+          description: >-
+            The user does not have access.
   /auth/resources:
     get:
       tags:
