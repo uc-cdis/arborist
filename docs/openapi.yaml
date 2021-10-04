@@ -183,11 +183,6 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRequestBody'
       responses:
         200:
           description: >-
