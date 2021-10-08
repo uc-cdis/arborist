@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -30,9 +29,6 @@ type ResourceOut struct {
 	Description  string   `json:"description"`
 	Subresources []string `json:"subresources"`
 }
-
-var regPercent *regexp.Regexp = regexp.MustCompile(`%`)
-var regSlashEncoded *regexp.Regexp = regexp.MustCompile(`%2F`)
 
 func UnderscoreEncode(decoded string) string {
 	// Per https://www.ietf.org/rfc/rfc3986.txt, there are the following
@@ -84,17 +80,17 @@ func (resource *ResourceIn) UnmarshalJSON(data []byte) error {
 	delete(fields, "tag")
 
 	optionalFieldsPath := map[string]struct{}{
-		"name":         struct{}{},
-		"tag":          struct{}{},
-		"description":  struct{}{},
-		"subresources": struct{}{},
+		"name":         {},
+		"tag":          {},
+		"description":  {},
+		"subresources": {},
 	}
 	errPath := validateJSON("resource", resource, fields, optionalFieldsPath)
 	optionalFieldsName := map[string]struct{}{
-		"path":         struct{}{},
-		"tag":          struct{}{},
-		"description":  struct{}{},
-		"subresources": struct{}{},
+		"path":         {},
+		"tag":          {},
+		"description":  {},
+		"subresources": {},
 	}
 	errName := validateJSON("resource", resource, fields, optionalFieldsName)
 	if errPath != nil && errName != nil {

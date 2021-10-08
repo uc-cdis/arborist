@@ -1,12 +1,20 @@
-FROM quay.io/cdis/golang:1.12-alpine as build
+FROM quay.io/cdis/golang:1.17-bullseye as build-deps
 
-# Install SSL certificates
-RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev jq curl bash postgresql
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
 
-# Build static arborist binary
-RUN mkdir -p /go/src/github.com/uc-cdis/arborist
-WORKDIR /go/src/github.com/uc-cdis/arborist
-ADD . .
-RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
+WORKDIR $GOPATH/src/github.com/uc-cdis/arborist/
 
-ENTRYPOINT ["bin/arborist"]
+COPY go.mod .
+COPY go.sum .
+
+RUN go mod download
+
+COPY . .
+
+RUN go build -o /arborist
+
+FROM scratch
+COPY --from=build-deps /arborist /arborist
+CMD ["/arborist"]

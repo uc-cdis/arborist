@@ -25,8 +25,8 @@ func (group *Group) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"users":    struct{}{},
-		"policies": struct{}{},
+		"users":    {},
+		"policies": {},
 	}
 	err = validateJSON("group", group, fields, optionalFields)
 	if err != nil {

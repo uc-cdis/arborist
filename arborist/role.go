@@ -22,7 +22,7 @@ func (role *Role) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"description": struct{}{},
+		"description": {},
 	}
 	err = validateJSON("role", role, fields, optionalFields)
 	if err != nil {
