@@ -15,6 +15,4 @@ COPY . .
 
 RUN go build -o /arborist
 
-FROM scratch
-COPY --from=build-deps /arborist /arborist
 CMD ["/arborist"]
