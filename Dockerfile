@@ -5,7 +5,7 @@ ENV GOOS=linux
 ENV GOARCH=amd64
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql=13.* \
+    && apt-get install -y --no-install-recommends postgresql=13* \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
