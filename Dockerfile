@@ -18,6 +18,6 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o /arborist
+RUN go build -o bin/arborist
 
-CMD ["/arborist"]
+CMD ["bin/arborist"]
