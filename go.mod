@@ -8,7 +8,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/lib/pq v1.10.3
 	github.com/stretchr/testify v1.7.0
-	github.com/uc-cdis/go-authutils v0.0.0-20211013194331-22cfd18557de
+	github.com/uc-cdis/go-authutils v0.1.2
 	gopkg.in/square/go-jose.v2 v2.6.0
 )
 
