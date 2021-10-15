@@ -18,6 +18,10 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o bin/arborist
+RUN GITCOMMIT=$(git rev-parse HEAD) \
+    GITVERSION=$(git describe --always --tags) \
+    && go build \
+    -ldflags="-X 'github.com/uc-cdis/arborist/arborist/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/arborist/arborist/version.GitVersion=${GITVERSION}'" \
+    -o bin/arborist
 
 CMD ["bin/arborist"]
