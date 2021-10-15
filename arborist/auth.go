@@ -32,8 +32,8 @@ func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"policies": struct{}{},
-		"scope":    struct{}{},
+		"policies": {},
+		"scope":    {},
 	}
 	err = validateJSON("auth request", requestJSON, fields, optionalFields)
 	if err != nil {
@@ -70,7 +70,7 @@ func (requestJSON *AuthRequestJSON_Request) UnmarshalJSON(data []byte) error {
 	}
 
 	optionalFieldsPath := map[string]struct{}{
-		"constraints": struct{}{},
+		"constraints": {},
 	}
 	err = validateJSON("auth request", requestJSON, fields, optionalFieldsPath)
 	if err != nil {
