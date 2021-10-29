@@ -104,14 +104,39 @@ func roleWithName(db *sqlx.DB, name string) (*RoleFromQuery, error) {
 	`
 	roles := []RoleFromQuery{}
 	err := db.Select(&roles, stmt, name)
-	if len(roles) == 0 {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}
+	if len(roles) == 0 {
+		return nil, nil
+	}
 	role := roles[0]
 	return &role, nil
+}
+
+func rolesWithNames(db *sqlx.DB, roleNames []string) ([]RoleFromQuery, error) {
+	roleNamesString := "'" + strings.Join(roleNames, "','") + "'"
+	stmtFormat := `
+		SELECT
+			role.id,
+			role.name,
+			array_remove(array_agg((permission.name, permission.service, permission.method, permission.constraints)), (NULL::text,NULL::text,NULL::text,NULL::jsonb)) AS permissions
+		FROM role
+		LEFT JOIN permission ON permission.role_id = role.id
+		WHERE role.name IN (%s)
+		GROUP BY role.id
+	`
+	stmt := fmt.Sprintf(stmtFormat, roleNamesString)
+
+	roles := []RoleFromQuery{}
+	err := db.Select(&roles, stmt)
+	if err != nil {
+		return nil, err
+	}
+	if len(roles) == 0 {
+		return nil, nil
+	}
+	return roles, nil
 }
 
 func listRolesFromDb(db *sqlx.DB) ([]RoleFromQuery, error) {
