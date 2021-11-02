@@ -21,6 +21,8 @@ type AuthRequestJSON_User struct {
 	Token string `json:"token"`
 	// The Policies field is optional, and if the request provides a token
 	// this gets filled in using the Token field.
+	// Could use UserId if its provided instead of Token
+	UserId   string   `json:"user_id"`
 	Policies []string `json:"policies,omitempty"`
 	Scopes   []string `json:"scope,omitempty"`
 }
