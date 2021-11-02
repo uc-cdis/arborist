@@ -452,7 +452,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Roles'
+                type: object
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
     post:
       tags:
         - role
@@ -1439,15 +1444,6 @@ components:
           items:
             type: string
           example:  ["/programs/DEV-1", "/programs/DEV-2"]
-    Roles:
-      type: object
-      properties:
-        role_ids:
-          type: array
-          items:
-            type: string
-      example:
-        role_ids: ["create","upload","update","delete","file_uploader","read"]
     Role:
       type: object
       properties:
