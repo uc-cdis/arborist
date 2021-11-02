@@ -622,9 +622,7 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	for _, policyFromQuery := range policiesFromQuery {
 		policy := policyFromQuery.standardize()
 		policies = append(policies, policy)
-		for _, roleID := range(policy.RoleIDs) {
-			allPoliciesRoleIDs = append(allPoliciesRoleIDs, roleID)
-		}
+		allPoliciesRoleIDs = append(allPoliciesRoleIDs, policy.RoleIDs...)
 	}
 
 	// if `expand`, return expanded policies with role details
