@@ -18,11 +18,11 @@ type AuthRequestJSON struct {
 }
 
 type AuthRequestJSON_User struct {
-	Token string `json:"token"`
+	Token  string `json:"token"`
+	UserId string `json:"user_id"`
 	// The Policies field is optional, and if the request provides a token
 	// this gets filled in using the Token field.
 	// Could use UserId if its provided instead of Token
-	UserId   string   `json:"user_id"`
 	Policies []string `json:"policies,omitempty"`
 	Scopes   []string `json:"scope,omitempty"`
 }
@@ -33,16 +33,20 @@ func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("---------------------")
-	fmt.Println(fields)
-	fmt.Println("---------------------")
 
 	optionalFields := map[string]struct{}{
 		"policies": struct{}{},
 		"scope":    struct{}{},
-		"user_id":  struct{}{},
-		"token":    struct{}{},
 	}
+
+	// either user_id is required or token is required
+	// if one is provided the other should be optional
+	if _, exists := fields["user_id"]; !exists {
+		optionalFields["user_id"] = struct{}{}
+	} else if _, exists := fields["token"]; !exists {
+		optionalFields["token"] = struct{}{}
+	}
+
 	err = validateJSON("auth request", requestJSON, fields, optionalFields)
 	if err != nil {
 		return err

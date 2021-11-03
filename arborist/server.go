@@ -407,6 +407,12 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	if authRequestJSON.User.Policies != nil {
 		policies = authRequestJSON.User.Policies
 	}
+	var username string
+	if info.username != "" {
+		username = info.username
+	} else {
+		username = authRequestJSON.User.UserId
+	}
 
 	requests := []AuthRequestJSON_Request{}
 	if authRequestJSON.Request != nil {
@@ -443,17 +449,10 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
-		if (info.username == "" && authRequestJSON.User.UserId == "") && (info.policies == nil || len(info.policies) == 0) {
+		if (username == "") && (info.policies == nil || len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
-		}
-
-		var username string
-		if info.username != "" {
-			username = info.username
-		} else {
-			username = authRequestJSON.User.UserId
 		}
 
 		// username = UserID or username
