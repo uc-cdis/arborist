@@ -443,6 +443,11 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
+		fmt.Println("=-----------------------------")
+		fmt.Println(info)
+		fmt.Println(authRequestJSON.User.UserId)
+		fmt.Println("=-----------------------------")
+
 		if (info.username == "" && authRequestJSON.User.UserId == "") && (info.policies == nil || len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
