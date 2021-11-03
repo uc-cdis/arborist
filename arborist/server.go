@@ -402,11 +402,14 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	}
 	policies := []string{}
 	var username string
+	var clientID string
 	if info != nil {
 		policies = info.policies
 		username = info.username
+		clientID = info.clientID
 	} else {
 		username = authRequestJSON.User.UserId
+		clientID = ""
 	}
 	if authRequestJSON.User.Policies != nil {
 		policies = authRequestJSON.User.Policies
@@ -456,7 +459,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		// username = UserID or username
 		request := &AuthRequest{
 			Username: username,
-			ClientID: info.clientID,
+			ClientID: clientID,
 			Policies: policies,
 			Resource: authRequest.Resource,
 			Service:  authRequest.Action.Service,
