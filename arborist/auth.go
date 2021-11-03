@@ -37,6 +37,7 @@ func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 		"policies": struct{}{},
 		"scope":    struct{}{},
 		"user_id":  struct{}{},
+		"token":    struct{}{},
 	}
 	err = validateJSON("auth request", requestJSON, fields, optionalFields)
 	if err != nil {
