@@ -33,6 +33,10 @@ func (requestJSON *AuthRequestJSON_User) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("---------------------")
+	fmt.Println(fields)
+	fmt.Println("---------------------")
+
 	optionalFields := map[string]struct{}{
 		"policies": struct{}{},
 		"scope":    struct{}{},
