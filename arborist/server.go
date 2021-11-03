@@ -401,17 +401,15 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	policies := []string{}
+	var username string
 	if info != nil {
 		policies = info.policies
-	}
-	if authRequestJSON.User.Policies != nil {
-		policies = authRequestJSON.User.Policies
-	}
-	var username string
-	if info.username != "" {
 		username = info.username
 	} else {
 		username = authRequestJSON.User.UserId
+	}
+	if authRequestJSON.User.Policies != nil {
+		policies = authRequestJSON.User.Policies
 	}
 
 	requests := []AuthRequestJSON_Request{}
