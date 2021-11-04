@@ -17,9 +17,13 @@ type Policy struct {
 	RoleIDs       []string `json:"role_ids"`
 }
 
-type PolicyResource struct {
-	Policy   int64 `db:"policy_id"`
-	Resource int64 `db:"resource_id"`
+// expanded policies need their own struct so that unused RoleIDs/Roles
+// fields can be excluded from the JSON response
+type ExpandedPolicy struct {
+	Name          string   `json:"id"`
+	Description   string   `json:"description"`
+	ResourcePaths []string `json:"resource_paths"`
+	Roles         []Role   `json:"roles"`
 }
 
 // UnmarshalJSON defines the way that a `Policy` gets read when unmarshalling:
