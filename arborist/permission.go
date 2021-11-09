@@ -28,8 +28,8 @@ func (permission *Permission) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	optionalFields := map[string]struct{}{
-		"description": struct{}{},
-		"constraints": struct{}{},
+		"description": {},
+		"constraints": {},
 	}
 	err = validateJSON("permission", permission, fields, optionalFields)
 	if err != nil {

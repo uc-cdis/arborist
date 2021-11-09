@@ -1496,7 +1496,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "can't list policies")
 			}
 			result := struct {
-				Policies []interface{} `json:"policies"`
+				Policies []arborist.Policy `json:"policies"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -1504,7 +1504,29 @@ func TestServer(t *testing.T) {
 			}
 			msg := fmt.Sprintf("got response body: %s", w.Body.String())
 			assert.Equal(t, 2, len(result.Policies), msg)
+			msg = fmt.Sprintf("non expanded policies should contain 'role_ids'. got response body: %s", w.Body.String())
+			assert.NotNil(t, result.Policies[0].RoleIDs, msg)
 			// TODO (rudyardrichter, 2019-04-15): more checks here on response
+		})
+
+		t.Run("ListExpanded", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/policy?expand", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "can't list policies")
+			}
+			result := struct {
+				Policies []arborist.ExpandedPolicy `json:"policies"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from policies list")
+			}
+			msg := fmt.Sprintf("got response body: %s", w.Body.String())
+			assert.Equal(t, 2, len(result.Policies), msg)
+			msg = fmt.Sprintf("expanded policies should contain 'roles'. got response body: %s", w.Body.String())
+			assert.NotNil(t, result.Policies[0].Roles, msg)
 		})
 
 		t.Run("Delete", func(t *testing.T) {

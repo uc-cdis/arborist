@@ -620,11 +620,8 @@ func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.R
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
+	_, expandFlag := r.URL.Query()["expand"]
 	policiesFromQuery, err := listPoliciesFromDb(server.db)
-	policies := []Policy{}
-	for _, policyFromQuery := range policiesFromQuery {
-		policies = append(policies, policyFromQuery.standardize())
-	}
 	if err != nil {
 		msg := fmt.Sprintf("policies query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -632,12 +629,65 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		_ = errResponse.write(w, r)
 		return
 	}
-	result := struct {
-		Policies []Policy `json:"policies"`
-	}{
-		Policies: policies,
+
+	// query policies
+	policies := []Policy{}
+	allPoliciesRoleIDs := []string{}
+	for _, policyFromQuery := range policiesFromQuery {
+		policy := policyFromQuery.standardize()
+		policies = append(policies, policy)
+		allPoliciesRoleIDs = append(allPoliciesRoleIDs, policy.RoleIDs...)
 	}
-	_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+
+	// if `expand`, return expanded policies with role details
+	expandedPolicies := []ExpandedPolicy{}
+	if expandFlag {
+		// query role details
+		roleMap := make(map[string]Role) // {role ID: role instance} map
+		rolesFromQuery, err := rolesWithNames(server.db, allPoliciesRoleIDs)
+		if err != nil {
+			msg := fmt.Sprintf("unable to list roles with IDs %v: %s", allPoliciesRoleIDs, err.Error())
+			errResponse := newErrorResponse(msg, 400, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		for _, roleFromQuery := range rolesFromQuery {
+			role := roleFromQuery.standardize()
+			roleMap[role.Name] = role
+		}
+
+		// generate expanded policies with role details
+		for _, policy := range policies {
+			expandedPolicy := ExpandedPolicy{
+				Name: policy.Name,
+				Description: policy.Description,
+				ResourcePaths: policy.ResourcePaths,
+			}
+			roles := []Role{}
+			for _, roleID := range policy.RoleIDs {
+				roles = append(roles, roleMap[roleID])
+			}
+			expandedPolicy.Roles = roles
+			expandedPolicies = append(expandedPolicies, expandedPolicy)
+		}
+
+		// return expanded policies
+		result := struct {
+			Policies []ExpandedPolicy `json:"policies"`
+		}{
+			Policies: expandedPolicies,
+		}
+		_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+	} else {
+		// return non-expanded policies
+		result := struct {
+			Policies []Policy `json:"policies"`
+		}{
+			Policies: policies,
+		}
+		_ = jsonResponseFrom(result, http.StatusOK).write(w, r)
+	}
 }
 
 func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request, body []byte) {

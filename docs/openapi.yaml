@@ -460,7 +460,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Roles'
+                type: object
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
     post:
       tags:
         - role
@@ -599,6 +604,13 @@ paths:
         - policy
       description: >-
         List just the IDs for all policies which have been created in arborist.
+      parameters:
+        - in: path
+          name: expand
+          required: false
+          schema:
+            type: boolean
+          description: Whether to return detailed roles instead of only role IDs (disabled by default). If enabled, 'roles' will replace 'role_ids' in the returned data.
       responses:
         200:
           description: list of resources
@@ -607,12 +619,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  policy_ids:
+                  policies:
                     type: array
                     items:
-                      type: string
-                example:
-                  policy_ids: ["programs.DEV-update","programs.DEV-delete","data_upload","programs.DEV-read","programs.DEV-create","programs.DEV-upload"]
+                      $ref: '#/components/schemas/Policy'
     post:
       tags:
         - policy
@@ -798,6 +808,11 @@ paths:
         - user
       description: >-
         Create a new user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
       responses:
         201:
           description: created user
@@ -1447,15 +1462,6 @@ components:
           items:
             type: string
           example:  ["/programs/DEV-1", "/programs/DEV-2"]
-    Roles:
-      type: object
-      properties:
-        role_ids:
-          type: array
-          items:
-            type: string
-      example:
-        role_ids: ["create","upload","update","delete","file_uploader","read"]
     Role:
       type: object
       properties:
