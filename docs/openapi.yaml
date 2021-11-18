@@ -133,7 +133,7 @@ paths:
         if they have their username. For this reason, this API is not meant to 
         be fully exposed publically. Arborist does not currently have 
         authorization for the management of the authorization in the system.
-        The service itself does not provide a way to expose only certain part 
+        The service itself does not provide a way to expose only certain parts 
         of the API to super admins vs admins.
       requestBody:
         content:
