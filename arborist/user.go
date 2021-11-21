@@ -22,6 +22,11 @@ type User struct {
 	Policies []PolicyBinding `json:"policies"`
 }
 
+type PartialUser struct {
+	Name string  `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+}
+
 func (user *User) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
@@ -207,6 +212,26 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
+	return nil
+}
+
+func (user *User) updateInDb(db *sqlx.DB, username string, email string) *ErrorResponse {
+	stmt := `
+		UPDATE usr
+		SET
+			name = COALESCE(NULLIF($1, ''), name),
+			email = COALESCE(NULLIF($2, ''), email)
+		WHERE
+			name = $3
+	`
+	_, err := db.Exec(stmt, username, email, user.Name)
+	if err != nil {
+		fmt.Println(err)
+		// TODO handle this
+		// TODO: verify correct error
+		// user does not exist; that's fine
+		return nil
+	}
 	return nil
 }
 

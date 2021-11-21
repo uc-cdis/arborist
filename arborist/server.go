@@ -133,6 +133,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
+	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PATCH")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
@@ -1167,6 +1168,36 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromQuery.standardize()
 	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, body []byte) {
+	name := mux.Vars(r)["username"]
+	user := User{Name: name}
+
+	partialUser := &PartialUser{}
+	err := json.Unmarshal(body, partialUser)
+	if err != nil {
+		msg := fmt.Sprintf("could not unmarshal body: %s", err.Error())
+		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info(name)
+	server.logger.Info(partialUser.Name)
+	server.logger.Info(partialUser.Email)
+
+	if partialUser.Name == "" && partialUser.Email == "" {
+		msg := `body must contain at least one valid field. possible valid fields are "name" and "email"`
+		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	// errResponse := user.updateInDb(server.db, new_user.Name)
+	// _ = user.updateInDb(server.db, new_user.Name, new_user.Email)
+	_ = user.updateInDb(server.db, partialUser.Name, partialUser.Email)
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
