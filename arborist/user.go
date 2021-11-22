@@ -22,9 +22,9 @@ type User struct {
 	Policies []PolicyBinding `json:"policies"`
 }
 
-type PartialUser struct {
-	Name string  `json:"name,omitempty"`
-	Email string `json:"email,omitempty"`
+type UserWithScalars struct {
+	Name  *string `json:"name,omitempty"`
+	Email *string `json:"email,omitempty"`
 }
 
 func (user *User) UnmarshalJSON(data []byte) error {
@@ -215,22 +215,20 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func (user *User) updateInDb(db *sqlx.DB, username string, email string) *ErrorResponse {
+func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorResponse {
 	stmt := `
 		UPDATE usr
 		SET
-			name = COALESCE(NULLIF($1, ''), name),
-			email = COALESCE(NULLIF($2, ''), email)
+			name = COALESCE($1, name),
+			email = COALESCE($2, email)
 		WHERE
 			name = $3
 	`
-	_, err := db.Exec(stmt, username, email, user.Name)
+	_, err := db.Exec(stmt, name, email, user.Name)
 	if err != nil {
-		fmt.Println(err)
-		// TODO handle this
-		// TODO: verify correct error
-		// user does not exist; that's fine
-		return nil
+		// this should only fail because the target name was not unique
+		msg := fmt.Sprintf(`failed to update name to "%s": user with this name already exists`, *name)
+		return newErrorResponse(msg, 409, &err)
 	}
 	return nil
 }

@@ -647,8 +647,8 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		// generate expanded policies with role details
 		for _, policy := range policies {
 			expandedPolicy := ExpandedPolicy{
-				Name: policy.Name,
-				Description: policy.Description,
+				Name:          policy.Name,
+				Description:   policy.Description,
 				ResourcePaths: policy.ResourcePaths,
 			}
 			roles := []Role{}
@@ -1174,8 +1174,8 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 	name := mux.Vars(r)["username"]
 	user := User{Name: name}
 
-	partialUser := &PartialUser{}
-	err := json.Unmarshal(body, partialUser)
+	userWithScalars := &UserWithScalars{}
+	err := json.Unmarshal(body, userWithScalars)
 	if err != nil {
 		msg := fmt.Sprintf("could not unmarshal body: %s", err.Error())
 		errResponse := newErrorResponse(msg, 400, nil)
@@ -1183,11 +1183,8 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 		_ = errResponse.write(w, r)
 		return
 	}
-	server.logger.Info(name)
-	server.logger.Info(partialUser.Name)
-	server.logger.Info(partialUser.Email)
 
-	if partialUser.Name == "" && partialUser.Email == "" {
+	if userWithScalars.Name == nil && userWithScalars.Email == nil {
 		msg := `body must contain at least one valid field. possible valid fields are "name" and "email"`
 		errResponse := newErrorResponse(msg, 400, nil)
 		errResponse.log.write(server.logger)
@@ -1195,9 +1192,14 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
-	// errResponse := user.updateInDb(server.db, new_user.Name)
-	// _ = user.updateInDb(server.db, new_user.Name, new_user.Email)
-	_ = user.updateInDb(server.db, partialUser.Name, partialUser.Email)
+	errResponse := user.updateInDb(server.db, userWithScalars.Name, userWithScalars.Email)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info("updated user %s", user.Name)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
