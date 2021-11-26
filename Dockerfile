@@ -1,12 +1,27 @@
-FROM quay.io/cdis/golang:1.12-alpine as build
+FROM quay.io/cdis/golang:1.17-bullseye as build-deps
 
-# Install SSL certificates
-RUN apk update && apk add --no-cache git ca-certificates gcc musl-dev jq curl bash postgresql
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
 
-# Build static arborist binary
-RUN mkdir -p /go/src/github.com/uc-cdis/arborist
-WORKDIR /go/src/github.com/uc-cdis/arborist
-ADD . .
-RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/arborist
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends jq=1.* postgresql=13* \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-ENTRYPOINT ["bin/arborist"]
+WORKDIR $GOPATH/src/github.com/uc-cdis/arborist/
+
+COPY go.mod .
+COPY go.sum .
+
+RUN go mod download
+
+COPY . .
+
+RUN GITCOMMIT=$(git rev-parse HEAD) \
+    GITVERSION=$(git describe --always --tags) \
+    && go build \
+    -ldflags="-X 'github.com/uc-cdis/arborist/arborist/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/arborist/arborist/version.GitVersion=${GITVERSION}'" \
+    -o bin/arborist
+
+CMD ["bin/arborist"]
