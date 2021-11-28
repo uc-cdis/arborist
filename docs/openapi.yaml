@@ -126,7 +126,15 @@ paths:
         has access to ALL items in the list.
         If the given JWT has `azp` field, the permission of
         the corresponding client will be also checked; only when both the user
-        and the client have permission can the response be positive.
+        and the client have permission can the response be positive. 
+        IMPORTANT NOTE: Under `body` you can now also check authorization of 
+        a user given just the username using the field `user_id` instead of 
+        using `token`. This means that anyone can check anyone's authorization
+        if they have their username. For this reason, this API is not meant to 
+        be fully exposed publically. Arborist does not currently have 
+        authorization for the management of the authorization in the system.
+        The service itself does not provide a way to expose only certain parts 
+        of the API to super admins vs admins.
       requestBody:
         content:
           application/json:
@@ -1279,6 +1287,11 @@ components:
               description: >-
                 A JWT token belonging to a user, as defined by RFC 7519.
               example: 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjE2In0[...]'
+            user_id:
+              type: string
+              description: >-
+                Username of the user registered in arborist
+              example: "username"
         request:
           type: object
           description: >-

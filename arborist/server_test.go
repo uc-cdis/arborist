@@ -3193,6 +3193,41 @@ func TestServer(t *testing.T) {
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, true, result.Auth, msg)
 			})
+
+			t.Run("QueryUsingUserID", func(t *testing.T) {
+				w = httptest.NewRecorder()
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"user_id": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					username,
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				// request should fail
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				msg = fmt.Sprintf("got response body: %s", w.Body.String())
+				assert.Equal(t, true, result.Auth, msg)
+			})
 		})
 
 		deleteEverything()

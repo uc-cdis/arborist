@@ -384,9 +384,15 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		copy(scopes, authRequestJSON.User.Scopes)
 	}
 
-	isAnonymous := authRequestJSON.User.Token == ""
+	var isAnonymous bool
+	if authRequestJSON.User.UserId == "" && authRequestJSON.User.Token == "" {
+		isAnonymous = true
+	} else {
+		isAnonymous = false
+	}
+
 	var info *TokenInfo
-	if !isAnonymous {
+	if !isAnonymous && authRequestJSON.User.Token != "" {
 		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
 		if err != nil {
 			server.logger.Info(err.Error())
@@ -396,8 +402,15 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	policies := []string{}
+	var username string
+	var clientID string
 	if info != nil {
 		policies = info.policies
+		username = info.username
+		clientID = info.clientID
+	} else {
+		username = authRequestJSON.User.UserId
+		clientID = ""
 	}
 	if authRequestJSON.User.Policies != nil {
 		policies = authRequestJSON.User.Policies
@@ -438,15 +451,16 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
-		if info.username == "" && (info.policies == nil || len(info.policies) == 0) {
+		if (username == "") && (info.policies == nil || len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
 		}
 
+		// username = UserID or username
 		request := &AuthRequest{
-			Username: info.username,
-			ClientID: info.clientID,
+			Username: username,
+			ClientID: clientID,
 			Policies: policies,
 			Resource: authRequest.Resource,
 			Service:  authRequest.Action.Service,
