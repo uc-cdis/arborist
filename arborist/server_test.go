@@ -283,6 +283,36 @@ func TestServer(t *testing.T) {
 		}
 	}
 
+	updateUserBytes := func(t *testing.T, username string, body []byte) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/user/%s", username)
+		req := newRequest("PATCH", url, bytes.NewBuffer(body))
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			httpError(t, w, "couldn't update user")
+		}
+	}
+
+	assertUsernameAndEmail := func(t *testing.T, expectedUsername string, expectedUserEmail string) {
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/user/%s", expectedUsername)
+		req := newRequest("GET", url, nil)
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			httpError(t, w, "couldn't read user")
+		}
+		result := struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		}{}
+		err = json.Unmarshal(w.Body.Bytes(), &result)
+		if err != nil {
+			httpError(t, w, "couldn't read response from user read")
+		}
+		assert.Equalf(t, expectedUsername, result.Name, "Wanted username: %v \t Got: %v", expectedUsername, result.Name)
+		assert.Equalf(t, expectedUserEmail, result.Email, "Wanted email: %v \t Got: %v", expectedUserEmail, result.Email)
+	}
+
 	createResourceBytes := func(t *testing.T, body []byte) {
 		w := httptest.NewRecorder()
 		req := newRequest("POST", "/resource", bytes.NewBuffer(body))
@@ -1686,6 +1716,33 @@ func TestServer(t *testing.T) {
 			// as Anonymous and LoggedIn groups.
 			expectedGroups := []string{arborist.LoggedInGroup, arborist.AnonymousGroup}
 			assert.ElementsMatchf(t, expectedGroups, result.Groups, "Wanted groups: %v \t Got: %v", expectedGroups, result.Groups)
+		})
+
+		t.Run("Update", func(t *testing.T) {
+			originalUsername := "johnsmith"
+			originalUserEmail := "johnsmith@domain.tld"
+			createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s", "email": "%s"}`, originalUsername, originalUserEmail)))
+
+			t.Run("OnlyUsername", func(t *testing.T) {
+				newUsername := "jsmith"
+				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"name": "%s"}`, newUsername)))
+				assertUsernameAndEmail(t, newUsername, originalUserEmail)
+			})
+
+			t.Run("OnlyEmail", func(t *testing.T) {
+				originalUsername = "jsmith"
+				newUserEmail := "jsmith@domain.tld"
+				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"email": "%s"}`, newUserEmail)))
+				assertUsernameAndEmail(t, originalUsername, newUserEmail)
+			})
+
+			t.Run("BothUsernameAndEmail", func(t *testing.T) {
+				originalUsername = "jsmith"
+				newUsername := "janesmith"
+				newUserEmail := "janesmith@domain.tld"
+				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"name": "%s", "email": "%s"}`, newUsername, newUserEmail)))
+				assertUsernameAndEmail(t, newUsername, newUserEmail)
+			})
 		})
 
 		// do some preliminary setup so we have a policy to work with
