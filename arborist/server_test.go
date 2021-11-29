@@ -283,14 +283,15 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	updateUserBytes := func(t *testing.T, username string, body []byte) {
+	updateUserBytes := func(t *testing.T, username string, body []byte, expectedHTTPCode int) {
 		w := httptest.NewRecorder()
 		url := fmt.Sprintf("/user/%s", username)
 		req := newRequest("PATCH", url, bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusNoContent {
-			httpError(t, w, "couldn't update user")
-		}
+		assert.Equalf(t, expectedHTTPCode, w.Code, "Wanted http response: %v \t Got: %v", expectedHTTPCode, w.Code)
+		// if w.Code != http.StatusNoContent {
+		// 	httpError(t, w, "couldn't update user")
+		// }
 	}
 
 	assertUsernameAndEmail := func(t *testing.T, expectedUsername string, expectedUserEmail string) {
@@ -1723,25 +1724,78 @@ func TestServer(t *testing.T) {
 			originalUserEmail := "johnsmith@domain.tld"
 			createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s", "email": "%s"}`, originalUsername, originalUserEmail)))
 
-			t.Run("OnlyUsername", func(t *testing.T) {
+			t.Run("OnlyName", func(t *testing.T) {
 				newUsername := "jsmith"
-				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"name": "%s"}`, newUsername)))
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte(fmt.Sprintf(`{"name": "%s"}`, newUsername)),
+					http.StatusNoContent,
+				)
 				assertUsernameAndEmail(t, newUsername, originalUserEmail)
 			})
 
+			originalUsername = "jsmith"
 			t.Run("OnlyEmail", func(t *testing.T) {
-				originalUsername = "jsmith"
 				newUserEmail := "jsmith@domain.tld"
-				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"email": "%s"}`, newUserEmail)))
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte(fmt.Sprintf(`{"email": "%s"}`, newUserEmail)),
+					http.StatusNoContent,
+				)
 				assertUsernameAndEmail(t, originalUsername, newUserEmail)
 			})
 
-			t.Run("BothUsernameAndEmail", func(t *testing.T) {
-				originalUsername = "jsmith"
+			t.Run("BothNameAndEmail", func(t *testing.T) {
 				newUsername := "janesmith"
 				newUserEmail := "janesmith@domain.tld"
-				updateUserBytes(t, originalUsername, []byte(fmt.Sprintf(`{"name": "%s", "email": "%s"}`, newUsername, newUserEmail)))
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte(fmt.Sprintf(`{"name": "%s", "email": "%s"}`, newUsername, newUserEmail)),
+					http.StatusNoContent,
+				)
 				assertUsernameAndEmail(t, newUsername, newUserEmail)
+			})
+
+			originalUsername = "janesmith"
+			t.Run("NeitherNameNorEmail", func(t *testing.T) {
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte("{}"),
+					http.StatusBadRequest,
+				)
+			})
+
+			t.Run("InvalidName", func(t *testing.T) {
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte(`{"name": 42}`),
+					http.StatusBadRequest,
+				)
+			})
+
+			t.Run("NonExistentUsername", func(t *testing.T) {
+				updateUserBytes(
+					t,
+					"nonexistentuser",
+					[]byte(`{"name": "existentuser"}`),
+					http.StatusNotFound,
+				)
+			})
+
+			t.Run("ConflictingName", func(t *testing.T) {
+				otherUsername := "joesmith"
+				createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s"}`, otherUsername)))
+				updateUserBytes(
+					t,
+					originalUsername,
+					[]byte(fmt.Sprintf(`{"name": "%s"}`, otherUsername)),
+					http.StatusConflict,
+				)
 			})
 		})
 
