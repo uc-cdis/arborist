@@ -224,11 +224,20 @@ func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorRes
 		WHERE
 			name = $3
 	`
-	_, err := db.Exec(stmt, name, email, user.Name)
+	result, err := db.Exec(stmt, name, email, user.Name)
 	if err != nil {
 		// this should only fail because the target name was not unique
 		msg := fmt.Sprintf(`failed to update name to "%s": user with this name already exists`, *name)
 		return newErrorResponse(msg, 409, &err)
+	}
+
+	rowsAffeted, _ := result.RowsAffected()
+	if rowsAffeted == 0 {
+		msg := fmt.Sprintf(
+			"failed to update user: user does not exist: %s",
+			user.Name,
+		)
+		return newErrorResponse(msg, 404, nil)
 	}
 	return nil
 }
