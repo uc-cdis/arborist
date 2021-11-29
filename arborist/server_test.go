@@ -289,9 +289,6 @@ func TestServer(t *testing.T) {
 		req := newRequest("PATCH", url, bytes.NewBuffer(body))
 		handler.ServeHTTP(w, req)
 		assert.Equalf(t, expectedHTTPCode, w.Code, "Wanted http response: %v \t Got: %v", expectedHTTPCode, w.Code)
-		// if w.Code != http.StatusNoContent {
-		// 	httpError(t, w, "couldn't update user")
-		// }
 	}
 
 	assertUsernameAndEmail := func(t *testing.T, expectedUsername string, expectedUserEmail string) {

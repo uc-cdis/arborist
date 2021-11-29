@@ -231,8 +231,8 @@ func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorRes
 		return newErrorResponse(msg, 409, &err)
 	}
 
-	rowsAffeted, _ := result.RowsAffected()
-	if rowsAffeted == 0 {
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
 		msg := fmt.Sprintf(
 			"failed to update user: user does not exist: %s",
 			user.Name,
