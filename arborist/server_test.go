@@ -319,9 +319,12 @@ func TestServer(t *testing.T) {
 
 	getTagForResource := func(path string) string {
 		var tags []string
-		db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", arborist.FormatPathForDb(path))
+		err := db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", arborist.FormatPathForDb(path))
 		if len(tags) == 0 {
 			return ""
+		}
+		if err != nil {
+			return nil, err
 		}
 		return tags[0]
 	}
