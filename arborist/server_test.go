@@ -324,7 +324,7 @@ func TestServer(t *testing.T) {
 			return ""
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		return tags[0]
 	}
