@@ -133,6 +133,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user", http.HandlerFunc(server.handleUserList)).Methods("GET")
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
+	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PATCH")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
@@ -660,8 +661,8 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 		// generate expanded policies with role details
 		for _, policy := range policies {
 			expandedPolicy := ExpandedPolicy{
-				Name: policy.Name,
-				Description: policy.Description,
+				Name:          policy.Name,
+				Description:   policy.Description,
 				ResourcePaths: policy.ResourcePaths,
 			}
 			roles := []Role{}
@@ -1181,6 +1182,38 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromQuery.standardize()
 	_ = jsonResponseFrom(user, http.StatusOK).write(w, r)
+}
+
+func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, body []byte) {
+	name := mux.Vars(r)["username"]
+	user := User{Name: name}
+
+	userWithScalars := &UserWithScalars{}
+	err := json.Unmarshal(body, userWithScalars)
+	if err != nil {
+		msg := fmt.Sprintf("could not unmarshal body: %s", err.Error())
+		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	if userWithScalars.Name == nil && userWithScalars.Email == nil {
+		msg := `body must contain at least one valid field. possible valid fields are "name" and "email"`
+		errResponse := newErrorResponse(msg, 400, nil)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+
+	errResponse := user.updateInDb(server.db, userWithScalars.Name, userWithScalars.Email)
+	if errResponse != nil {
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
+		return
+	}
+	server.logger.Info("updated user %s", user.Name)
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {

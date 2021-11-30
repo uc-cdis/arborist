@@ -845,6 +845,25 @@ paths:
                 $ref: '#/components/schemas/User'
         404:
           description: user not found
+    patch:
+      tags:
+        - user
+      description: >-
+        Update either the name, email or both for a specific user.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserWithScalars'
+      responses:
+        204:
+          description: user successfully updated
+        400:
+          description: invalid input
+        404:
+          description: user not found
+        409:
+          description: user with target name already exists
     delete:
       tags:
         - user
@@ -1599,6 +1618,15 @@ components:
               expires_at:
                 type: string
                 example: '2019-08-12T12:34:56Z'
+    UserWithScalars:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 'username'
+        email:
+          type: string
+          example: 'user@example.net'
     UsersList:
       type: object
       properties:
