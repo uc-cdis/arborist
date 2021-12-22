@@ -22,6 +22,11 @@ type User struct {
 	Policies []PolicyBinding `json:"policies"`
 }
 
+type UserWithScalars struct {
+	Name  *string `json:"name,omitempty"`
+	Email *string `json:"email,omitempty"`
+}
+
 func (user *User) UnmarshalJSON(data []byte) error {
 	fields := make(map[string]interface{})
 	err := json.Unmarshal(data, &fields)
@@ -207,6 +212,33 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 		return newErrorResponse(msg, 500, &err)
 	}
 
+	return nil
+}
+
+func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorResponse {
+	stmt := `
+		UPDATE usr
+		SET
+			name = COALESCE($1, name),
+			email = COALESCE($2, email)
+		WHERE
+			name = $3
+	`
+	result, err := db.Exec(stmt, name, email, user.Name)
+	if err != nil {
+		// this should only fail because the target name was not unique
+		msg := fmt.Sprintf(`failed to update name to "%s": user with this name already exists`, *name)
+		return newErrorResponse(msg, 409, &err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		msg := fmt.Sprintf(
+			"failed to update user: user does not exist: %s",
+			user.Name,
+		)
+		return newErrorResponse(msg, 404, nil)
+	}
 	return nil
 }
 
