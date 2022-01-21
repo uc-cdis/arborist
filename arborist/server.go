@@ -735,19 +735,6 @@ func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, po
 	return nil
 }
 
-func (server *Server) bulkOverwritePolicy(policies []Policy) *ErrorResponse {
-	overwritePolicies := func (tx *sqlx.Tx) *ErrorResponse {
-		for _, policy := range policies {
-
-			policy.updateInDb(tx)
-		}
-		return nil
-	}
-
-	transactify(server.db, overwritePolicies)
-	return nil
-}
-
 func (server *Server) bulkCreatePolicy(policies []Policy) *ErrorResponse {
 	createPolicies := func (tx *sqlx.Tx) *ErrorResponse {
 		for _, policy := range policies {
@@ -795,7 +782,9 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 		return
 	}
 
-	server.bulkOverwritePolicy(policies)
+	for _, policy := range policies {
+		server.overwritePolicy(w, r, policy)
+	}
 	updated := struct {
 		Updated []Policy `json:"updated"`
 	}{
