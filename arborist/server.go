@@ -116,6 +116,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyRead)).Methods("GET")
 	router.Handle("/policy/{policyID}", http.HandlerFunc(server.handlePolicyDelete)).Methods("DELETE")
 	router.Handle("/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkPoliciesOverwrite))).Methods("PUT")
+	router.Handle("/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkPoliciesCreation))).Methods("POST")
 
 	router.Handle("/resource", http.HandlerFunc(server.handleResourceList)).Methods("GET")
 	router.Handle("/resource", http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
@@ -736,12 +737,25 @@ func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, po
 func (server *Server) bulkOverwritePolicy(policies []Policy) *ErrorResponse {
 	overwritePolicies := func (tx *sqlx.Tx) *ErrorResponse {
 		for _, policy := range policies {
+
 			policy.updateInDb(tx)
 		}
 		return nil
 	}
 
 	transactify(server.db, overwritePolicies)
+	return nil
+}
+
+func (server *Server) bulkCreatePolicy(policies []Policy) *ErrorResponse {
+	createPolicies := func (tx *sqlx.Tx) *ErrorResponse {
+		for _, policy := range policies {
+			err := policy.createInDb(tx)
+		}
+		return nil
+	}
+
+	transactify(server.db, createPolicies)
 	return nil
 }
 
@@ -781,6 +795,26 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 	}
 
 	server.bulkOverwritePolicy(policies)
+	updated := struct {
+		Updated []Policy `json:"updated"`
+	}{
+		Updated: policies,
+	}
+	_ = jsonResponseFrom(updated, 201).write(w, r)
+}
+
+func (server *Server) handleBulkPoliciesCreation(w http.ResponseWriter, r *http.Request, body []byte) {
+	var policies []Policy
+	err := json.Unmarshal(body, &policies)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policies from JSON: %s", err.Error())
+		server.logger.Info("tried to create policies but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	server.bulkCreatePolicy(policies)
 	updated := struct {
 		Updated []Policy `json:"updated"`
 	}{
