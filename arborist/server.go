@@ -124,6 +124,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceRead)).Methods("GET")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.parseJSON(server.handleResourceCreate))).Methods("POST", "PUT")
 	router.Handle("/resource"+resourcePath, http.HandlerFunc(server.handleResourceDelete)).Methods("DELETE")
+	router.Handle("/bulk/resource", http.HandlerFunc(server.parseJSON(server.handleBulkResourcesCreation))).Methods("POST")
 
 	router.Handle("/role", http.HandlerFunc(server.handleRoleList)).Methods("GET")
 	router.Handle("/role", http.HandlerFunc(server.parseJSON(server.handleRoleCreate))).Methods("POST")
@@ -750,7 +751,7 @@ func (server *Server) bulkOverwritePolicy(policies []Policy) *ErrorResponse {
 func (server *Server) bulkCreatePolicy(policies []Policy) *ErrorResponse {
 	createPolicies := func (tx *sqlx.Tx) *ErrorResponse {
 		for _, policy := range policies {
-			err := policy.createInDb(tx)
+			policy.createInDb(tx)
 		}
 		return nil
 	}
@@ -1017,6 +1018,32 @@ func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Reques
 	}
 	server.logger.Info("deleted resource %s", resource.Path)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleBulkResourcesCreation(w http.ResponseWriter, r *http.Request, body []byte) {
+	var resources []ResourceIn
+	err := json.Unmarshal(body, &resources)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse resources from JSON: %s", err.Error())
+		server.logger.Info("tried to create resources but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	createResources := func (tx *sqlx.Tx) *ErrorResponse {
+		for _, resource := range resources {
+			resource.createInDb(tx)
+		}
+		return nil
+	}
+	errResponse := transactify(server.db, createResources)
+	if errResponse != nil {
+		errResponse.write(w, r)
+		return
+	}
+
+	_ = jsonResponseFrom(nil, 201).write(w, r)
 }
 
 func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
