@@ -1308,10 +1308,13 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 	policyInfo, _ := fetchPolicyInfo(server.db, username, policyName)
 
 	if policyInfo != nil {
-		server.logger.Info("Policy - {name: %s, authz_provider: %s, type: %s}", policyInfo.Name, policyInfo.Authz_provider, policyInfo.Type)
+		server.logger.Info("Policy - {name: %s, authz_provider: %s, type: %s}",
+			policyInfo.Name, policyInfo.Authz_provider, policyInfo.Type)
 
 		if policyInfo.Type == "group" {
-			msg := fmt.Sprintf("Policy `%s` is assigned to the user through a group. Can not be revoked directly", policyName)
+			msg := fmt.Sprintf(
+				"Policy `%s` is assigned to the user through a group. Can not be revoked directly",
+				policyName)
 			errResponse := newErrorResponse(msg, http.StatusBadRequest, nil)
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -1319,7 +1322,8 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 		}
 
 		if policyInfo.Authz_provider == authzProvider.String {
-			errResponse := revokeUserPolicy(server.db, username, policyName, authzProvider)
+			errResponse := revokeUserPolicy(
+				server.db, username, policyName, authzProvider)
 			if errResponse != nil {
 				errResponse.log.write(server.logger)
 				_ = errResponse.write(w, r)
@@ -1327,7 +1331,8 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 			}
 			server.logger.Info("revoked policy %s for user %s", policyName, username)
 		} else {
-			msg := fmt.Sprintf("Cannot revoke policy `%s`. Authz_provider - `%s` and `%s` Mismatch", policyName, policyInfo.Authz_provider, authzProvider.String)
+			msg := fmt.Sprintf("Cannot revoke policy `%s`.Authz_provider - `%s` and `%s` Mismatch",
+				policyName, policyInfo.Authz_provider, authzProvider.String)
 			errResponse := newErrorResponse(msg, http.StatusUnauthorized, nil)
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
