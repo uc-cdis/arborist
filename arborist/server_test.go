@@ -1965,13 +1965,13 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
-			test := func(authzProvider string, expected bool, msg string) {
+			test := func(authzProvider string, httpStatusCode int, expected bool, msg string) {
 				w := httptest.NewRecorder()
 				url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
 				req := newRequest("DELETE", url, nil)
 				req.Header.Add("X-AuthZ-Provider", authzProvider)
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusNoContent {
+				if w.Code != httpStatusCode {
 					httpError(t, w, "couldn't revoke policy")
 				}
 				// look up user again and check if policy is still there
@@ -2006,8 +2006,8 @@ func TestServer(t *testing.T) {
 					assert.Fail(t, fmt.Sprintf(msg, w.Body.String()))
 				}
 			}
-			test("yyy", true, "shouldn't revoke policy; got response body: %s")
-			test("xxx", false, "didn't revoke policy correctly; got response body: %s")
+			test("yyy", http.StatusUnauthorized, true, "shouldn't revoke policy; got response body: %s")
+			test("xxx", http.StatusNoContent, false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		timestamp := time.Now().Add(time.Hour).Format(time.RFC3339)
