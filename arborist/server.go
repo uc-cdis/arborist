@@ -209,7 +209,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 		return
 	}
-	jsonResponseFrom("Status : OK", http.StatusOK).write(w, r)
+	_ = jsonResponseFrom("Status : OK", http.StatusOK).write(w, r)
 }
 
 func handleNotFound(w http.ResponseWriter, r *http.Request) {
