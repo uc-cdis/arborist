@@ -150,6 +150,56 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
+type PolicyInfoFromQuery struct {
+	Name           string `db:"name"`
+	Authz_provider string `db:"authz_provider"`
+	Type           string `db:"type"`
+}
+
+func fetchPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*PolicyInfoFromQuery, error) {
+
+	stmt := `
+	SELECT * from
+	(
+		SELECT policy.name AS name, usr_policy.authz_provider as authz_provider, 'direct' as type
+			FROM usr_policy
+			INNER JOIN policy ON policy.id = usr_policy.policy_id
+			INNER JOIN usr on usr_policy.usr_id = usr.id 
+			WHERE usr.name like $1
+		UNION
+		SELECT policy.name AS name, grp_policy.authz_provider as authz_provider, 'group' as type
+			FROM usr_grp
+			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+			INNER JOIN policy ON policy.id = grp_policy.policy_id
+			INNER JOIN usr on usr_grp.usr_id = usr.id
+			WHERE usr.name like $1
+		UNION
+		SELECT policy.name AS name, grp_policy.authz_provider as authz_provider, 'group' as type
+			FROM grp
+			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+			INNER JOIN policy ON policy.id = grp_policy.policy_id
+			WHERE grp.name IN ( $3 , $4)
+	) as all_policies where name like $2;
+	`
+	policyInfoList := []PolicyInfoFromQuery{}
+	err := db.Select(
+		&policyInfoList,
+		stmt,
+		user_name,      // $1
+		policy_name,    // $2
+		AnonymousGroup, // $3
+		LoggedInGroup,  // $4
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(policyInfoList) == 0 {
+		return nil, nil
+	}
+	policyInfo := policyInfoList[0]
+	return &policyInfo, nil
+}
+
 func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 	stmt := `
 		SELECT

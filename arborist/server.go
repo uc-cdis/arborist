@@ -209,7 +209,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	jsonResponseFrom("Status : OK", http.StatusOK).write(w, r)
 }
 
 func handleNotFound(w http.ResponseWriter, r *http.Request) {
@@ -1304,13 +1304,38 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeUserPolicy(server.db, username, policyName, getAuthZProvider(r))
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
+	authzProvider := getAuthZProvider(r)
+	policyInfo, _ := fetchPolicyInfo(server.db, username, policyName)
+
+	if policyInfo != nil {
+		server.logger.Info("Policy - {name: %s, authz_provider: %s, type: %s}", policyInfo.Name, policyInfo.Authz_provider, policyInfo.Type)
+
+		if policyInfo.Type == "group" {
+			msg := fmt.Sprintf("Policy `%s` is assigned to the user through a group. Can not be revoked directly", policyName)
+			errResponse := newErrorResponse(msg, http.StatusBadRequest, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+
+		if policyInfo.Authz_provider == authzProvider.String {
+			errResponse := revokeUserPolicy(server.db, username, policyName, authzProvider)
+			if errResponse != nil {
+				errResponse.log.write(server.logger)
+				_ = errResponse.write(w, r)
+				return
+			}
+			server.logger.Info("revoked policy %s for user %s", policyName, username)
+		} else {
+			msg := fmt.Sprintf("Cannot revoke policy `%s`. Authz_provider - `%s` and `%s` Mismatch", policyName, policyInfo.Authz_provider, authzProvider.String)
+			errResponse := newErrorResponse(msg, http.StatusUnauthorized, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+	} else {
+		server.logger.Info("Policy `%s` does not exist for user `%s`", policyName, username)
 	}
-	server.logger.Info("revoked policy %s for user %s", policyName, username)
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
 
