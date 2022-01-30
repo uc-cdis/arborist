@@ -18,7 +18,7 @@ import (
 type ResourceIn struct {
 	Name         string       `json:"name"`
 	Path         string       `json:"path"`
-	Description  string       `json:"description"`
+	Description  *string      `json:"description"`
 	Subresources []ResourceIn `json:"subresources"`
 }
 
@@ -329,7 +329,7 @@ func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
+func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := FormatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
@@ -345,34 +345,38 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 409, &err)
 	}
 
-	// update description
-	stmt = "UPDATE resource SET description = $2 WHERE path = $1"
-	_, err = tx.Exec(stmt, path, resource.Description)
+	if resource.Description != nil {
+		// update description
+		stmt = "UPDATE resource SET description = $2 WHERE path = $1"
+		_, err = tx.Exec(stmt, path, resource.Description)
+	}
 
-	// delete the subresources not in the new request
-	if len(resource.Subresources) > 0 {
-		subPathsKeep := []string{}
-		for _, subresource := range resource.Subresources {
-			subresource.addPath(resource.Path)
-			subpath := fmt.Sprintf("'%s'", FormatPathForDb(subresource.Path))
-			subPathsKeep = append(subPathsKeep, subpath)
+	if !merge {
+		// delete the subresources not in the new request
+		if len(resource.Subresources) > 0 {
+			subPathsKeep := []string{}
+			for _, subresource := range resource.Subresources {
+				subresource.addPath(resource.Path)
+				subpath := fmt.Sprintf("'%s'", FormatPathForDb(subresource.Path))
+				subPathsKeep = append(subPathsKeep, subpath)
+			}
+			stmtFormat := `
+				DELETE FROM resource
+				WHERE (
+					path != $1
+					AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
+					AND path NOT IN (%s)
+				)
+			`
+			stmt = fmt.Sprintf(stmtFormat, strings.Join(subPathsKeep, ", "))
+			_, _ = tx.Exec(stmt, path)
+		} else {
+			stmt := `
+				DELETE FROM resource
+				WHERE path != $1 AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
+			`
+			_, _ = tx.Exec(stmt, path)
 		}
-		stmtFormat := `
-			DELETE FROM resource
-			WHERE (
-				path != $1
-				AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
-				AND path NOT IN (%s)
-			)
-		`
-		stmt = fmt.Sprintf(stmtFormat, strings.Join(subPathsKeep, ", "))
-		_, _ = tx.Exec(stmt, path)
-	} else {
-		stmt := `
-			DELETE FROM resource
-			WHERE path != $1 AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
-		`
-		_, _ = tx.Exec(stmt, path)
 	}
 
 	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
@@ -382,7 +386,7 @@ func (resource *ResourceIn) overwriteInDb(tx *sqlx.Tx) *ErrorResponse {
 		if errResponse != nil {
 			return errResponse
 		}
-		errResponse = subresource.overwriteInDb(tx)
+		errResponse = subresource.updateInDb(tx, merge)
 		if errResponse != nil {
 			return errResponse
 		}
