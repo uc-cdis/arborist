@@ -736,7 +736,7 @@ func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, po
 }
 
 func (server *Server) bulkCreatePolicy(policies []Policy) *ErrorResponse {
-	createPolicies := func (tx *sqlx.Tx) *ErrorResponse {
+	createPolicies := func(tx *sqlx.Tx) *ErrorResponse {
 		for _, policy := range policies {
 			policy.createInDb(tx)
 		}
@@ -898,7 +898,12 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 
 	errResponse = nil
 	if r.Method == "PUT" {
-		errResponse = transactify(server.db, resource.overwriteInDb)
+		_, mergeFlag := r.URL.Query()["merge"]
+		updateResource := func(tx *sqlx.Tx) *ErrorResponse {
+			resource.updateInDb(tx, mergeFlag)
+			return nil
+		}
+		errResponse = transactify(server.db, updateResource)
 	} else {
 		errResponse = transactify(server.db, resource.createInDb)
 	}
@@ -1020,7 +1025,7 @@ func (server *Server) handleBulkResourcesCreation(w http.ResponseWriter, r *http
 		return
 	}
 
-	createResources := func (tx *sqlx.Tx) *ErrorResponse {
+	createResources := func(tx *sqlx.Tx) *ErrorResponse {
 		for _, resource := range resources {
 			resource.createInDb(tx)
 		}
