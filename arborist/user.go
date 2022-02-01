@@ -150,45 +150,28 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
-type PolicyInfoFromQuery struct {
-	Name           string `db:"name"`
-	Authz_provider string `db:"authz_provider"`
-	Type           string `db:"type"`
+type UserPolicyInfoFromQuery struct {
+	Username      string         `db:"username"`
+	PolicyName    string         `db:"policy_name"`
+	ExpiresAt     *time.Time     `db:"expires_at"`
+	AuthzProvider sql.NullString `db:"authz_provider"`
 }
 
-func fetchPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*PolicyInfoFromQuery, error) {
+func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*UserPolicyInfoFromQuery, error) {
 
 	stmt := `
-	SELECT * from
-	(
-		SELECT policy.name AS name, usr_policy.authz_provider as authz_provider, 'direct' as type
+		SELECT usr.name as username, policy.name AS policy_name, usr_policy.expires_at as expires_at, usr_policy.authz_provider as authz_provider
 			FROM usr_policy
 			INNER JOIN policy ON policy.id = usr_policy.policy_id
 			INNER JOIN usr on usr_policy.usr_id = usr.id 
-			WHERE usr.name like $1
-		UNION
-		SELECT policy.name AS name, grp_policy.authz_provider as authz_provider, 'group' as type
-			FROM usr_grp
-			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-			INNER JOIN policy ON policy.id = grp_policy.policy_id
-			INNER JOIN usr on usr_grp.usr_id = usr.id
-			WHERE usr.name like $1
-		UNION
-		SELECT policy.name AS name, grp_policy.authz_provider as authz_provider, 'group' as type
-			FROM grp
-			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-			INNER JOIN policy ON policy.id = grp_policy.policy_id
-			WHERE grp.name IN ( $3 , $4)
-	) as all_policies where name like $2;
+			WHERE usr.name like $1 and policy.name like $2;
 	`
-	policyInfoList := []PolicyInfoFromQuery{}
+	policyInfoList := []UserPolicyInfoFromQuery{}
 	err := db.Select(
 		&policyInfoList,
 		stmt,
-		user_name,      // $1
-		policy_name,    // $2
-		AnonymousGroup, // $3
-		LoggedInGroup,  // $4
+		user_name,   // $1
+		policy_name, // $2
 	)
 	if err != nil {
 		return nil, err
@@ -196,6 +179,10 @@ func fetchPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Policy
 	if len(policyInfoList) == 0 {
 		return nil, nil
 	}
+	if len(policyInfoList) > 1 {
+		fmt.Printf("ERROR: More than one record of the policy exists for the current user")
+	}
+
 	policyInfo := policyInfoList[0]
 	return &policyInfo, nil
 }
