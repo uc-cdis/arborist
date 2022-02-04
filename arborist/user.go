@@ -180,7 +180,8 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 		return nil, nil
 	}
 	if len(policyInfoList) > 1 {
-		fmt.Printf("ERROR: More than one record of the policy exists for the current user")
+		fmt.Printf("WARN: More than one record of the policy `%s` exists for the user `%s`. Returning the first matching record",
+			policy_name, user_name)
 	}
 
 	policyInfo := policyInfoList[0]
