@@ -1969,7 +1969,9 @@ func TestServer(t *testing.T) {
 				w := httptest.NewRecorder()
 				url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
 				req := newRequest("DELETE", url, nil)
-				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				if authzProvider != "" {
+					req.Header.Add("X-AuthZ-Provider", authzProvider)
+				}
 				handler.ServeHTTP(w, req)
 				if w.Code != httpStatusCode {
 					httpError(t, w, "couldn't revoke policy")
@@ -2008,6 +2010,10 @@ func TestServer(t *testing.T) {
 			}
 			test("yyy", http.StatusUnauthorized, true, "shouldn't revoke policy; got response body: %s")
 			test("xxx", http.StatusNoContent, false, "didn't revoke policy correctly; got response body: %s")
+
+			// If no authz header is provided, the policy should still be revoked.
+			grantUserPolicy(t, username, policyName, "") // Granting policy again to revoke
+			test("", http.StatusNoContent, false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		timestamp := time.Now().Add(time.Hour).Format(time.RFC3339)
@@ -2641,6 +2647,15 @@ func TestServer(t *testing.T) {
 
 			t.Run("InvalidJSON", func(t *testing.T) {
 			})
+		})
+
+		t.Run("RevokePolicyThroughUser", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/policy/%s", testGroupUser1, policyName)
+			req := newRequest("DELETE", url, nil)
+			req.Header.Add("X-AuthZ-Provider", "xxx")
+			handler.ServeHTTP(w, req)
+			assert.Equal(t, w.Code, http.StatusBadRequest, " Group policy must not be revoked directly through user")
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
