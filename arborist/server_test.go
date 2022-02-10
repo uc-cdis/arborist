@@ -1974,7 +1974,7 @@ func TestServer(t *testing.T) {
 				}
 				handler.ServeHTTP(w, req)
 				if w.Code != httpStatusCode {
-					httpError(t, w, "couldn't revoke policy")
+					httpError(t, w, fmt.Sprintf("revoke policy: expected status code `%d`, got status code `%d`", httpStatusCode, w.Code))
 				}
 				// look up user again and check if policy is still there
 				w = httptest.NewRecorder()
@@ -2648,14 +2648,41 @@ func TestServer(t *testing.T) {
 			t.Run("InvalidJSON", func(t *testing.T) {
 			})
 		})
-
+		userToAttemptRevoke := testGroupUser2
 		t.Run("RevokePolicyThroughUser", func(t *testing.T) {
 			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/user/%s/policy/%s", testGroupUser1, policyName)
+			url := fmt.Sprintf("/user/%s/policy/%s", userToAttemptRevoke, policyName)
 			req := newRequest("DELETE", url, nil)
 			req.Header.Add("X-AuthZ-Provider", "xxx")
 			handler.ServeHTTP(w, req)
 			assert.Equal(t, w.Code, http.StatusBadRequest, " Group policy must not be revoked directly through user")
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/user/%s", userToAttemptRevoke)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read user policies")
+			}
+			result := struct {
+				Name     string `json:"name"`
+				Email    string `json:"email"`
+				Policies []struct {
+					Name string `json:"policy"`
+				} `json:"policies"`
+				Groups []string `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user read")
+			}
+			found := false
+			for _, policy := range result.Policies {
+				if policy.Name == policyName {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "shouldn't revoke group policy through user; got response body: %s")
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
