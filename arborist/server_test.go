@@ -2682,7 +2682,7 @@ func TestServer(t *testing.T) {
 					break
 				}
 			}
-			assert.True(t, found, "shouldn't revoke group policy through user; got response body: %s")
+			assert.True(t, found, fmt.Sprintf("shouldn't revoke group policy through user; got response body: %s", result))
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
