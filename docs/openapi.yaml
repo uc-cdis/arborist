@@ -383,16 +383,14 @@ paths:
             schema:
               $ref: '#/components/schemas/ResourceInput'
       parameters:
-        - in: path
+        - in: query
           name: p
           description: >-
             Ordinarily arborist will return an error if parent resources of a
             resource you're trying to create do not exist yet. If the `p`
             parameter is included, it behaves like `mkdir -p` and creates all
             parent resources as necessary.
-          schema:
-            type: integer
-          required: true
+          required: false
       responses:
         201:
           description: JSON representation of successfully-created resource
@@ -421,6 +419,22 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResourceInput'
+      parameters:
+        - in: query
+          name: p
+          description: >-
+            Ordinarily arborist will return an error if parent resources of a
+            resource you're trying to create do not exist yet. If the `p`
+            parameter is included, it behaves like `mkdir -p` and creates all
+            parent resources as necessary.
+          required: false
+        - in: query
+          name: merge
+          description: >-
+            Ordinarily arborist will overwrite the resource by deleting
+            existing subresources. If the `merge` parameter is included,
+            those existing subresources are not deleted.
+          required: false
       responses:
         201:
           description: JSON representation of successfully-updated resource
