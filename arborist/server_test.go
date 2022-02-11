@@ -1994,14 +1994,16 @@ func TestServer(t *testing.T) {
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
-			test := func(authzProvider string, expected bool, msg string) {
+			test := func(authzProvider string, httpStatusCode int, expected bool, msg string) {
 				w := httptest.NewRecorder()
 				url := fmt.Sprintf("/user/%s/policy/%s", username, policyName)
 				req := newRequest("DELETE", url, nil)
-				req.Header.Add("X-AuthZ-Provider", authzProvider)
+				if authzProvider != "" {
+					req.Header.Add("X-AuthZ-Provider", authzProvider)
+				}
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusNoContent {
-					httpError(t, w, "couldn't revoke policy")
+				if w.Code != httpStatusCode {
+					httpError(t, w, fmt.Sprintf("revoke policy: expected status code `%d`, got status code `%d`", httpStatusCode, w.Code))
 				}
 				// look up user again and check if policy is still there
 				w = httptest.NewRecorder()
@@ -2035,8 +2037,12 @@ func TestServer(t *testing.T) {
 					assert.Fail(t, fmt.Sprintf(msg, w.Body.String()))
 				}
 			}
-			test("yyy", true, "shouldn't revoke policy; got response body: %s")
-			test("xxx", false, "didn't revoke policy correctly; got response body: %s")
+			test("yyy", http.StatusUnauthorized, true, "shouldn't revoke policy; got response body: %s")
+			test("xxx", http.StatusNoContent, false, "didn't revoke policy correctly; got response body: %s")
+
+			// If no authz header is provided, the policy should still be revoked.
+			grantUserPolicy(t, username, policyName, "") // Granting policy again to revoke
+			test("", http.StatusNoContent, false, "didn't revoke policy correctly; got response body: %s")
 		})
 
 		timestamp := time.Now().Add(time.Hour).Format(time.RFC3339)
@@ -2670,6 +2676,42 @@ func TestServer(t *testing.T) {
 
 			t.Run("InvalidJSON", func(t *testing.T) {
 			})
+		})
+		userToAttemptRevoke := testGroupUser2
+		t.Run("RevokePolicyThroughUser", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/user/%s/policy/%s", userToAttemptRevoke, policyName)
+			req := newRequest("DELETE", url, nil)
+			req.Header.Add("X-AuthZ-Provider", "xxx")
+			handler.ServeHTTP(w, req)
+			assert.Equal(t, w.Code, http.StatusBadRequest, " Group policy must not be revoked directly through user")
+			w = httptest.NewRecorder()
+			url = fmt.Sprintf("/user/%s", userToAttemptRevoke)
+			req = newRequest("GET", url, nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "couldn't read user policies")
+			}
+			result := struct {
+				Name     string `json:"name"`
+				Email    string `json:"email"`
+				Policies []struct {
+					Name string `json:"policy"`
+				} `json:"policies"`
+				Groups []string `json:"groups"`
+			}{}
+			err = json.Unmarshal(w.Body.Bytes(), &result)
+			if err != nil {
+				httpError(t, w, "couldn't read response from user read")
+			}
+			found := false
+			for _, policy := range result.Policies {
+				if policy.Name == policyName {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, fmt.Sprintf("shouldn't revoke group policy through user; got response body: %s", result))
 		})
 
 		t.Run("RevokePolicy", func(t *testing.T) {
