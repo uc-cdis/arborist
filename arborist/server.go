@@ -209,7 +209,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		_ = response.write(w, r)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	_ = jsonResponseFrom("Healthy", http.StatusOK).write(w, r)
 }
 
 func handleNotFound(w http.ResponseWriter, r *http.Request) {
@@ -1304,14 +1304,50 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Request) {
 	username := mux.Vars(r)["username"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeUserPolicy(server.db, username, policyName, getAuthZProvider(r))
-	if errResponse != nil {
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
+	authzProvider := getAuthZProvider(r)
+	policyInfo, err := fetchUserPolicyInfo(server.db, username, policyName)
+
+	if err != nil {
+		server.logger.Info("Error Fetching policy Info: %s", err.Error())
+		msg := fmt.Sprintf("Error Fetching policy Info: %s", err.Error())
+		response := newErrorResponse(msg, http.StatusInternalServerError, nil)
+		_ = response.write(w, r)
 		return
 	}
-	server.logger.Info("revoked policy %s for user %s", policyName, username)
-	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+
+	if policyInfo != nil {
+
+		dbAuthzProvider := ""
+		providerExists := policyInfo.AuthzProvider.Valid
+		if providerExists {
+			dbAuthzProvider = policyInfo.AuthzProvider.String
+		}
+		server.logger.Debug("Policy - {name: %s, authz_provider: %s, expires_at: %s} assigned to user %s",
+			policyInfo.PolicyName, dbAuthzProvider, policyInfo.ExpiresAt, policyInfo.Username)
+
+		if !authzProvider.Valid || (providerExists && dbAuthzProvider == authzProvider.String) {
+			errResponse := revokeUserPolicy(
+				server.db, username, policyName, authzProvider)
+			if errResponse != nil {
+				errResponse.log.write(server.logger)
+				_ = errResponse.write(w, r)
+				return
+			}
+			server.logger.Info("revoked policy %s for user %s", policyName, username)
+			_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+		} else {
+			server.logger.Info("Cannot revoke policy `%s`. Policy authz_provider `%s` and request authz_provider `%s` mismatch",
+				policyName, policyInfo.AuthzProvider.String, authzProvider.String)
+			msg := fmt.Sprintf("Cannot revoke policy `%s`. Authz_provider Mismatch", policyName)
+			errResponse := newErrorResponse(msg, http.StatusUnauthorized, nil)
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+		}
+	} else {
+		server.logger.Info("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.",
+			policyName, username)
+		_ = jsonResponseFrom(nil, http.StatusBadRequest).write(w, r)
+	}
 }
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {

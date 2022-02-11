@@ -150,6 +150,44 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	return &user, nil
 }
 
+type UserPolicyInfoFromQuery struct {
+	Username      string         `db:"username"`
+	PolicyName    string         `db:"policy_name"`
+	ExpiresAt     *time.Time     `db:"expires_at"`
+	AuthzProvider sql.NullString `db:"authz_provider"`
+}
+
+func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*UserPolicyInfoFromQuery, error) {
+
+	stmt := `
+		SELECT usr.name as username, policy.name AS policy_name, usr_policy.expires_at as expires_at, usr_policy.authz_provider as authz_provider
+			FROM usr_policy
+			INNER JOIN policy ON policy.id = usr_policy.policy_id
+			INNER JOIN usr on usr_policy.usr_id = usr.id 
+			WHERE usr.name like $1 and policy.name like $2;
+	`
+	policyInfoList := []UserPolicyInfoFromQuery{}
+	err := db.Select(
+		&policyInfoList,
+		stmt,
+		user_name,   // $1
+		policy_name, // $2
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(policyInfoList) == 0 {
+		return nil, nil
+	}
+	if len(policyInfoList) > 1 {
+		fmt.Printf("WARN: More than one record of the policy `%s` exists for the user `%s`. Returning the first matching record",
+			policy_name, user_name)
+	}
+
+	policyInfo := policyInfoList[0]
+	return &policyInfo, nil
+}
+
 func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 	stmt := `
 		SELECT
