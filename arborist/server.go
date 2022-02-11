@@ -94,6 +94,15 @@ func getAuthZProvider(r *http.Request) sql.NullString {
 	}
 }
 
+func getAuthZProviderNew(r *http.Request) string {
+	rv := r.Header.Get("X-AuthZ-Provider")
+	if len(rv) == 0 {
+		return "default"
+	} else {
+		return rv
+	}
+}
+
 func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router := mux.NewRouter().StrictSlash(true)
 
@@ -1242,7 +1251,7 @@ func (server *Server) userGrantPolicy(w http.ResponseWriter, r *http.Request, re
 		}
 		expiresAt = &exp
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
+	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProviderNew(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1292,7 +1301,7 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
-	}
+		}
 	if authzProvider.Valid {
 		server.logger.Info("revoked all %s policies for user %s", authzProvider.String, username)
 	} else {

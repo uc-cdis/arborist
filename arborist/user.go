@@ -291,11 +291,11 @@ func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
+func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time, authzProvider string) *ErrorResponse {
 	stmt := `
 		INSERT INTO usr_policy(usr_id, policy_id, expires_at, authz_provider)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3, $4)
-		ON CONFLICT (usr_id, policy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+		ON CONFLICT (usr_id, policy_id, authz_provider) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, policyName, expiresAt, authzProvider)
 	if err != nil {
@@ -377,7 +377,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 	stmt := `
 		INSERT INTO usr_grp(usr_id, grp_id, expires_at, authz_provider)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3, $4)
-		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+		ON CONFLICT (usr_id, grp_id, authz_provider) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
 	_, err := db.Exec(stmt, username, groupName, expiresAt, authzProvider)
 	if err != nil {
