@@ -1113,25 +1113,50 @@ func TestServer(t *testing.T) {
 					{"name": "dog", "subresources": [{"name": "corgi"}]}
 				]
 			}`))
-			w := httptest.NewRecorder()
-			body := []byte(`{
-				"name": "animal",
-				"subresources": [
-					{"name": "bird", "subresources": [{"name": "goose"}]},
-					{"name": "cat", "subresources": [{"name": "lion"}]}
-				]
-			}`)
-			req := newRequest("PUT", "/resource?merge", bytes.NewBuffer(body))
-			handler.ServeHTTP(w, req)
-			if w.Code != http.StatusCreated {
-				httpError(t, w, "couldn't update resource using PUT")
-			}
-			// verify that resources created before update were not overwritten
-			getResourceWithPath(t, "/animal/dinosaur/pterodactyl")
-			getResourceWithPath(t, "/animal/dog/corgi")
-			// verify that update actually created resources
-			getResourceWithPath(t, "/animal/bird/goose")
-			getResourceWithPath(t, "/animal/cat/lion")
+
+			t.Run("UpdateTopLevelResource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"name": "animal",
+					"subresources": [
+						{"name": "bird", "subresources": [{"name": "goose"}]},
+						{"name": "cat", "subresources": [{"name": "lion"}]}
+					]
+				}`)
+				req := newRequest("PUT", "/resource?merge", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't update resource using PUT")
+				}
+				// verify that resources created before update were not overwritten
+				getResourceWithPath(t, "/animal/dinosaur/pterodactyl")
+				getResourceWithPath(t, "/animal/dog/corgi")
+				// verify that update actually created resources
+				getResourceWithPath(t, "/animal/bird/goose")
+				getResourceWithPath(t, "/animal/cat/lion")
+			})
+
+			t.Run("UpdateSubresource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"path": "/animal/dog",
+					"subresources": [
+						{"name": "goldenretriever", "subresources": []}
+					]
+				}`)
+				req := newRequest("PUT", "/resource?merge", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't update resource using PUT")
+				}
+				// verify that resources created before update were not overwritten
+				getResourceWithPath(t, "/animal/dinosaur/pterodactyl")
+				getResourceWithPath(t, "/animal/dog/corgi")
+				getResourceWithPath(t, "/animal/bird/goose")
+				getResourceWithPath(t, "/animal/cat/lion")
+				// verify that update actually created resource
+				getResourceWithPath(t, "/animal/dog/goldenretriever")
+			})
 		})
 
 		t.Run("Delete", func(t *testing.T) {
