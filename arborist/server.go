@@ -864,7 +864,12 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 
 	errResponse = nil
 	if r.Method == "PUT" {
-		errResponse = transactify(server.db, resource.overwriteInDb)
+		_, mergeFlag := r.URL.Query()["merge"]
+		updateResource := func(tx *sqlx.Tx) *ErrorResponse {
+			resource.updateInDb(tx, mergeFlag)
+			return nil
+		}
+		errResponse = transactify(server.db, updateResource)
 	} else {
 		errResponse = transactify(server.db, resource.createInDb)
 	}
