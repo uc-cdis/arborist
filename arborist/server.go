@@ -204,6 +204,7 @@ func loggableJSON(bytes []byte) []byte {
 func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	err := server.db.Ping()
 	if err != nil {
+		server.logger.Error(err)
 		server.logger.Error("database ping failed; returning unhealthy")
 		response := newErrorResponse("database unavailable", 500, nil)
 		_ = response.write(w, r)
