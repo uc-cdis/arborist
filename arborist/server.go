@@ -1386,6 +1386,7 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 	}
 	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
 	if errResponse != nil {
+		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
 		return
 	}
