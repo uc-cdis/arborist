@@ -18,7 +18,7 @@ func (s *CachedStmts) Prepare(query string) (*sqlx.Stmt, error) {
 	stmt, ok := s.stmts[query]
 	if !ok {
 		// GOTCHA: It's okay not to lock this lazy initialization
-		var err error = nil
+		var err error
 		stmt, err = s.db.Preparex(query)
 		if err != nil {
 			return nil, err
