@@ -1,0 +1,42 @@
+name: Golang CI Workflow
+
+on: push
+
+jobs:
+  ci:
+    name: golang-ci
+    runs-on: ubuntu-latest
+    env:
+      COVERAGE_PROFILE_OUTPUT_LOCATION: "./profile.cov"
+      PGDATABASE: arborist_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGHOST: localhost
+      PGPORT: 5432
+      PGSSLMODE: disable
+    services:
+      postgres:
+        image: postgres:9.6
+        env:
+          POSTGRES_DB: ${{ env.PGDATABASE }}
+          POSTGRES_USER: ${{ env.PGUSER }}
+          POSTGRES_PASSWORD: ${{ env.PGPASSWORD }}
+        ports:
+        - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Setup database
+        shell: bash
+        run: ./migrations/latest
+      - name: Run tests, lint code, install goveralls
+        uses: uc-cdis/.github/.github/actions/golang-ci@master
+        with:
+          GO_VERSION: "1.17"
+          TESTS_LOCATION: ./arborist/
+          COVERAGE_PROFILE_OUTPUT_LOCATION: ${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }}
+      - name: Send coverage to coveralls using goveralls
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goveralls -coverprofile=${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }} -service=github
