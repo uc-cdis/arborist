@@ -85,22 +85,35 @@ func (testJWT *TestJWT) Encode() string {
 	}
 	var payload []byte
 	if testJWT.policies == nil || len(testJWT.policies) == 0 {
-		payload = []byte(fmt.Sprintf(
-			`{
-				"scope": ["openid"],
-				"exp": %d,
-				"sub": "0",
-				"context": {
-					"user": {
-						"name": "%s"
-					}
-				},
-				"azp": "%s"
-			}`,
-			exp,
-			testJWT.username,
-			testJWT.clientID,
-		))
+		if testJWT.username != "" {
+			payload = []byte(fmt.Sprintf(
+				`{
+					"scope": ["openid"],
+					"exp": %d,
+					"sub": "0",
+					"context": {
+						"user": {
+							"name": "%s"
+						}
+					},
+					"azp": "%s"
+				}`,
+				exp,
+				testJWT.username,
+				testJWT.clientID,
+			))
+		} else { // client_credentials token
+			payload = []byte(fmt.Sprintf(
+				`{
+					"scope": ["openid"],
+					"exp": %d,
+					"context": {},
+					"azp": "%s"
+				}`,
+				exp,
+				testJWT.clientID,
+			))
+		}
 	} else {
 		policies := fmt.Sprintf(`["%s"]`, strings.Join(testJWT.policies, `", "`))
 		payload = []byte(fmt.Sprintf(
@@ -3321,6 +3334,43 @@ func TestServer(t *testing.T) {
 				assert.Equal(t, false, result.Auth, msg)
 			})
 
+			t.Run("ClientOnlyForbidden", func(t *testing.T) {
+				// same as `ClientForbidden` but with a client token
+				w = httptest.NewRecorder()
+				token = TestJWT{clientID: clientID}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				if result.Auth != false {
+					httpError(t, w, "auth request succeeded when it should not have")
+				}
+			})
+
 			grantClientPolicy(t, clientID, policyName)
 
 			t.Run("ClientBothOK", func(t *testing.T) {
@@ -3347,7 +3397,6 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusOK {
 					httpError(t, w, "auth request failed")
 				}
-				// request should fail
 				result = struct {
 					Auth bool `json:"auth"`
 				}{}
@@ -3357,6 +3406,43 @@ func TestServer(t *testing.T) {
 				}
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, true, result.Auth, msg)
+			})
+
+			t.Run("ClientOnlyOK", func(t *testing.T) {
+				// same as `ClientBothOK` but with a client token
+				w = httptest.NewRecorder()
+				token = TestJWT{clientID: clientID}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				if result.Auth != true {
+					httpError(t, w, "auth request failed")
+				}
 			})
 
 			t.Run("QueryUsingUserID", func(t *testing.T) {
@@ -4479,6 +4565,24 @@ func TestServer(t *testing.T) {
 					}
 				})
 
+				t.Run("ClientOnlyForbidden", func(t *testing.T) {
+					// same as `Forbidden` but with a client token
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					token := TestJWT{clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
 				grantClientPolicy(t, clientID, policyName)
 
 				t.Run("Granted", func(t *testing.T) {
@@ -4491,6 +4595,24 @@ func TestServer(t *testing.T) {
 					)
 					req := newRequest("GET", authUrl, nil)
 					token := TestJWT{username: username, clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth proxy request failed")
+					}
+				})
+
+				t.Run("ClientOnlyGranted", func(t *testing.T) {
+					// same as `Granted` but with a client token
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					token := TestJWT{clientID: clientID}
 					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusOK {

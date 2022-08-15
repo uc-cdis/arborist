@@ -46,38 +46,39 @@ func (server *Server) decodeToken(token string, scopes []string) (*TokenInfo, er
 	if !casted {
 		return nil, fieldTypeError("context")
 	}
-	userInterface, exists := context["user"]
-	if !exists {
-		return nil, missingRequiredField("user")
-	}
-	user, casted := userInterface.(map[string]interface{})
-	if !casted {
-		return nil, fieldTypeError("user")
-	}
-	usernameInterface, exists := user["name"]
-	if !exists {
-		return nil, missingRequiredField("name")
-	}
-	username, casted := usernameInterface.(string)
-	if !casted {
-		return nil, fieldTypeError("name")
-	}
-	policiesInterface, exists := user["policies"]
+	username := ""
 	var policies []string = nil
-	// it's ok if there's no policies in the token; we'll just look up the username
+	userInterface, exists := context["user"]
+	// it's ok if there's no user; it's a client credentials token
 	if exists {
-		// policiesInterface should really be a []string, so cast all the elements
-		policiesInterfaceSlice, casted := policiesInterface.([]interface{})
+		user, casted := userInterface.(map[string]interface{})
 		if !casted {
-			return nil, fieldTypeError("policies")
+			return nil, fieldTypeError("user")
 		}
-		policies := make([]string, len(policiesInterfaceSlice))
-		for i, policyInterface := range policiesInterfaceSlice {
-			policyString, casted := policyInterface.(string)
+		usernameInterface, exists := user["name"]
+		if !exists {
+			return nil, missingRequiredField("name")
+		}
+		username, casted = usernameInterface.(string)
+		if !casted {
+			return nil, fieldTypeError("name")
+		}
+		policiesInterface, exists := user["policies"]
+		// it's ok if there's no policies in the token; we'll just look up the username
+		if exists {
+			// policiesInterface should really be a []string, so cast all the elements
+			policiesInterfaceSlice, casted := policiesInterface.([]interface{})
 			if !casted {
 				return nil, fieldTypeError("policies")
 			}
-			policies[i] = policyString
+			policies := make([]string, len(policiesInterfaceSlice))
+			for i, policyInterface := range policiesInterfaceSlice {
+				policyString, casted := policyInterface.(string)
+				if !casted {
+					return nil, fieldTypeError("policies")
+				}
+				policies[i] = policyString
+			}
 		}
 	}
 	clientID := ""
