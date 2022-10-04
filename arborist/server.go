@@ -231,13 +231,9 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
-	// Try to get username from request by first checking query string, then JWT.
+	// Try to get username from the JWT.
 	username := ""
-	usernameQS, ok := r.URL.Query()["username"]
-	if ok {
-		username = usernameQS[0]
-	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		// Fall back to JWT for username. Added for Arborist UI integration...
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		server.logger.Info("No username in query args; falling back to jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")

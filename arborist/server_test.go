@@ -171,7 +171,7 @@ func TestServer(t *testing.T) {
 	if dbUrl == "" {
 		fmt.Print("using postgres environment variables for test database\n")
 	} else {
-		fmt.Printf("using %s for test database\n", dbUrl)
+		fmt.Printf("using '%s' for test database\n", dbUrl)
 	}
 	db, err := sqlx.Open("postgres", dbUrl)
 	// no error so far, make sure ping returns OK
@@ -2940,26 +2940,17 @@ func TestServer(t *testing.T) {
 				}
 			}
 
-			t.Run("GET", func(t *testing.T) {
+			t.Run("GET_usernameQueryParam", func(t *testing.T) {
+				// this endpoint should not handle the "username" query parameter anymore
 				w := httptest.NewRecorder()
 				url := fmt.Sprintf("/auth/mapping?username=%s", username)
-				req := newRequest("GET", url, nil)
-				handler.ServeHTTP(w, req)
-				// expect to receive user's auth mappings, as well as auth mappings of anonymous and logged-in policies
-				testAuthMappingResponse(t, w)
-			})
-
-			t.Run("GET_userDoesNotExist", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				badUsername := "hulkhogan12"
-				url := fmt.Sprintf("/auth/mapping?username=%s", badUsername)
 				req := newRequest("GET", url, nil)
 				handler.ServeHTTP(w, req)
 
 				// expect a 200 OK response
 				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
 
-				// expect result to only contain anonymous and loggedIn auth mappings.
+				// expect result to only contain anonymous and loggedIn auth mappings, not the user's mappings.
 				result := make(arborist.AuthMapping)
 				err = json.Unmarshal(w.Body.Bytes(), &result)
 				if err != nil {
@@ -2979,7 +2970,7 @@ func TestServer(t *testing.T) {
 				}
 			})
 
-			t.Run("GETwithJWT", func(t *testing.T) {
+			t.Run("GET", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				url := "/auth/mapping"
 				req := newRequest("GET", url, nil)
@@ -2990,7 +2981,7 @@ func TestServer(t *testing.T) {
 				testAuthMappingResponse(t, w)
 			})
 
-			t.Run("GETwithJWT_userDoesNotExist", func(t *testing.T) {
+			t.Run("GET_userDoesNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				url := "/auth/mapping"
 				req := newRequest("GET", url, nil)
