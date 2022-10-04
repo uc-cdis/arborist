@@ -171,4 +171,4 @@ following:
 
 ## Development
 
-See [DEVELOP.md](./DEVELOP.md).
+See [development documentation](./docs/DEVELOP.md).
