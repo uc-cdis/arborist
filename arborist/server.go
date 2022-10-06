@@ -278,6 +278,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
+		ClientID string  `json:"clientID"`
 	}{}
 	err := json.Unmarshal(body, &requestBody)
 	if err != nil {
@@ -285,8 +286,8 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
 		errResponse = newErrorResponse(msg, 400, nil)
 	}
-	if requestBody.Username == "" {
-		msg := "missing `username` argument"
+	if (requestBody.Username == "") == (requestBody.ClientID == "") {
+		msg := "must specify exactly one of `username` or `clientID`"
 		server.logger.Info(msg)
 		errResponse = newErrorResponse(msg, 400, nil)
 	}
@@ -294,7 +295,15 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
-	mappings, errResponse := authMapping(server.db, requestBody.Username)
+
+	var mappings AuthMapping = nil
+	if requestBody.ClientID != "" {
+		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
+		server.logger.Info("mapping: %v", mappings)
+
+	} else {
+		mappings, errResponse = authMapping(server.db, requestBody.Username)
+	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)

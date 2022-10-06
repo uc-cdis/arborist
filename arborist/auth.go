@@ -757,3 +757,44 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 	}
 	return mapping, nil
 }
+
+
+// authMappingForClient gets the auth mapping for a client ID.
+// It does NOT includes the permissions of the `anonymous` and
+// `logged-in` groups.
+// If there is no user with this username in the db, this function will NOT
+// throw an error, but will return an empty response.
+func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResponse) {
+	mappingQuery := []AuthMappingQuery{}
+	stmt := `
+		SELECT DISTINCT resource.path, permission.service, permission.method
+		FROM
+		(
+			SELECT client_policy.policy_id FROM client
+			INNER JOIN client_policy ON client_policy.client_id = client.id
+			WHERE client.external_client_id = $1
+		) AS policies
+		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
+		INNER JOIN permission ON permission.role_id = policy_role.role_id
+		INNER JOIN resource ON resource.path <@ roots.path
+	`
+	err := db.Select(
+		&mappingQuery,
+		stmt,
+		clientID,       // $1
+	)
+	if err != nil {
+		errResponse := newErrorResponse("mapping query failed", 500, &err)
+		errResponse.log.Error(err.Error())
+		return nil, errResponse
+	}
+	mapping := make(AuthMapping)
+	for _, authMap := range mappingQuery {
+		path := formatDbPath(authMap.Path)
+		action := Action{Service: authMap.Service, Method: authMap.Method}
+		mapping[path] = append(mapping[path], action)
+	}
+	return mapping, nil
+}
