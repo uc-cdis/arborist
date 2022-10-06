@@ -27,26 +27,16 @@ paths:
         which apply to all users (anonymous) and to all logged-in users (logged-in). 
 
 
-        This endpoint accepts either a username in the query string or a username
-        in a token in the Authorization header. If no username is provided in the query
-        string, the endpoint will use the username in the token in the Authorization
-        header.
+        This endpoint accepts a username in a token in the Authorization header.
 
 
         If the specified user is not recognized by arborist, this endpoint returns
         ONLY the mappings available to members of the `anonymous` and `logged-in` groups.
 
 
-        If no username is provided (i.e., if there is no username passed in the query
-        string AND no token is provided in the Authorization header), this endpoint returns ONLY the mappings 
-        available to members of the `anonymous` group.
+        If no username is provided (i.e., if no token is provided in the Authorization header),
+        this endpoint returns ONLY the mappings available to members of the `anonymous` group.
       parameters:
-        - in: query
-          name: username
-          schema:
-            type: string
-          required: false
-          description: the username in arborist to return results for
         - in: header
           name: Authorization
           schema:
@@ -73,14 +63,22 @@ paths:
       tags:
         - auth
       description: >-
-        Return a mapping from the resources the specified user can access, to
-        the actions which they are authorized for on those resources. This includes
+        Return a mapping from the resources the specified user or client can access, to
+        the actions which they are authorized for on those resources. This endpoint accepts
+        a username OR a client ID in the body, but not both.
+
+
+        For users (not for clients), this includes
         the mappings available to members of the `anonymous` and `logged-in` groups, 
-        which apply to all users (anonymous) and to all logged-in users (logged-in). 
+        which apply to all users (anonymous) and to all logged-in users (logged-in).
 
 
         If the specified user is not recognized by arborist, this endpoint returns
         ONLY the mappings available to members of the `anonymous` and `logged-in` groups.
+
+
+        If the specified client is not recognized by arborist, this endpoint returns
+        an empty response.
 
       requestBody:
 
@@ -92,6 +90,9 @@ paths:
                 username:
                   type: string
                   description: the username in arborist to return results for
+                clientID:
+                  type: string
+                  description: the client in arborist to return results for
       responses:
         200:
           description: successful response

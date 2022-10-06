@@ -762,7 +762,7 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 // authMappingForClient gets the auth mapping for a client ID.
 // It does NOT includes the permissions of the `anonymous` and
 // `logged-in` groups.
-// If there is no user with this username in the db, this function will NOT
+// If there is no client with this ID in the db, this function will NOT
 // throw an error, but will return an empty response.
 func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
