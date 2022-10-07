@@ -296,7 +296,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var mappings AuthMapping = nil
+	var mappings AuthMapping
 	if requestBody.ClientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
 	} else {

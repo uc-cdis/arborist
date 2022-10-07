@@ -3146,7 +3146,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("POST_clientIdDoesNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				body := []byte(fmt.Sprintf(`{"clientID": "badClientId"}`))
+				body := []byte(`{"clientID": "badClientId"}`)
 				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
 				handler.ServeHTTP(w, req)
 
