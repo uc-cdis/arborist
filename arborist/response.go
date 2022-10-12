@@ -5,10 +5,6 @@ import (
 	"net/http"
 )
 
-type responseJSON interface {
-	write(w http.ResponseWriter, r *http.Request) error
-}
-
 type jsonResponse struct {
 	content interface{}
 	code    int

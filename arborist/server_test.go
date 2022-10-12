@@ -85,22 +85,35 @@ func (testJWT *TestJWT) Encode() string {
 	}
 	var payload []byte
 	if testJWT.policies == nil || len(testJWT.policies) == 0 {
-		payload = []byte(fmt.Sprintf(
-			`{
-				"scope": ["openid"],
-				"exp": %d,
-				"sub": "0",
-				"context": {
-					"user": {
-						"name": "%s"
-					}
-				},
-				"azp": "%s"
-			}`,
-			exp,
-			testJWT.username,
-			testJWT.clientID,
-		))
+		if testJWT.username != "" {
+			payload = []byte(fmt.Sprintf(
+				`{
+					"scope": ["openid"],
+					"exp": %d,
+					"sub": "0",
+					"context": {
+						"user": {
+							"name": "%s"
+						}
+					},
+					"azp": "%s"
+				}`,
+				exp,
+				testJWT.username,
+				testJWT.clientID,
+			))
+		} else { // client_credentials token
+			payload = []byte(fmt.Sprintf(
+				`{
+					"scope": ["openid"],
+					"exp": %d,
+					"context": {},
+					"azp": "%s"
+				}`,
+				exp,
+				testJWT.clientID,
+			))
+		}
 	} else {
 		policies := fmt.Sprintf(`["%s"]`, strings.Join(testJWT.policies, `", "`))
 		payload = []byte(fmt.Sprintf(
@@ -345,13 +358,16 @@ func TestServer(t *testing.T) {
 		return result
 	}
 
-	getTagForResource := func(path string) string {
+	getTagForResource := func(path string) (string, error) {
 		var tags []string
-		db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", arborist.FormatPathForDb(path))
-		if len(tags) == 0 {
-			return ""
+		err := db.Select(&tags, "SELECT tag FROM resource WHERE path = $1", arborist.FormatPathForDb(path))
+		if err != nil {
+			return "", err
 		}
-		return tags[0]
+		if len(tags) == 0 {
+			return "", nil
+		}
+		return tags[0], nil
 	}
 
 	createRoleBytes := func(t *testing.T, body []byte) {
@@ -371,7 +387,7 @@ func TestServer(t *testing.T) {
 			httpError(t, w, "couldn't create policy")
 		}
 		result := struct {
-			_ interface{} `json:"created"`
+			I interface{} `json:"created"`
 		}{}
 		err = json.Unmarshal(w.Body.Bytes(), &result)
 		if err != nil {
@@ -387,7 +403,7 @@ func TestServer(t *testing.T) {
 			httpError(t, w, "couldn't create group")
 		}
 		result := struct {
-			_ interface{} `json:"created"`
+			I interface{} `json:"created"`
 		}{}
 		err = json.Unmarshal(w.Body.Bytes(), &result)
 		if err != nil {
@@ -930,7 +946,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create resource")
 			}
 			expected := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &expected)
 			if err != nil {
@@ -956,7 +972,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create resource")
 			}
 			expected := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &expected)
 			if err != nil {
@@ -1001,7 +1017,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create resource")
 			}
 			expected = struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &expected)
 			if err != nil {
@@ -1076,14 +1092,20 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create resource using PUT")
 			}
 			expected := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &expected)
 			if err != nil {
 				httpError(t, w, "couldn't read response from resource creation")
 			}
-			escherTag := getTagForResource("Godel.Escher")
-			bachTag := getTagForResource("Godel.Escher.Bach")
+			escherTag, err := getTagForResource("Godel.Escher")
+			if err != nil {
+				httpError(t, w, "couldn't get tag for resource Godel.Escher")
+			}
+			bachTag, err := getTagForResource("Godel.Escher.Bach")
+			if err != nil {
+				httpError(t, w, "couldn't get tag for resource Godel.Escher.Bach")
+			}
 			// now PUT over the same resource, but keep the subresources
 			w = httptest.NewRecorder()
 			body = []byte(`{
@@ -1098,8 +1120,14 @@ func TestServer(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				httpError(t, w, "couldn't update resource using PUT")
 			}
-			newEscherTag := getTagForResource("Godel.Escher")
-			newBachTag := getTagForResource("Godel.Escher.Bach")
+			newEscherTag, err := getTagForResource("Godel.Escher")
+			if err != nil {
+				httpError(t, w, "couldn't get tag for resource Godel.Escher")
+			}
+			newBachTag, err := getTagForResource("Godel.Escher.Bach")
+			if err != nil {
+				httpError(t, w, "couldn't get tag for resource Godel.Escher.Bach")
+			}
 			assert.Equal(t, escherTag, newEscherTag, "subresource tag changed after PUT")
 			assert.Equal(t, bachTag, newBachTag, "subresource tag changed after PUT")
 			getResourceWithPath(t, "/Godel,/completeness_theorem")
@@ -1207,7 +1235,7 @@ func TestServer(t *testing.T) {
 			}
 			// make one-off struct to read the response into
 			result := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -1229,7 +1257,7 @@ func TestServer(t *testing.T) {
 				}
 				// make one-off struct to read the response into
 				result := struct {
-					_ interface{} `json:"created"`
+					I interface{} `json:"created"`
 				}{}
 				err = json.Unmarshal(w.Body.Bytes(), &result)
 				if err != nil {
@@ -1296,7 +1324,7 @@ func TestServer(t *testing.T) {
 			}
 			// make one-off struct to read the response into
 			result := struct {
-				_ interface{} `json:"updated"`
+				I interface{} `json:"updated"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -1425,7 +1453,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create policy")
 			}
 			result := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -1507,7 +1535,7 @@ func TestServer(t *testing.T) {
 				}
 				result := struct {
 					Policies struct {
-						policy []string `json:"policy"`
+						Policy []string `json:"policy"`
 					}
 				}{}
 				err = json.Unmarshal(w.Body.Bytes(), &result)
@@ -1690,7 +1718,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create user")
 			}
 			result := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -2211,7 +2239,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create client")
 			}
 			result := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -2402,7 +2430,7 @@ func TestServer(t *testing.T) {
 				httpError(t, w, "couldn't create group")
 			}
 			result := struct {
-				_ interface{} `json:"created"`
+				I interface{} `json:"created"`
 			}{}
 			err = json.Unmarshal(w.Body.Bytes(), &result)
 			if err != nil {
@@ -2825,7 +2853,7 @@ func TestServer(t *testing.T) {
 						result := struct {
 							Name  string   `json:"name"`
 							Users []string `json:"users"`
-							_     []string `json:"policies"`
+							P     []string `json:"policies"`
 						}{}
 						err = json.Unmarshal(w.Body.Bytes(), &result)
 						if err != nil {
@@ -3129,7 +3157,10 @@ func TestServer(t *testing.T) {
 
 			t.Run("Tag", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				tag := getTagForResource(resourcePath)
+				tag, err := getTagForResource(resourcePath)
+				if err != nil {
+					httpError(t, w, "couldn't get tag for resource")
+				}
 				body := []byte(fmt.Sprintf(
 					`{
 						"user": {"token": "%s"},
@@ -3303,6 +3334,43 @@ func TestServer(t *testing.T) {
 				assert.Equal(t, false, result.Auth, msg)
 			})
 
+			t.Run("ClientOnlyForbidden", func(t *testing.T) {
+				// same as `ClientForbidden` but with a client token
+				w = httptest.NewRecorder()
+				token = TestJWT{clientID: clientID}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				if result.Auth != false {
+					httpError(t, w, "auth request succeeded when it should not have")
+				}
+			})
+
 			grantClientPolicy(t, clientID, policyName)
 
 			t.Run("ClientBothOK", func(t *testing.T) {
@@ -3329,7 +3397,6 @@ func TestServer(t *testing.T) {
 				if w.Code != http.StatusOK {
 					httpError(t, w, "auth request failed")
 				}
-				// request should fail
 				result = struct {
 					Auth bool `json:"auth"`
 				}{}
@@ -3339,6 +3406,43 @@ func TestServer(t *testing.T) {
 				}
 				msg = fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, true, result.Auth, msg)
+			})
+
+			t.Run("ClientOnlyOK", func(t *testing.T) {
+				// same as `ClientBothOK` but with a client token
+				w = httptest.NewRecorder()
+				token = TestJWT{clientID: clientID}
+				body = []byte(fmt.Sprintf(
+					`{
+						"user": {"token": "%s"},
+						"request": {
+							"resource": "%s",
+							"action": {
+								"service": "%s",
+								"method": "%s"
+							}
+						}
+					}`,
+					token.Encode(),
+					resourcePath,
+					serviceName,
+					methodName,
+				))
+				req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "auth request failed")
+				}
+				result = struct {
+					Auth bool `json:"auth"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth request")
+				}
+				if result.Auth != true {
+					httpError(t, w, "auth request failed")
+				}
 			})
 
 			t.Run("QueryUsingUserID", func(t *testing.T) {
@@ -3806,7 +3910,7 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					fmt.Printf("got response body: %s", w.Body.String())
 					expectedTags := make([]string, 0)
 					for _, resourcePath := range expectedResources {
 						resource := getResourceWithPath(t, resourcePath)
@@ -3858,7 +3962,7 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					fmt.Printf("got response body: %s", w.Body.String())
 					expectedTags := make([]string, 0)
 					for _, resourcePath := range expectedResources {
 						resource := getResourceWithPath(t, resourcePath)
@@ -3906,7 +4010,7 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					fmt.Printf("got response body: %s", w.Body.String())
 					anonymousTags := make([]string, 0)
 					for _, resourcePath := range anonymousResourcePaths {
 						resource := getResourceWithPath(t, resourcePath)
@@ -3982,7 +4086,7 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					fmt.Printf("got response body: %s", w.Body.String())
 					expectedTags := make([]string, 0)
 					for _, resourcePath := range expectedResources {
 						resource := getResourceWithPath(t, resourcePath)
@@ -4033,7 +4137,7 @@ func TestServer(t *testing.T) {
 					if err != nil {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
+					fmt.Printf("got response body: %s", w.Body.String())
 					expectedTags := make([]string, 0)
 					for _, resourcePath := range expectedResources {
 						resource := getResourceWithPath(t, resourcePath)
@@ -4461,6 +4565,24 @@ func TestServer(t *testing.T) {
 					}
 				})
 
+				t.Run("ClientOnlyForbidden", func(t *testing.T) {
+					// same as `Forbidden` but with a client token
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					token := TestJWT{clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						httpError(t, w, "auth proxy request succeeded when it should not have")
+					}
+				})
+
 				grantClientPolicy(t, clientID, policyName)
 
 				t.Run("Granted", func(t *testing.T) {
@@ -4473,6 +4595,24 @@ func TestServer(t *testing.T) {
 					)
 					req := newRequest("GET", authUrl, nil)
 					token := TestJWT{username: username, clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth proxy request failed")
+					}
+				})
+
+				t.Run("ClientOnlyGranted", func(t *testing.T) {
+					// same as `Granted` but with a client token
+					w := httptest.NewRecorder()
+					authUrl := fmt.Sprintf(
+						"/auth/proxy?resource=%s&service=%s&method=%s",
+						url.QueryEscape(resourcePath),
+						url.QueryEscape(serviceName),
+						url.QueryEscape(methodName),
+					)
+					req := newRequest("GET", authUrl, nil)
+					token := TestJWT{clientID: clientID}
 					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusOK {

@@ -334,18 +334,31 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	authRequest.stmts = server.stmts
 	w.Header().Set("REMOTE_USER", authRequest.Username)
 
-	rv, err := authorizeUser(authRequest)
-	if err != nil {
-		msg := fmt.Sprintf("could not authorize user: %s", err.Error())
-		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
+	if (authRequest.Username == "") && (authRequest.ClientID == "") {
+		msg := "unauthorized: did not provide a username and/or client ID in request"
+		_ = newErrorResponse(msg, 403, nil).write(w, r)
 		return
 	}
-	if rv.Auth {
-		server.logger.Debug("user is authorized")
+
+	rv := &AuthResponse{}
+	rv.Auth = true
+	var err error = nil
+	if authRequest.Username != "" {
+		rv, err = authorizeUser(authRequest)
+		if err != nil {
+			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
+			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+			response := newErrorResponse(msg, 400, nil)
+			_ = response.write(w, r)
+			return
+		}
+		if rv.Auth {
+			server.logger.Debug("user is authorized")
+		} else {
+			server.logger.Debug("user is unauthorized")
+		}
 	}
-	if err == nil && rv.Auth && authRequest.ClientID != "" {
+	if rv.Auth && authRequest.ClientID != "" {
 		rv, err = authorizeClient(authRequest)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
@@ -356,6 +369,8 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		}
 		if rv.Auth {
 			server.logger.Debug("client is authorized")
+		} else {
+			server.logger.Debug("client is unauthorized")
 		}
 	}
 	if !rv.Auth {
@@ -451,9 +466,15 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
-		if (username == "") && (info.policies == nil || len(info.policies) == 0) {
-			msg := "missing both username and policies in request (at least one is required)"
+		if (clientID == "") && (username == "") && (info.policies == nil || len(info.policies) == 0) {
+			msg := "missing both username and policies in request (at least one is required when no client ID is provided)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
+			return
+		}
+
+		if (username == "") && (clientID == "") {
+			msg := "unauthorized: did not provide a username and/or client ID in request"
+			_ = newErrorResponse(msg, 403, nil).write(w, r)
 			return
 		}
 
@@ -468,18 +489,22 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			stmts:    server.stmts,
 		}
 		server.logger.Info("handling auth request: %#v", *request)
-		rv, err := authorizeUser(request)
-		if err != nil {
-			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
-			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-			response := newErrorResponse(msg, 400, nil)
-			_ = response.write(w, r)
-			return
-		}
-		if rv.Auth {
-			server.logger.Debug("user is authorized")
-		} else {
-			server.logger.Debug("user is unauthorized")
+		rv := &AuthResponse{}
+		rv.Auth = true
+		if request.Username != "" {
+			rv, err = authorizeUser(request)
+			if err != nil {
+				msg := fmt.Sprintf("could not authorize user: %s", err.Error())
+				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+				response := newErrorResponse(msg, 400, nil)
+				_ = response.write(w, r)
+				return
+			}
+			if rv.Auth {
+				server.logger.Debug("user is authorized")
+			} else {
+				server.logger.Debug("user is unauthorized")
+			}
 		}
 		if rv.Auth && request.ClientID != "" {
 			rv, err = authorizeClient(request)
@@ -488,13 +513,13 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			} else {
 				server.logger.Debug("client is unauthorized")
 			}
-		}
-		if err != nil {
-			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
-			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-			response := newErrorResponse(msg, 400, nil)
-			_ = response.write(w, r)
-			return
+			if err != nil {
+				msg := fmt.Sprintf("could not authorize client: %s", err.Error())
+				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+				response := newErrorResponse(msg, 400, nil)
+				_ = response.write(w, r)
+				return
+			}
 		}
 		if !rv.Auth {
 			_ = jsonResponseFrom(rv, 200).write(w, r)
@@ -1500,6 +1525,7 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 		_ = response.write(w, r)
 		return
 	}
+	server.logger.Info("attempting to grant policy %s to client %s", requestPolicy.PolicyName, clientID)
 	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
