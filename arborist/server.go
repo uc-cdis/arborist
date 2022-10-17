@@ -231,21 +231,17 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
-	// Try to get username from request by first checking query string, then JWT.
+	// Try to get username from the JWT.
 	username := ""
-	usernameQS, ok := r.URL.Query()["username"]
-	if ok {
-		username = usernameQS[0]
-	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		// Fall back to JWT for username. Added for Arborist UI integration...
-		server.logger.Info("No username in query args; falling back to jwt...")
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		server.logger.Info("Attempting to get username from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
 			// Return 400 on failure to decode JWT
-			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 			return
@@ -282,6 +278,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
+		ClientID string  `json:"clientID"`
 	}{}
 	err := json.Unmarshal(body, &requestBody)
 	if err != nil {
@@ -289,8 +286,8 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
 		errResponse = newErrorResponse(msg, 400, nil)
 	}
-	if requestBody.Username == "" {
-		msg := "missing `username` argument"
+	if (requestBody.Username == "") == (requestBody.ClientID == "") {
+		msg := "must specify exactly one of `username` or `clientID`"
 		server.logger.Info(msg)
 		errResponse = newErrorResponse(msg, 400, nil)
 	}
@@ -298,7 +295,13 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		_ = errResponse.write(w, r)
 		return
 	}
-	mappings, errResponse := authMapping(server.db, requestBody.Username)
+
+	var mappings AuthMapping
+	if requestBody.ClientID != "" {
+		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
+	} else {
+		mappings, errResponse = authMapping(server.db, requestBody.Username)
+	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
