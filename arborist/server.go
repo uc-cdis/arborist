@@ -234,14 +234,14 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	// Try to get username from the JWT.
 	username := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		server.logger.Info("No username in query args; falling back to jwt...")
+		server.logger.Info("Attempting to get username from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
 			// Return 400 on failure to decode JWT
-			msg := fmt.Sprintf("tried to fall back to jwt for username but jwt decode failed: %s", err.Error())
+			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 			return
