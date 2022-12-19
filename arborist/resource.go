@@ -335,9 +335,14 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
 	_, err := tx.Exec(stmt, path)
 
-	fmt.Print("--------------------------------")
-	fmt.Print(path)
-	fmt.Print(stmt)
+	fmt.Println("--------------------------------")
+	fmt.Println(path)
+	fmt.Println(stmt)
+
+	fmt.Println(resource.Path)
+	fmt.Println(err)
+
+	fmt.Println(resource.Description)
 
 	if err != nil {
 		// should add more checking here to guarantee the correct error
