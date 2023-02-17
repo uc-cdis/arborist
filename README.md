@@ -68,6 +68,31 @@ createdb
 ./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/.well-known/jwks
 ```
 
+### Quickstart with Helm
+
+You can now deploy individual services via Helm! 
+
+If you are looking to deploy all Gen3 services, that can be done via the Gen3 Helm chart. 
+Instructions for deploying all Gen3 services with Helm can be found [here](https://github.com/uc-cdis/gen3-helm#readme).
+
+To deploy the Arborist service:
+```bash
+helm repo add gen3 https://helm.gen3.org
+helm repo update
+helm upgrade --install gen3/arborist --set postgres.separate=true 
+```
+These commands will add the gen3 helm chart repo and install the arborist service to your Kubernetes cluster. Supplying the "--set postgres.seperate=true" value will allow this chart to be deployed independant of other services as it will have its own instance of postgres. 
+
+Deploying Arborist this way will use the defaults that are defined in this [values.yaml file](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/values.yaml)
+
+You can learn more about these values by accessing the Arborist [README.md](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/README.md)
+
+If you would like to override any of the default values, simply copy the above values.yaml file into a local file and make any changes needed. 
+You can then supply your values file with the following command: 
+```bash
+helm upgrade --install gen3/arborist --set postgres.separate=true -f values.yaml
+```
+
 ### Building With Docker
 
 There is also the `Dockerfile` in the root directory which is used to build a
