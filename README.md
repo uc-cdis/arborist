@@ -75,7 +75,7 @@ You can now deploy individual services via Helm!
 If you are looking to deploy all Gen3 services, that can be done via the Gen3 Helm chart. 
 Instructions for deploying all Gen3 services with Helm can be found [here](https://github.com/uc-cdis/gen3-helm#readme).
 
-To deploy the Arborist service:
+To deploy the arborist service:
 ```bash
 helm repo add gen3 https://helm.gen3.org
 helm repo update
@@ -83,15 +83,28 @@ helm upgrade --install gen3/arborist --set postgres.separate=true
 ```
 These commands will add the Gen3 helm chart repo and install the arborist service to your Kubernetes cluster. Supplying the "--set postgres.seperate=true" value will allow this chart to be deployed independant of other services as it will have its own instance of postgres. 
 
-Deploying Arborist this way will use the defaults that are defined in this [values.yaml file](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/values.yaml)
+Deploying arborist this way will use the defaults that are defined in this [values.yaml file](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/values.yaml)
 
-You can learn more about these values by accessing the Arborist [README.md](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/README.md)
+You can learn more about these values by accessing the arborist [README.md](https://github.com/uc-cdis/gen3-helm/blob/master/helm/arborist/README.md)
 
 If you would like to override any of the default values, simply copy the above values.yaml file into a local file and make any changes needed. 
 You can then supply your new values file with the following command: 
 ```bash
 helm upgrade --install gen3/arborist --set postgres.separate=true -f values.yaml
 ```
+
+If you are developing the service and you have built a new image, you can redeploy the service with the new image by replacing the .image.repository value with the name of your local image. You will also want to set the .image.pullPolicy to "never" if the image is only local. Here is an example: 
+```bash
+image:
+  repository: dockeruser/arborist
+  pullPolicy: Never
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+```
+
+You can also store your images in a local registry. Kind and Minikube are popular for their local registries: 
+- https://kind.sigs.k8s.io/docs/user/local-registry/
+- https://minikube.sigs.k8s.io/docs/handbook/registry/#enabling-insecure-registries
 
 ### Building With Docker
 
