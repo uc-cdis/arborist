@@ -68,6 +68,11 @@ createdb
 ./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/.well-known/jwks
 ```
 
+### Quickstart with Helm
+
+You can now deploy individual services via Helm! 
+Please refer to the Helm quickstart guide HERE (https://github.com/uc-cdis/arborist/blob/master/docs/quickstart_helm.md)
+
 ### Building With Docker
 
 There is also the `Dockerfile` in the root directory which is used to build a
