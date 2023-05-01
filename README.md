@@ -177,3 +177,7 @@ following:
 ## Development
 
 See [development documentation](./docs/DEVELOP.md).
+
+## DB diagram
+
+See [DB diagram](./docs/db_diagram.md).
