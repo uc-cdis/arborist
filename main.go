@@ -67,6 +67,6 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      router,
 	}
-	httpLogger.Println(fmt.Sprintf("arborist serving at %s", httpServer.Addr))
+	httpLogger.Println("arborist serving at", httpServer.Addr)
 	httpLogger.Fatal(httpServer.ListenAndServe())
 }
