@@ -664,6 +664,29 @@ type AuthMappingQuery struct {
 
 type AuthMapping map[string][]Action
 
+// Initializes a dummy auth mapping dictionary just for dev/test purposes
+func dummyAuthMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+	mapping := make(AuthMapping)
+
+	path := "abc"
+	action := Action{Service: "atlas-argo-wrapper-and-cohort-middleware", Method: "access"}
+	mapping[path] = append(mapping[path], action)
+
+	path = "def"
+	action = Action{Service: "atlas-argo-wrapper-and-cohort-middleware", Method: "access"}
+	mapping[path] = append(mapping[path], action)
+
+	path = "defwrong"
+	action = Action{Service: "atlas-argo-wrapper-and-cohort-middleware", Method: "def_method"}
+	mapping[path] = append(mapping[path], action)
+
+	path = "klm"
+	action = Action{Service: "def_service", Method: "access"}
+	mapping[path] = append(mapping[path], action)
+
+	return mapping, nil
+}
+
 // authMapping gets the auth mapping for the user with this username.
 // The user's auth mapping includes the permissions of the `anonymous` and
 // `logged-in` groups.

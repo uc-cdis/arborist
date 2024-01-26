@@ -31,6 +31,56 @@ The YAML file containing the OpenAPI documentation can be found in the `docs` fo
 
 ## Setup
 
+### Quickstart for dummy DEV support version
+
+For development environment versions that need to integrate with a dummy
+local version of Arborist, use the following commands to spin up Arborist:
+
+```
+docker-compose up -d
+```
+
+Then
+```
+./init_compose_db.sh
+```
+
+Check if the DEV desired endpoint is working:
+```
+curl -X POST -H "Content-Type: application/json" -d '{"username": "dummy"}' http://localhost:8180/auth/mapping | jq .
+```
+
+This should result in something like:
+```json
+{
+  "abc": [
+    {
+      "service": "atlas-argo-wrapper-and-cohort-middleware",
+      "method": "access"
+    }
+  ],
+  "def": [
+    {
+      "service": "atlas-argo-wrapper-and-cohort-middleware",
+      "method": "access"
+    }
+  ],
+  "defwrong": [
+    {
+      "service": "atlas-argo-wrapper-and-cohort-middleware",
+      "method": "def_method"
+    }
+  ],
+  "klm": [
+    {
+      "service": "def_service",
+      "method": "access"
+    }
+  ]
+}
+```
+
+
 ### Quickstart
 
 You will need these:

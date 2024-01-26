@@ -263,7 +263,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	} else {
 		// If no username provided in query string or JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
-		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		mappings, errResponse := dummyAuthMapping(server.db, AnonymousGroup)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -300,7 +300,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	if requestBody.ClientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
 	} else {
-		mappings, errResponse = authMapping(server.db, requestBody.Username)
+		mappings, errResponse = dummyAuthMapping(server.db, requestBody.Username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)

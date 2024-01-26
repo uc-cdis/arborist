@@ -1,0 +1,27 @@
+version: '3.9'
+
+
+services:
+  # MEANT FOR LOCAL DEV ONLY
+
+  arborist_db:
+    image: postgres:12.10-bullseye
+    container_name: arborist_db
+    ports:
+      - "5632:5432"
+    environment:
+      POSTGRES_PASSWORD: mysecretpassword # pragma: allowlist secret
+
+  arborist:
+    image: arborist
+    container_name: arborist
+    ports:
+      - "8180:8180"
+    command: ./bin/arborist --port 8180
+    environment:
+      PGDATABASE: arborist_test
+      PGUSER: postgres
+      PGPASSWORD: mysecretpassword # pragma: allowlist secret
+      PGHOST: arborist_db
+      PGPORT: 5432
+      PGSSLMODE: disable
