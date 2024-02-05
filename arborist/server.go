@@ -286,6 +286,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		server.logger.Info("Attempting to get username or clientID from jwt...")
+		server.logger.Info("header: %s", authHeader)
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
@@ -295,37 +296,46 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			msg := fmt.Sprintf("tried to get username/clientID from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			errResponse = newErrorResponse(msg, 400, nil)
+		} else {
+			username = info.username
+			clientID = info.clientID
+			server.logger.Info("found username in jwt: %s", username)
+			server.logger.Info("found clientID in jwt: %s", clientID)
+			
 		}
-		server.logger.Info("found username in jwt: %s", info.username)
-		username = info.username
-		clientID = info.clientID
 	}
-	if errResponse == nil {
+
+	if (username == "") && (clientID == "") {
 		err := json.Unmarshal(body, &requestBody)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
 			server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
 		} else {
+			server.logger.Info("client in body: %s", requestBody.ClientID)
+			server.logger.Info("user in body: %s", requestBody.Username)
+
 			if (requestBody.Username == "") == (requestBody.ClientID == "") {
 				msg := "must specify exactly one of `username` or `clientID`"
 				server.logger.Info(msg)
 				errResponse = newErrorResponse(msg, 400, nil)
 			}
-			if (requestBody.Username != username) || (requestBody.ClientID != clientID) {
-				msg := "The information provided in the payload differs from the one extracted from the token."
-				server.logger.Info(msg)
-				errResponse = newErrorResponse(msg, 400, nil)
+
+			if requestBody.ClientID != "" {
+				ClientID = requestBody.ClientID
+			} else {
+				username = requestBody.Username
 			}
 		}
 	}
+
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
 	}
 
 	var mappings AuthMapping
-	if requestBody.ClientID != "" {
+	if ClientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, clientID)
 	} else {
 		mappings, errResponse = authMapping(server.db, username)
