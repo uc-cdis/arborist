@@ -329,7 +329,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			}
 
 			if requestBody.ClientID != "" {
-				ClientID = requestBody.ClientID
+				clientID = requestBody.ClientID
 			} else {
 				username = requestBody.Username
 			}
@@ -342,7 +342,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	}
 
 	var mappings AuthMapping
-	if ClientID != "" {
+	if clientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, clientID)
 	} else {
 		mappings, errResponse = authMapping(server.db, username)
