@@ -280,16 +280,44 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		Username string `json:"username"`
 		ClientID string  `json:"clientID"`
 	}{}
-	err := json.Unmarshal(body, &requestBody)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
-		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
-		errResponse = newErrorResponse(msg, 400, nil)
+
+	// Try to get username from the JWT.
+	username := ""
+	clientID := ""
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		server.logger.Info("Attempting to get username or clientID from jwt...")
+		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		userJWT = strings.TrimPrefix(userJWT, "bearer ")
+		scopes := []string{"openid"}
+		info, err := server.decodeToken(userJWT, scopes)
+		if err != nil {
+			// Return 400 on failure to decode JWT
+			msg := fmt.Sprintf("tried to get username/clientID from jwt, but jwt decode failed: %s", err.Error())
+			server.logger.Info(msg)
+			errResponse = newErrorResponse(msg, 400, nil)
+		}
+		server.logger.Info("found username in jwt: %s", info.username)
+		username = info.username
+		clientID = info.clientID
 	}
-	if (requestBody.Username == "") == (requestBody.ClientID == "") {
-		msg := "must specify exactly one of `username` or `clientID`"
-		server.logger.Info(msg)
-		errResponse = newErrorResponse(msg, 400, nil)
+	if errResponse == nil {
+		err := json.Unmarshal(body, &requestBody)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
+			server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
+			errResponse = newErrorResponse(msg, 400, nil)
+		} else {
+			if (requestBody.Username == "") == (requestBody.ClientID == "") {
+				msg := "must specify exactly one of `username` or `clientID`"
+				server.logger.Info(msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+			}
+			if (requestBody.Username != username) || (requestBody.ClientID != clientID) {
+				msg := "The information provided in the payload differs from the one extracted from the token."
+				server.logger.Info(msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+			}
+		}
 	}
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
@@ -298,9 +326,9 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 
 	var mappings AuthMapping
 	if requestBody.ClientID != "" {
-		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
+		mappings, errResponse = authMappingForClient(server.db, clientID)
 	} else {
-		mappings, errResponse = authMapping(server.db, requestBody.Username)
+		mappings, errResponse = authMapping(server.db, username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
