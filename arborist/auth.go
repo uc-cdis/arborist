@@ -664,13 +664,13 @@ type AuthMappingQuery struct {
 
 type AuthMapping map[string][]Action
 
-// authMapping gets the auth mapping for the user with this username.
+// authMappingForUser gets the auth mapping for the user with this username.
 // The user's auth mapping includes the permissions of the `anonymous` and
 // `logged-in` groups.
 // If there is no user with this username in the db, this function will NOT
 // throw an error, but will return only the auth mapping of the `anonymous`
 // and `logged-in` groups.
-func authMapping(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -757,7 +757,6 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 	}
 	return mapping, nil
 }
-
 
 // authMappingForClient gets the auth mapping for a client ID.
 // It does NOT includes the permissions of the `anonymous` and

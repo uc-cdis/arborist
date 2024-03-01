@@ -252,7 +252,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 
 	usernameProvided := username != ""
 	if usernameProvided {
-		mappings, errResponse := authMapping(server.db, username)
+		mappings, errResponse := authMappingForUser(server.db, username)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -278,7 +278,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
-		ClientID string  `json:"clientID"`
+		ClientID string `json:"clientID"`
 	}{}
 	err := json.Unmarshal(body, &requestBody)
 	if err != nil {
@@ -300,7 +300,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	if requestBody.ClientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
 	} else {
-		mappings, errResponse = authMapping(server.db, requestBody.Username)
+		mappings, errResponse = authMappingForUser(server.db, requestBody.Username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)

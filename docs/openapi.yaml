@@ -24,10 +24,13 @@ paths:
         Return a mapping from the resources the specified user can access, to
         the actions which they are authorized for on those resources. This includes
         the mappings available to members of the `anonymous` and `logged-in` groups, 
-        which apply to all users (anonymous) and to all logged-in users (logged-in). 
+        which apply to all users (anonymous) and to all logged-in users (logged-in). This endpoint accepts a username in a token in the Authorization header.
 
 
-        This endpoint accepts a username in a token in the Authorization header.
+        Note: Tokens which are linked to both a user and a client (token belonging to a client acting on behalf of a user) are supported, but the client's access is NOT taken into account. Only the user's access is returned.
+
+
+        Note that this endpoint does NOT support tokens generated through the OIDC "client_credentials" grant, which are linked to a client but not to a user. Calling this endpoint with such a token will not return the client's access.
 
 
         If the specified user is not recognized by arborist, this endpoint returns
@@ -64,8 +67,22 @@ paths:
         - auth
       description: >-
         Return a mapping from the resources the specified user or client can access, to
-        the actions which they are authorized for on those resources. This endpoint accepts
-        a username OR a client ID in the body, but not both.
+        the actions which they are authorized for on those resources. This endpoint accepts a token in the Authorization header or information in the request body.
+
+
+        Note: Tokens which are linked to both a user and a client (token belonging to a client acting on behalf of a user) are supported, but the client's access is NOT taken into account. Only the user's access is returned.
+
+
+        Note: This endpoint supports tokens generated through the OIDC "client_credentials" grant, which are linked to a client but not to a user. The client's access is returned.
+
+
+        If a token is provided and is linked to a user (regardless of whether it is also linked to a client), the user's mapping is returned.
+
+
+        If a token is provided and is linked to a client but is NOT linked to a user, the client's mapping is returned.
+
+
+        If no token is provided, this endpoint accepts a username OR a client ID in the body, but not both.
 
 
         For users (not for clients), this includes
@@ -80,6 +97,8 @@ paths:
         If the specified client is not recognized by arborist, this endpoint returns
         an empty response.
 
+
+        Note: accepting a username or client ID in the body means that anyone can check anyone's authorization if they have their username. For this reason, this API is not meant to be exposed publicly.
       requestBody:
 
         content:
@@ -133,13 +152,13 @@ paths:
         and the client have permission can the response be positive. 
 
 
-        IMPORTANT NOTE: Under `body` you can now also check authorization of 
-        a user given just the username using the field `user_id` instead of 
+        Note: Under `body` we can also check authorization of
+        a user given their username, using the field `user_id` instead of
         using `token`. This means that anyone can check anyone's authorization
-        if they have their username. For this reason, this API is not meant to 
-        be fully exposed publically. Arborist does not currently have 
+        if they have their username. For this reason, this API is not meant to
+        be exposed publicly. Arborist does not currently have
         authorization for the management of the authorization in the system.
-        The service itself does not provide a way to expose only certain parts 
+        The service itself does not provide a way to expose only certain parts
         of the API to super admins vs admins.
       requestBody:
         content:
