@@ -286,46 +286,51 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		server.logger.Info("Attempting to get username or clientID from jwt...")
-
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
-			// Return 400 on failure to decode JWT
+			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username/clientID from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
-			errResponse = newErrorResponse(msg, 400, nil)
+			errResponse = newErrorResponse(msg, 401, nil)
+			_ = errResponse.write(w, r)
+			return
 		} else {
-			username = info.username
-			clientID = info.clientID
-			if username != "" {
-				server.logger.Info("found username in jwt: %s", username)
+			if (info.username == "") == (info.clientID == "") {
+				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
+				server.logger.Info(msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+				_ = errResponse.write(w, r)
+				return
 			}
-			if clientID != "" {
-				server.logger.Info("found clientID in jwt: %s", clientID)
+
+			// When there is a username, there could be a client ID too (token belonging to a client acting  
+			// on behalf of a user). But this endpoint only supports returning the user's mapping, not  
+			// the combination of user+client access. So ignore the client ID.
+			if info.username != "" {  
+				username = info.username  
+				server.logger.Info("found username in jwt: %s", username)  
+			} else {  
+				clientID = info.clientID  
+				server.logger.Info("found clientID in jwt: %s", clientID)  
 			}
 		}
-	}
-
-	// If they are not present in the token fallback on the request body
-	if (username == "") && (clientID == "") {
+	} else {
+		// If they are not present in the token fallback on the request body
 		err := json.Unmarshal(body, &requestBody)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
 			server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
 		} else {
-			if (requestBody.Username == "") == (requestBody.ClientID == "") {
-				msg := "must specify exactly one of `username` or `clientID`"
+			username = requestBody.Username
+			clientID = requestBody.ClientID
+			if (username == "") == (clientID == "") {
+				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
 				server.logger.Info(msg)
 				errResponse = newErrorResponse(msg, 400, nil)
-			}
-
-			if requestBody.ClientID != "" {
-				clientID = requestBody.ClientID
-			} else {
-				username = requestBody.Username
 			}
 		}
 	}
