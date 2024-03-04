@@ -102,7 +102,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
 	router.Handle("/auth/mapping", http.HandlerFunc(server.handleAuthMappingGET)).Methods("GET")
-	router.Handle("/auth/mapping", http.HandlerFunc(server.parseJSON(server.handleAuthMappingPOST))).Methods("POST")
+	router.Handle("/auth/mapping", http.HandlerFunc(server.handleAuthMappingPOST)).Methods("POST")
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(server.parseJSON(server.handleAuthRequest))).Methods("POST")
 	router.Handle("/auth/resources", http.HandlerFunc(server.handleListAuthResourcesGET)).Methods("GET")
@@ -176,23 +176,28 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 // handler signature.
 func (server *Server) parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		if r.Body == nil {
-			response := newErrorResponse("expected JSON body in the request", 400, nil)
-			response.log.write(server.logger)
-			_ = response.write(w, r)
-			return
-		}
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
-			response := newErrorResponse(msg, 400, nil)
-			response.log.write(server.logger)
-			_ = response.write(w, r)
-			return
-		}
+		body := server.parseJsonBody(w, r)
 		baseHandler(w, r, body)
 	}
 	return handler
+}
+
+func (server *Server) parseJsonBody(w http.ResponseWriter, r *http.Request) []byte {
+	if r.Body == nil {
+		response := newErrorResponse("expected JSON body in the request", 400, nil)
+		response.log.write(server.logger)
+		_ = response.write(w, r)
+		return nil
+	}
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
+		response := newErrorResponse(msg, 400, nil)
+		response.log.write(server.logger)
+		_ = response.write(w, r)
+		return nil
+	}
+	return body
 }
 
 var regWhitespace *regexp.Regexp = regexp.MustCompile(`\s`)
@@ -274,7 +279,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request) {
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
@@ -317,6 +322,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		}
 	} else {
 		// If they are not present in the token fallback on the request body
+		body := server.parseJsonBody(w, r)
 		err := json.Unmarshal(body, &requestBody)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
