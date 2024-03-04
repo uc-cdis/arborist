@@ -278,44 +278,42 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
-		ClientID string  `json:"clientID"`
+		ClientID string `json:"clientID"`
 	}{}
 
 	// Try to get username or clientID from the JWT.
 	username := ""
 	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		server.logger.Info("Attempting to get username or clientID from jwt...")
+		server.logger.Info("Attempting to get username or client ID from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
 			// Return 401 on failure to decode JWT
-			msg := fmt.Sprintf("tried to get username/clientID from jwt, but jwt decode failed: %s", err.Error())
+			msg := fmt.Sprintf("tried to get username/client ID from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info(msg)
 			errResponse = newErrorResponse(msg, 401, nil)
 			_ = errResponse.write(w, r)
 			return
-		} else {
-			if (info.username == "") == (info.clientID == "") {
-				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
-				server.logger.Info(msg)
-				errResponse = newErrorResponse(msg, 400, nil)
-				_ = errResponse.write(w, r)
-				return
-			}
+		}
 
-			// When there is a username, there could be a client ID too (token belonging to a client acting  
-			// on behalf of a user). But this endpoint only supports returning the user's mapping, not  
-			// the combination of user+client access. So ignore the client ID.
-			if info.username != "" {  
-				username = info.username  
-				server.logger.Info("found username in jwt: %s", username)  
-			} else {  
-				clientID = info.clientID  
-				server.logger.Info("found clientID in jwt: %s", clientID)  
-			}
+		// When there is a username, there could be a client ID too (token belonging to a client acting
+		// on behalf of a user). But this endpoint only supports returning the user's mapping, not
+		// the combination of user+client access. So ignore the client ID.
+		if info.username != "" {
+			username = info.username
+			server.logger.Info("found username in jwt: %s", username)
+		} else if info.clientID == "" {
+			clientID = info.clientID
+			server.logger.Info("found client ID in jwt: %s", clientID)
+		} else {
+			msg := "invalid token (no username or client ID)"
+			server.logger.Info(msg)
+			errResponse = newErrorResponse(msg, 401, nil)
+			_ = errResponse.write(w, r)
+			return
 		}
 	} else {
 		// If they are not present in the token fallback on the request body
@@ -333,11 +331,10 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 				errResponse = newErrorResponse(msg, 400, nil)
 			}
 		}
-	}
-
-	if errResponse != nil {
-		_ = errResponse.write(w, r)
-		return
+		if errResponse != nil {
+			_ = errResponse.write(w, r)
+			return
+		}
 	}
 
 	var mappings AuthMapping
