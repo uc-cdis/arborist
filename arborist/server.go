@@ -71,7 +71,7 @@ func (server *Server) Init() (*Server, error) {
 
 // For some reason this is not allowed:
 //
-//    `{resourcePath:/.+}`
+//	`{resourcePath:/.+}`
 //
 // so we put the slash at the front here and fix it in parseResourcePath.
 const resourcePath string = `/{resourcePath:.+}`
@@ -286,10 +286,10 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		ClientID string `json:"clientID"`
 	}{}
 
-	// Try to get username or clientID from the JWT.
 	username := ""
 	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		// Try to get username or clientID from the JWT.
 		server.logger.Info("Attempting to get username or client ID from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
@@ -310,23 +310,24 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		if info.username != "" {
 			username = info.username
 			server.logger.Info("found username in jwt: %s", username)
-		} else if info.clientID == "" {
+		} else if info.clientID != "" {
 			clientID = info.clientID
 			server.logger.Info("found client ID in jwt: %s", clientID)
 		} else {
 			msg := "invalid token (no username or client ID)"
-			server.logger.Info(msg)
+			server.logger.Error(msg)
 			errResponse = newErrorResponse(msg, 401, nil)
 			_ = errResponse.write(w, r)
 			return
 		}
 	} else {
-		// If they are not present in the token fallback on the request body
+		// If they are not present in the token, fallback on the request body
+		server.logger.Info("No jwt provided, checking request body")
 		body := server.parseJsonBody(w, r)
 		err := json.Unmarshal(body, &requestBody)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
-			server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
+			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
 		} else {
 			username = requestBody.Username
