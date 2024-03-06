@@ -257,7 +257,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 
 	usernameProvided := username != ""
 	if usernameProvided {
-		mappings, errResponse := authMapping(server.db, username)
+		mappings, errResponse := authMappingForUser(server.db, username)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -348,7 +348,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	if clientID != "" {
 		mappings, errResponse = authMappingForClient(server.db, clientID)
 	} else {
-		mappings, errResponse = authMapping(server.db, username)
+		mappings, errResponse = authMappingForUser(server.db, username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)

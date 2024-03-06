@@ -22,6 +22,8 @@ If we need the list of anonymous or logged-in policies, we can hit the `group/{g
 
 ## GET, POST auth/mapping and GET, POST auth/resources endpoints
 
+> Note: The rationale described in this document is still accurate, but some of the statements below may be outdated. Check the [API documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/uc-cdis/arborist/master/docs/openapi.yaml#/) for the latest behavior of each endpoint.
+
 The GET `auth/mapping` endpoint accepts a username as an optional query parameter. If the username is not specified, we try to get it from the JWT in the 'Authorization' header.
 The GET `auth/resources` endpoint only passes the username in a JWT in the 'Authorization' header. 
 The POST `auth/mapping` and POST `auth/resources` endpoints pass the username in the request body.
