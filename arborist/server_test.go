@@ -51,10 +51,9 @@ func (jwtApp *mockJWTApp) Decode(token string) (*map[string]interface{}, error) 
 //
 // Example:
 //
-//     token := TestJWT{username: username}
-//     body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
-//     req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
-//
+//	token := TestJWT{username: username}
+//	body := []byte(fmt.Sprintf(`{"user": {"token": "%s"}}`, token.Encode()))
+//	req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
 type TestJWT struct {
 	username string
 	clientID string
@@ -2910,10 +2909,10 @@ func TestServer(t *testing.T) {
 			createUserBytes(t, userBody)
 			grantUserPolicy(t, username, policyName, "null")
 
-			// testAuthMappingResponse checks whether the AuthMapping in the HTTP
+			// testUserAuthMappingResponse checks whether the AuthMapping in the HTTP
 			// response 'w' contains the correct resources and actions that belong to the user.
 			// This includes the resources and actions that belong to the anonymous and loggedIn groups.
-			testAuthMappingResponse := func(t *testing.T, w *httptest.ResponseRecorder) {
+			testUserAuthMappingResponse := func(t *testing.T, w *httptest.ResponseRecorder) {
 				msg := fmt.Sprintf("got response body: %s", w.Body.String())
 				assert.Equal(t, 200, w.Code, msg)
 				result := make(map[string][]arborist.Action)
@@ -2996,7 +2995,7 @@ func TestServer(t *testing.T) {
 				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 				handler.ServeHTTP(w, req)
 				// expect to receive user's auth mappings, as well as auth mappings of anonymous and logged-in policies
-				testAuthMappingResponse(t, w)
+				testUserAuthMappingResponse(t, w)
 			})
 
 			t.Run("GET_userDoesNotExist", func(t *testing.T) {
@@ -3074,91 +3073,177 @@ func TestServer(t *testing.T) {
 				grantUserPolicy(t, username, policyName, "null")
 			})
 
-			t.Run("POST_usernameProvided", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				// expect to also receive auth mappings of anonymous and logged-in policies
-				testAuthMappingResponse(t, w)
+			t.Run("POST_body", func(t *testing.T) {
+				t.Run("usernameProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					// expect to also receive auth mappings of anonymous and logged-in policies
+					testUserAuthMappingResponse(t, w)
+				})
+
+				t.Run("userDoesNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					badUsername := "hulkhogan12"
+					body := []byte(fmt.Sprintf(`{"username": "%s"}`, badUsername))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+					// expect result to only contain anonymous and loggedIn auth mappings.
+					result := make(arborist.AuthMapping)
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth mapping")
+					}
+					expectedMappings := make(arborist.AuthMapping)
+					for k, v := range anonymousAuthMapping {
+						expectedMappings[k] = v
+					}
+					for k, v := range loggedInAuthMapping {
+						expectedMappings[k] = v
+					}
+					msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous and logged-in groups: %v", expectedMappings)
+					for resource, actions := range result {
+						assert.Contains(t, expectedMappings, resource, msg)
+						assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
+					}
+				})
+
+				createClientBytes(t, clientBody)
+				grantClientPolicy(t, clientID, policyName)
+
+				t.Run("noUsernameOrClientIdProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte("")
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
+				})
+
+				t.Run("bothUsernameAndClientIdProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"username": "%s", "clientID": "%s"}`, username, clientID))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
+				})
+
+				t.Run("clientIdProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"clientID": "%s"}`, clientID))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					testClientAuthMappingResponse(t, w)
+				})
+
+				t.Run("clientIdDoesNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(`{"clientID": "badClientId"}`)
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+					result := make(map[string][]arborist.Action)
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth mapping")
+					}
+					assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
+				})
 			})
 
-			t.Run("POST_userDoesNotExist", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				badUsername := "hulkhogan12"
-				body := []byte(fmt.Sprintf(`{"username": "%s"}`, badUsername))
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
+			t.Run("POST_token", func(t *testing.T) {
+				t.Run("usernameProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{username: username}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					// expect to also receive auth mappings of anonymous and logged-in policies
+					testUserAuthMappingResponse(t, w)
+				})
 
-				// expect a 200 OK response
-				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+				t.Run("userDoesNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					badUsername := "hulkhogan12"
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{username: badUsername}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
 
-				// expect result to only contain anonymous and loggedIn auth mappings.
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				expectedMappings := make(arborist.AuthMapping)
-				for k, v := range anonymousAuthMapping {
-					expectedMappings[k] = v
-				}
-				for k, v := range loggedInAuthMapping {
-					expectedMappings[k] = v
-				}
-				msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous and logged-in groups: %v", expectedMappings)
-				for resource, actions := range result {
-					assert.Contains(t, expectedMappings, resource, msg)
-					assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
-				}
+					// expect result to only contain anonymous and loggedIn auth mappings.
+					result := make(arborist.AuthMapping)
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth mapping")
+					}
+					expectedMappings := make(arborist.AuthMapping)
+					for k, v := range anonymousAuthMapping {
+						expectedMappings[k] = v
+					}
+					for k, v := range loggedInAuthMapping {
+						expectedMappings[k] = v
+					}
+					msg := fmt.Sprintf("Expected response to be these auth mappings from anonymous and logged-in groups: %v", expectedMappings)
+					for resource, actions := range result {
+						assert.Contains(t, expectedMappings, resource, msg)
+						assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
+					}
+				})
+
+				t.Run("noUsernameOrClientIdProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusUnauthorized, "expected a 401 response")
+				})
+
+				t.Run("bothUsernameAndClientIdProvided", func(t *testing.T) {
+					// when both are present, the returned access should be the user's
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{username: username, clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					testUserAuthMappingResponse(t, w)
+				})
+
+				t.Run("clientIdProvided", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{clientID: clientID}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					testClientAuthMappingResponse(t, w)
+				})
+
+				t.Run("clientIdDoesNotExist", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/mapping", nil)
+					token := TestJWT{clientID: "badClientId"}
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+					result := make(map[string][]arborist.Action)
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth mapping")
+					}
+					assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
+				})
 			})
 
-			createClientBytes(t, clientBody)
-			grantClientPolicy(t, clientID, policyName)
-
-			t.Run("POST_noUsernameOrClientIdProvided", func(t *testing.T) {
+			t.Run("POST_noBodyOrTokenProvided", func(t *testing.T) {
 				w := httptest.NewRecorder()
-				body := []byte("")
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+				req := newRequest("POST", "/auth/mapping", nil)
 				handler.ServeHTTP(w, req)
-
-				// expect a 400 response
 				assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
-			})
-
-			t.Run("POST_bothUsernameAndClientIdProvided", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				body := []byte(fmt.Sprintf(`{"username": "%s", "clientID": "%s"}`, username, clientID))
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-
-				// expect a 400 response
-				assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
-			})
-
-			t.Run("POST_clientIdProvided", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				body := []byte(fmt.Sprintf(`{"clientID": "%s"}`, clientID))
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-				testClientAuthMappingResponse(t, w)
-			})
-
-			t.Run("POST_clientIdDoesNotExist", func(t *testing.T) {
-				w := httptest.NewRecorder()
-				body := []byte(`{"clientID": "badClientId"}`)
-				req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-				handler.ServeHTTP(w, req)
-
-				// expect a 200 OK response
-				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
-
-				result := make(map[string][]arborist.Action)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
 			})
 		})
 
