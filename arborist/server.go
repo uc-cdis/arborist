@@ -71,7 +71,7 @@ func (server *Server) Init() (*Server, error) {
 
 // For some reason this is not allowed:
 //
-//    `{resourcePath:/.+}`
+//	`{resourcePath:/.+}`
 //
 // so we put the slash at the front here and fix it in parseResourcePath.
 const resourcePath string = `/{resourcePath:.+}`
@@ -102,7 +102,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.HandleFunc("/health", server.handleHealth).Methods("GET")
 
 	router.Handle("/auth/mapping", http.HandlerFunc(server.handleAuthMappingGET)).Methods("GET")
-	router.Handle("/auth/mapping", http.HandlerFunc(server.parseJSON(server.handleAuthMappingPOST))).Methods("POST")
+	router.Handle("/auth/mapping", http.HandlerFunc(server.handleAuthMappingPOST)).Methods("POST")
 	router.Handle("/auth/proxy", http.HandlerFunc(server.handleAuthProxy)).Methods("GET")
 	router.Handle("/auth/request", http.HandlerFunc(server.parseJSON(server.handleAuthRequest))).Methods("POST")
 	router.Handle("/auth/resources", http.HandlerFunc(server.handleListAuthResourcesGET)).Methods("GET")
@@ -176,23 +176,28 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 // handler signature.
 func (server *Server) parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		if r.Body == nil {
-			response := newErrorResponse("expected JSON body in the request", 400, nil)
-			response.log.write(server.logger)
-			_ = response.write(w, r)
-			return
-		}
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
-			response := newErrorResponse(msg, 400, nil)
-			response.log.write(server.logger)
-			_ = response.write(w, r)
-			return
-		}
+		body := server.parseJsonBody(w, r)
 		baseHandler(w, r, body)
 	}
 	return handler
+}
+
+func (server *Server) parseJsonBody(w http.ResponseWriter, r *http.Request) []byte {
+	if r.Body == nil {
+		response := newErrorResponse("expected JSON body in the request", 400, nil)
+		response.log.write(server.logger)
+		_ = response.write(w, r)
+		return nil
+	}
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
+		response := newErrorResponse(msg, 400, nil)
+		response.log.write(server.logger)
+		_ = response.write(w, r)
+		return nil
+	}
+	return body
 }
 
 var regWhitespace *regexp.Regexp = regexp.MustCompile(`\s`)
@@ -274,33 +279,76 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request) {
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username string `json:"username"`
-		ClientID string  `json:"clientID"`
+		ClientID string `json:"clientID"`
 	}{}
-	err := json.Unmarshal(body, &requestBody)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
-		server.logger.Info("tried to handle auth mapping request but input was invalid: %s", msg)
-		errResponse = newErrorResponse(msg, 400, nil)
-	}
-	if (requestBody.Username == "") == (requestBody.ClientID == "") {
-		msg := "must specify exactly one of `username` or `clientID`"
-		server.logger.Info(msg)
-		errResponse = newErrorResponse(msg, 400, nil)
-	}
-	if errResponse != nil {
-		_ = errResponse.write(w, r)
-		return
+
+	username := ""
+	clientID := ""
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		// Try to get username or clientID from the JWT.
+		server.logger.Info("Attempting to get username or client ID from jwt...")
+		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
+		userJWT = strings.TrimPrefix(userJWT, "bearer ")
+		scopes := []string{"openid"}
+		info, err := server.decodeToken(userJWT, scopes)
+		if err != nil {
+			// Return 401 on failure to decode JWT
+			msg := fmt.Sprintf("tried to get username/client ID from jwt, but jwt decode failed: %s", err.Error())
+			server.logger.Info(msg)
+			errResponse = newErrorResponse(msg, 401, nil)
+			_ = errResponse.write(w, r)
+			return
+		}
+
+		// When there is a username, there could be a client ID too (token belonging to a client acting
+		// on behalf of a user). But this endpoint only supports returning the user's mapping, not
+		// the combination of user+client access. So ignore the client ID.
+		if info.username != "" {
+			username = info.username
+			server.logger.Info("found username in jwt: %s", username)
+		} else if info.clientID != "" {
+			clientID = info.clientID
+			server.logger.Info("found client ID in jwt: %s", clientID)
+		} else {
+			msg := "invalid token (no username or client ID)"
+			server.logger.Error(msg)
+			errResponse = newErrorResponse(msg, 401, nil)
+			_ = errResponse.write(w, r)
+			return
+		}
+	} else {
+		// If they are not present in the token, fallback on the request body
+		server.logger.Info("No jwt provided, checking request body")
+		body := server.parseJsonBody(w, r)
+		err := json.Unmarshal(body, &requestBody)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
+			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
+			errResponse = newErrorResponse(msg, 400, nil)
+		} else {
+			username = requestBody.Username
+			clientID = requestBody.ClientID
+			if (username == "") == (clientID == "") {
+				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
+				server.logger.Info(msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+			}
+		}
+		if errResponse != nil {
+			_ = errResponse.write(w, r)
+			return
+		}
 	}
 
 	var mappings AuthMapping
-	if requestBody.ClientID != "" {
-		mappings, errResponse = authMappingForClient(server.db, requestBody.ClientID)
+	if clientID != "" {
+		mappings, errResponse = authMappingForClient(server.db, clientID)
 	} else {
-		mappings, errResponse = authMapping(server.db, requestBody.Username)
+		mappings, errResponse = authMapping(server.db, username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
