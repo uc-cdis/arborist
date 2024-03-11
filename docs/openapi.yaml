@@ -30,7 +30,7 @@ paths:
         Note: Tokens which are linked to both a user and a client (token belonging to a client acting on behalf of a user) are supported, but the client's access is NOT taken into account. Only the user's access is returned.
 
 
-        Note that this endpoint does NOT support tokens generated through the OIDC "client_credentials" grant, which are linked to a client but not to a user. Calling this endpoint with such a token will not return the client's access.
+        Note: This endpoint does NOT support tokens generated through the OIDC "client_credentials" grant, which are linked to a client but not to a user. Calling this endpoint with such a token will not return the client's access.
 
 
         If the specified user is not recognized by arborist, this endpoint returns
@@ -96,6 +96,10 @@ paths:
 
         If the specified client is not recognized by arborist, this endpoint returns
         an empty response.
+
+
+        If no username or client ID is provided (no token is provided in the Authorization header, and there is no request body),
+        this endpoint returns ONLY the mappings available to members of the `anonymous` group.
 
 
         Note: accepting a username or client ID in the body means that anyone can check anyone's authorization if they have their username. For this reason, this API is not meant to be exposed publicly.

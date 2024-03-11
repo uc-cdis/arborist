@@ -301,7 +301,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		_ = err.write(w, r)
 		return
 	}
-	if body != nil {
+	if len(body) > 0 {
 		// Try to get username or clientID from the request body
 		server.logger.Info("Attempting to get username and client ID from request body...")
 		err := json.Unmarshal(body, &requestBody)
