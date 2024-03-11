@@ -292,39 +292,18 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		ClientID string `json:"clientID"`
 	}{}
 
-	username := ""
-	clientID := ""
-
 	body, err := server.parseJsonBody(w, r)
 	if err != nil {
 		err.log.write(server.logger)
 		_ = err.write(w, r)
 		return
 	}
-	if len(body) > 0 {
-		// Try to get username or clientID from the request body
-		server.logger.Info("Attempting to get username and client ID from request body...")
-		err := json.Unmarshal(body, &requestBody)
-		if err != nil {
-			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
-			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
-			errResponse = newErrorResponse(msg, 400, nil)
-		} else {
-			username = requestBody.Username
-			clientID = requestBody.ClientID
-			if username != "" && clientID != "" {
-				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
-				server.logger.Info(msg)
-				errResponse = newErrorResponse(msg, 400, nil)
-			}
-		}
-		if errResponse != nil {
-			_ = errResponse.write(w, r)
-			return
-		}
-	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		// If there is no body, fallback on the JWT
-		server.logger.Info("No request body, attempting to get username and client ID from jwt...")
+
+	username := ""
+	clientID := ""
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		// Try to get username or clientID from the JWT.
+		server.logger.Info("Attempting to get username or client ID from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
@@ -351,6 +330,27 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			msg := "invalid token (no username or client ID)"
 			server.logger.Error(msg)
 			errResponse = newErrorResponse(msg, 401, nil)
+			_ = errResponse.write(w, r)
+			return
+		}
+	} else if len(body) > 0 {
+		// If they are not present in the token, fallback on the request body
+		server.logger.Info("No jwt provided, checking request body")
+		err := json.Unmarshal(body, &requestBody)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
+			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
+			errResponse = newErrorResponse(msg, 400, nil)
+		} else {
+			username = requestBody.Username
+			clientID = requestBody.ClientID
+			if (username == "") == (clientID == "") {
+				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
+				server.logger.Info(msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+			}
+		}
+		if errResponse != nil {
 			_ = errResponse.write(w, r)
 			return
 		}
