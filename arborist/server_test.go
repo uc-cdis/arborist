@@ -3035,11 +3035,6 @@ func TestServer(t *testing.T) {
 				url := "/auth/mapping"
 				req := newRequest("GET", url, nil)
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					httpError(t, w, "expected to get policies for Anonymous group; got bad response instead")
-				}
-
-				// expect a 200 OK response
 				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
 
 				// expect result to contain only authMappings of anonymous policies
@@ -3243,7 +3238,19 @@ func TestServer(t *testing.T) {
 				w := httptest.NewRecorder()
 				req := newRequest("POST", "/auth/mapping", nil)
 				handler.ServeHTTP(w, req)
-				assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to contain only authMappings of anonymous policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected these auth mappings from anonymous group: %v \t Got: %v", anonymousAuthMapping, result)
+				for resource, actions := range result {
+					assert.Contains(t, anonymousAuthMapping, resource, msg)
+					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
+				}
 			})
 		})
 
