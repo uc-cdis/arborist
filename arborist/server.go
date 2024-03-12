@@ -176,28 +176,34 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 // handler signature.
 func (server *Server) parseJSON(baseHandler func(http.ResponseWriter, *http.Request, []byte)) func(http.ResponseWriter, *http.Request) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		body := server.parseJsonBody(w, r)
+		body, err := server.parseJsonBody(w, r)
+		if err != nil {
+			err.log.write(server.logger)
+			_ = err.write(w, r)
+			return
+		}
+		if body == nil {
+			err := newErrorResponse("expected JSON body in the request", 400, nil)
+			err.log.write(server.logger)
+			_ = err.write(w, r)
+			return
+		}
 		baseHandler(w, r, body)
 	}
 	return handler
 }
 
-func (server *Server) parseJsonBody(w http.ResponseWriter, r *http.Request) []byte {
+func (server *Server) parseJsonBody(w http.ResponseWriter, r *http.Request) ([]byte, *ErrorResponse) {
 	if r.Body == nil {
-		response := newErrorResponse("expected JSON body in the request", 400, nil)
-		response.log.write(server.logger)
-		_ = response.write(w, r)
-		return nil
+		return nil, nil
 	}
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
-		response := newErrorResponse(msg, 400, nil)
-		response.log.write(server.logger)
-		_ = response.write(w, r)
-		return nil
+		err := newErrorResponse(msg, 400, nil)
+		return nil, err
 	}
-	return body
+	return body, nil
 }
 
 var regWhitespace *regexp.Regexp = regexp.MustCompile(`\s`)
@@ -286,6 +292,13 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		ClientID string `json:"clientID"`
 	}{}
 
+	body, err := server.parseJsonBody(w, r)
+	if err != nil {
+		err.log.write(server.logger)
+		_ = err.write(w, r)
+		return
+	}
+
 	username := ""
 	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
@@ -320,10 +333,9 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			_ = errResponse.write(w, r)
 			return
 		}
-	} else {
+	} else if len(body) > 0 {
 		// If they are not present in the token, fallback on the request body
 		server.logger.Info("No jwt provided, checking request body")
-		body := server.parseJsonBody(w, r)
 		err := json.Unmarshal(body, &requestBody)
 		if err != nil {
 			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
@@ -342,6 +354,17 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			_ = errResponse.write(w, r)
 			return
 		}
+	} else {
+		// If no username or client ID provided in query string or JWT, return the
+		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
+		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		if errResponse != nil {
+			errResponse.log.write(server.logger)
+			_ = errResponse.write(w, r)
+			return
+		}
+		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
+		return
 	}
 
 	var mappings AuthMapping

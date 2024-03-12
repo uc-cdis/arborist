@@ -2927,15 +2927,33 @@ func TestServer(t *testing.T) {
 				assert.Contains(t, result[resourcePath], action, msg)
 
 				// Expect response to also contain anonymous and loggedIn groups.
-				msg = fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v", anonymousAuthMapping)
+				msg = fmt.Sprintf("Expected to see these auth mappings from anonymous group in response: %v, but got: %v", anonymousAuthMapping, result)
 				for resource, actions := range anonymousAuthMapping {
 					assert.Contains(t, result, resource, msg)
 					assert.ElementsMatch(t, result[resource], actions, msg)
 				}
-				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v", loggedInAuthMapping)
+				msg = fmt.Sprintf("Expected to see these auth mappings from loggedIn group in response: %v, but got: %v", loggedInAuthMapping, result)
 				for resource, actions := range loggedInAuthMapping {
 					assert.Contains(t, result, resource, msg)
 					assert.ElementsMatch(t, result[resource], actions, msg)
+				}
+			}
+
+			// testAnonymousAuthMappingResponse checks whether the AuthMapping in the HTTP response 'w'
+			// ONLY contains the correct resources and actions that belong to the anonymous group.
+			testAnonymousAuthMappingResponse := func(t *testing.T, w *httptest.ResponseRecorder) {
+				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
+
+				// expect result to contain only authMappings of anonymous policies
+				result := make(arborist.AuthMapping)
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from auth mapping")
+				}
+				msg := fmt.Sprintf("Expected these auth mappings from anonymous group: %v \t Got: %v", anonymousAuthMapping, result)
+				for resource, actions := range result {
+					assert.Contains(t, anonymousAuthMapping, resource, msg)
+					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
 				}
 			}
 
@@ -2980,7 +2998,7 @@ func TestServer(t *testing.T) {
 				for k, v := range loggedInAuthMapping {
 					expectedMappings[k] = v
 				}
-				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous and logged-in groups in response: %v", expectedMappings)
+				msg := fmt.Sprintf("Expected to see these auth mappings from anonymous and logged-in groups in response: %v, but got: %v", expectedMappings, result)
 				for resource, actions := range result {
 					assert.Contains(t, expectedMappings, resource, msg)
 					assert.ElementsMatch(t, expectedMappings[resource], actions, msg)
@@ -3035,24 +3053,7 @@ func TestServer(t *testing.T) {
 				url := "/auth/mapping"
 				req := newRequest("GET", url, nil)
 				handler.ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					httpError(t, w, "expected to get policies for Anonymous group; got bad response instead")
-				}
-
-				// expect a 200 OK response
-				assert.Equal(t, w.Code, http.StatusOK, "expected a 200 OK")
-
-				// expect result to contain only authMappings of anonymous policies
-				result := make(arborist.AuthMapping)
-				err = json.Unmarshal(w.Body.Bytes(), &result)
-				if err != nil {
-					httpError(t, w, "couldn't read response from auth mapping")
-				}
-				msg := fmt.Sprintf("Expected these auth mappings from anonymous group: %v \t Got: %v", anonymousAuthMapping, result)
-				for resource, actions := range result {
-					assert.Contains(t, anonymousAuthMapping, resource, msg)
-					assert.ElementsMatch(t, anonymousAuthMapping[resource], actions, msg)
-				}
+				testAnonymousAuthMappingResponse(t, w)
 			})
 
 			t.Run("GET_expiredPolicy", func(t *testing.T) {
@@ -3119,7 +3120,7 @@ func TestServer(t *testing.T) {
 					body := []byte("")
 					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
 					handler.ServeHTTP(w, req)
-					assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
+					testAnonymousAuthMappingResponse(t, w)
 				})
 
 				t.Run("bothUsernameAndClientIdProvided", func(t *testing.T) {
@@ -3243,7 +3244,7 @@ func TestServer(t *testing.T) {
 				w := httptest.NewRecorder()
 				req := newRequest("POST", "/auth/mapping", nil)
 				handler.ServeHTTP(w, req)
-				assert.Equal(t, w.Code, http.StatusBadRequest, "expected a 400 response")
+				testAnonymousAuthMappingResponse(t, w)
 			})
 		})
 
