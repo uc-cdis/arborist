@@ -24,4 +24,4 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     -ldflags="-X 'github.com/uc-cdis/arborist/arborist/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/arborist/arborist/version.GitVersion=${GITVERSION}'" \
     -o bin/arborist
 
-CMD ["bin/arborist"]
+ENTRYPOINT ["bin/arborist"]
