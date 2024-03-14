@@ -548,6 +548,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			LoggedInGroup,    // $3
 		)
 		if err != nil {
+			fmt.Println(err.Error())
 			errResponse := newErrorResponse(
 				"resources query (using username) failed",
 				500,
