@@ -258,14 +258,14 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			) _
 			`,
 			&authorized,
-			request.Username,           // $1
-			request.Service,            // $2
-			request.Method,             // $3
-			len(request.Policies) == 0, // $4
-			pq.Array(request.Policies), // $5
-			resource,                   // $6
-			AnonymousGroup,             // $7
-			LoggedInGroup,              // $8
+			strings.ToLower(request.Username), // $1
+			request.Service,                   // $2
+			request.Method,                    // $3
+			len(request.Policies) == 0,        // $4
+			pq.Array(request.Policies),        // $5
+			resource,                          // $6
+			AnonymousGroup,                    // $7
+			LoggedInGroup,                     // $8
 		)
 	} else if tag != "" {
 		err = request.stmts.Select(
@@ -302,14 +302,14 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			) _
 			`,
 			&authorized,
-			request.Username,           // $1
-			request.Service,            // $2
-			request.Method,             // $3
-			len(request.Policies) == 0, // $4
-			pq.Array(request.Policies), // $5
-			tag,                        // $6
-			AnonymousGroup,             // $7
-			LoggedInGroup,              // $8
+			strings.ToLower(request.Username), // $1
+			request.Service,                   // $2
+			request.Method,                    // $3
+			len(request.Policies) == 0,        // $4
+			pq.Array(request.Policies),        // $5
+			tag,                               // $6
+			AnonymousGroup,                    // $7
+			LoggedInGroup,                     // $8
 		)
 	} else {
 		err = errors.New("missing resource in auth request")
@@ -543,9 +543,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		err := db.Select(
 			&resources,
 			stmt,
-			request.Username, // $1
-			AnonymousGroup,   // $2
-			LoggedInGroup,    // $3
+			strings.ToLower(request.Username), // $1
+			AnonymousGroup,                    // $2
+			LoggedInGroup,                     // $3
 		)
 		if err != nil {
 			errResponse := newErrorResponse(
@@ -593,7 +593,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err := db.Select(&resources, stmt, request.Username, request.ClientID)
+		err := db.Select(&resources, stmt, strings.ToLower(request.Username), request.ClientID)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username + client) failed",
