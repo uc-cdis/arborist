@@ -129,7 +129,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 		LEFT JOIN grp ON (
 			grp.id = usr_grp.grp_id OR grp.name IN ($2, $3)
 		)
-		WHERE usr.name = $1
+		WHERE LOWER(usr.name) = $1
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
@@ -164,7 +164,7 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 			FROM usr_policy
 			INNER JOIN policy ON policy.id = usr_policy.policy_id
 			INNER JOIN usr on usr_policy.usr_id = usr.id 
-			WHERE usr.name like $1 and policy.name like $2;
+			WHERE LOWER(usr.name) like $1 and policy.name like $2;
 	`
 	policyInfoList := []UserPolicyInfoFromQuery{}
 	err := db.Select(
