@@ -698,7 +698,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 	err := db.Select(
 		&mappingQuery,
 		stmt,
-		username,       // $1
+		strings.ToLower(username),       // $1
 		AnonymousGroup, // $2
 		LoggedInGroup,  // $3
 	)
