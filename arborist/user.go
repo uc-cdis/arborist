@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -170,7 +171,7 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 	err := db.Select(
 		&policyInfoList,
 		stmt,
-		user_name,   // $1
+		strings.ToLower(user_name),   // $1
 		policy_name, // $2
 	)
 	if err != nil {
