@@ -455,12 +455,14 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
+	server.logger.Error("--- start handleAuthRequest")
 	authRequestJSON := &AuthRequestJSON{}
 	err := json.Unmarshal(body, authRequestJSON)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
 		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 		response := newErrorResponse(msg, 400, nil)
+		server.logger.Error("--- return 1")
 		_ = response.write(w, r)
 		return
 	}
@@ -486,6 +488,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		if err != nil {
 			server.logger.Info(err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
+			server.logger.Error("--- return 2")
 			_ = errResponse.write(w, r)
 			return
 		}
@@ -512,6 +515,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	requests = append(requests, authRequestJSON.Requests...)
 
 	if len(requests) == 0 {
+		server.logger.Error("--- return 3")
 		_ = newErrorResponse("auth request missing resources", 400, nil).write(w, r)
 		return
 	}
@@ -530,10 +534,12 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 				msg := fmt.Sprintf("could not authorize: %s", err.Error())
 				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 				response := newErrorResponse(msg, 400, nil)
+				server.logger.Error("--- return 4")
 				_ = response.write(w, r)
 				return
 			}
 			if !rv.Auth {
+				server.logger.Error("--- return 5")
 				_ = jsonResponseFrom(rv, 200).write(w, r)
 				return
 			}
@@ -542,12 +548,14 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 		if (clientID == "") && (username == "") && (info.policies == nil || len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required when no client ID is provided)"
+			server.logger.Error("--- return 6")
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
 		}
 
 		if (username == "") && (clientID == "") {
 			msg := "unauthorized: did not provide a username and/or client ID in request"
+			server.logger.Error("--- return 7")
 			_ = newErrorResponse(msg, 403, nil).write(w, r)
 			return
 		}
@@ -571,6 +579,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 				msg := fmt.Sprintf("could not authorize user: %s", err.Error())
 				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 				response := newErrorResponse(msg, 400, nil)
+				server.logger.Error("--- return 8")
 				_ = response.write(w, r)
 				return
 			}
@@ -591,11 +600,13 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 				msg := fmt.Sprintf("could not authorize client: %s", err.Error())
 				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
 				response := newErrorResponse(msg, 400, nil)
+				server.logger.Error("--- return 9")
 				_ = response.write(w, r)
 				return
 			}
 		}
 		if !rv.Auth {
+			server.logger.Error("--- return 10")
 			_ = jsonResponseFrom(rv, 200).write(w, r)
 			return
 		}
@@ -604,6 +615,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	result := AuthResponse{
 		Auth: true,
 	}
+	server.logger.Error("--- return 11")
 	_ = jsonResponseFrom(result, 200).write(w, r)
 }
 
