@@ -534,6 +534,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 				return
 			}
 			if !rv.Auth {
+				server.logger.Debug("anonymous user is unauthorized")
 				_ = jsonResponseFrom(rv, 200).write(w, r)
 				return
 			}
