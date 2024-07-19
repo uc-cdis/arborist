@@ -230,12 +230,12 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT usr_policy.policy_id FROM usr
 					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-					WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+					WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 					UNION
 					SELECT grp_policy.policy_id FROM usr
 					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
 					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-					WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+					WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 					UNION
 					SELECT grp_policy.policy_id FROM grp
 					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
@@ -258,14 +258,14 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			) _
 			`,
 			&authorized,
-			request.Username,           // $1
-			request.Service,            // $2
-			request.Method,             // $3
-			len(request.Policies) == 0, // $4
-			pq.Array(request.Policies), // $5
-			resource,                   // $6
-			AnonymousGroup,             // $7
-			LoggedInGroup,              // $8
+			strings.ToLower(request.Username), // $1
+			request.Service,                   // $2
+			request.Method,                    // $3
+			len(request.Policies) == 0,        // $4
+			pq.Array(request.Policies),        // $5
+			resource,                          // $6
+			AnonymousGroup,                    // $7
+			LoggedInGroup,                     // $8
 		)
 	} else if tag != "" {
 		err = request.stmts.Select(
@@ -274,12 +274,12 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 				SELECT array_agg(resource.path) AS allowed FROM (
 					SELECT usr_policy.policy_id FROM usr
 					INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-					WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+					WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 					UNION
 					SELECT grp_policy.policy_id FROM usr
 					INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
 					INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-					WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+					WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 					UNION
 					SELECT grp_policy.policy_id FROM grp
 					INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
@@ -302,14 +302,14 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			) _
 			`,
 			&authorized,
-			request.Username,           // $1
-			request.Service,            // $2
-			request.Method,             // $3
-			len(request.Policies) == 0, // $4
-			pq.Array(request.Policies), // $5
-			tag,                        // $6
-			AnonymousGroup,             // $7
-			LoggedInGroup,              // $8
+			strings.ToLower(request.Username), // $1
+			request.Service,                   // $2
+			request.Method,                    // $3
+			len(request.Policies) == 0,        // $4
+			pq.Array(request.Policies),        // $5
+			tag,                               // $6
+			AnonymousGroup,                    // $7
+			LoggedInGroup,                     // $8
 		)
 	} else {
 		err = errors.New("missing resource in auth request")
@@ -522,14 +522,14 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				SELECT usr_policy.policy_id
 				FROM usr
 				JOIN usr_policy ON usr.id = usr_policy.usr_id
-				WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+				WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 				UNION
 				SELECT grp_policy.policy_id
 				FROM grp
 				JOIN grp_policy ON grp_policy.grp_id = grp.id
 				JOIN usr_grp ON usr_grp.grp_id = grp.id
 				JOIN usr ON usr.id = usr_grp.usr_id
-				WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+				WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 				UNION
 				SELECT grp_policy.policy_id
 				FROM grp
@@ -543,9 +543,9 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 		err := db.Select(
 			&resources,
 			stmt,
-			request.Username, // $1
-			AnonymousGroup,   // $2
-			LoggedInGroup,    // $3
+			strings.ToLower(request.Username), // $1
+			AnonymousGroup,                    // $2
+			LoggedInGroup,                     // $3
 		)
 		if err != nil {
 			errResponse := newErrorResponse(
@@ -575,7 +575,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				SELECT usr_policy.policy_id
 				FROM usr
 				JOIN usr_policy ON usr.id = usr_policy.usr_id
-				WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+				WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 				UNION
 				SELECT client_policy.policy_id
 				FROM client
@@ -587,13 +587,13 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 				JOIN grp_policy ON grp_policy.grp_id = grp.id
 				JOIN usr_grp ON usr_grp.grp_id = grp.id
 				JOIN usr ON usr.id = usr_grp.usr_id
-				WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+				WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 			) policies
 			LEFT JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err := db.Select(&resources, stmt, request.Username, request.ClientID)
+		err := db.Select(&resources, stmt, strings.ToLower(request.Username), request.ClientID)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username + client) failed",
@@ -678,12 +678,12 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 		(
 			SELECT usr_policy.policy_id FROM usr
 			INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-			WHERE usr.name = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+			WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
 			UNION
 			SELECT grp_policy.policy_id FROM usr
 			INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
 			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-			WHERE usr.name = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+			WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
 			UNION
 			SELECT grp_policy.policy_id FROM grp
 			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
@@ -698,7 +698,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 	err := db.Select(
 		&mappingQuery,
 		stmt,
-		username,       // $1
+		strings.ToLower(username),       // $1
 		AnonymousGroup, // $2
 		LoggedInGroup,  // $3
 	)

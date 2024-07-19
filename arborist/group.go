@@ -64,7 +64,7 @@ func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
 	stmt := `
 		SELECT
 			grp.name,
-			array_remove(array_agg(DISTINCT usr.name), NULL) AS users,
+			array_remove(array_agg(DISTINCT LOWER(usr.name)), NULL) AS users,
 			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM grp
 		LEFT JOIN grp_policy ON grp_policy.grp_id = grp.id
@@ -91,7 +91,7 @@ func listGroupsFromDb(db *sqlx.DB) ([]GroupFromQuery, error) {
 	stmt := `
 		SELECT
 			grp.name,
-			array_remove(array_agg(DISTINCT usr.name), NULL) as users,
+			array_remove(array_agg(DISTINCT LOWER(usr.name)), NULL) as users,
 			array_remove(array_agg(DISTINCT policy.name), NULL) AS policies
 		FROM grp
 		LEFT JOIN usr_grp ON grp.id = usr_grp.grp_id

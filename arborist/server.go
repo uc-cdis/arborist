@@ -258,7 +258,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		server.logger.Info("found username in jwt: %s", info.username)
-		username = info.username
+		username = strings.ToLower(info.username)
 	}
 
 	usernameProvided := username != ""
