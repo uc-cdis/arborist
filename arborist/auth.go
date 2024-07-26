@@ -117,16 +117,30 @@ type AuthResponse struct {
 // Authorize a request where the end user is anonymous, so there is no token
 // involved, and access is granted only through the built-in anonymous group.
 func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
-	var tag string
 	var err error
+	var tag_resource []string
 
 	resource := request.Resource
+	
 	// See if the resource field is a path or a tag.
 	if strings.HasPrefix(resource, "/") {
 		resource = FormatPathForDb(resource)
 	} else {
-		tag = resource
-		resource = ""
+		err = request.stmts.Select(
+			`
+			select coalesce(SELECT resource.path as tag FROM resource WHERE resource.tag = $1)
+			`,
+			&tag_resource,
+			resource,                   		// $1
+		)
+		
+		if err != nil {
+			return nil, err
+		}
+
+		resource = FormatPathForDb(tag_resource[0])
+		fmt.Print("RESOURCE PATH-----\n")
+		fmt.Print(resource)
 	}
 
 	var authorized []bool
@@ -165,46 +179,16 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			resource,                   // $5
 			AnonymousGroup,             // $6
 		)
-	} else if tag != "" {
-		err = request.stmts.Select(
-			`
-			SELECT coalesce((SELECT resource.path AS request FROM resource WHERE resource.tag = $5) <@ allowed, FALSE) FROM (
-				SELECT array_agg(resource.path) AS allowed FROM (
-					SELECT policy_id FROM grp_policy
-					INNER JOIN grp ON grp_policy.grp_id = grp.id
-					WHERE grp.name = $6
-				) AS policies
-				JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-				JOIN resource ON resource.id = policy_resource.resource_id
-				WHERE EXISTS (
-					SELECT 1 FROM policy_role
-					JOIN permission ON permission.role_id = policy_role.role_id
-					WHERE policy_role.policy_id = policies.policy_id
-					AND (permission.service = $1 OR permission.service = '*')
-					AND (permission.method = $2 OR permission.method = '*')
-				) AND (
-					$3 OR policies.policy_id IN (
-						SELECT id FROM policy
-						WHERE policy.name = ANY($4)
-					)
-				)
-			)
-			`,
-			&authorized,
-			request.Service,            // $1
-			request.Method,             // $2
-			len(request.Policies) == 0, // $3
-			pq.Array(request.Policies), // $4
-			resource,                   // $5
-			AnonymousGroup,             // $6
-		)
 	} else {
 		err = errors.New("missing resource in auth request")
 	}
 	if err != nil {
+		fmt.Print("MAIN SQL ERROR-----\n")
 		return nil, err
 	}
 	result := len(authorized) > 0 && authorized[0]
+	fmt.Print("RESULT-----\n")
+	fmt.Print(result)
 	return &AuthResponse{result}, nil
 }
 
