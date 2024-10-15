@@ -188,7 +188,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 						WHERE policy.name = ANY($4)
 					)
 				)
-			)
+			) _
 			`,
 			&authorized,
 			request.Service,            // $1
@@ -698,9 +698,9 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 	err := db.Select(
 		&mappingQuery,
 		stmt,
-		strings.ToLower(username),       // $1
-		AnonymousGroup, // $2
-		LoggedInGroup,  // $3
+		strings.ToLower(username), // $1
+		AnonymousGroup,            // $2
+		LoggedInGroup,             // $3
 	)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
