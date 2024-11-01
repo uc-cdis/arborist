@@ -31,4 +31,4 @@ COPY --from=build-deps /etc_passwd /etc/passwd
 COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-deps $GOPATH/src/github.com/uc-cdis/arborist/ /arborist
 USER nobody
-CMD ["/arborist/migrations/latest && /arborist/bin/arborist"]
+CMD ["/arborist/migrations/latest", "&&", "/arborist/bin/arborist", "-port", "8080"]
