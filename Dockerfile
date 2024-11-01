@@ -22,6 +22,10 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     GITVERSION=$(git describe --always --tags) \
     && go build \
     -ldflags="-X 'github.com/uc-cdis/arborist/arborist/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/arborist/arborist/version.GitVersion=${GITVERSION}'" \
-    -o bin/arborist
+    -o /arborist
 
-CMD ["bin/arborist"]
+FROM scratch
+USER nobody
+COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build-deps /arborist /arborist
+CMD ["/arborist"]
