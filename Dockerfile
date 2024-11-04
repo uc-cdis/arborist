@@ -27,7 +27,7 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
 #RUN echo "nobody:x:65534:65534:Nobody:/:" > /etc_passwd
 
 FROM quay.io/cdis/golang-build-base:master
-RUN amazon-linux-extras install postgresql13
+RUN dnf install postgresql
 #COPY --from=build-deps /etc_passwd /etc/passwd
 COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-deps /go/src/github.com/uc-cdis/arborist/ /go/src/github.com/uc-cdis/arborist/
