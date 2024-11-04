@@ -33,7 +33,7 @@ RUN dnf update \
         --assumeyes \
         --setopt=install_weak_deps=False \
         --setopt=tsflags=nodocs \
-        postgresql13 \
+        postgresql15 \
     && dnf clean all \
     && rm -rf /var/cache/yum
 #COPY --from=build-deps /etc_passwd /etc/passwd
