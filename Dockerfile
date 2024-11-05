@@ -24,7 +24,7 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     -ldflags="-X 'github.com/uc-cdis/arborist/arborist/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/arborist/arborist/version.GitVersion=${GITVERSION}'" \
     -o bin/arborist
 
-#RUN echo "nobody:x:65534:65534:Nobody:/:" > /etc_passwd
+RUN echo "nobody:x:65534:65534:Nobody:/:" > /etc_passwd
 
 FROM quay.io/cdis/golang-build-base:master
 RUN dnf update \
@@ -37,9 +37,10 @@ RUN dnf update \
         jq \ 
     && dnf clean all \
     && rm -rf /var/cache/yum
-#COPY --from=build-deps /etc_passwd /etc/passwd
+COPY --from=build-deps /etc_passwd /etc/passwd
 COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-deps /go/src/github.com/uc-cdis/arborist/ /go/src/github.com/uc-cdis/arborist/
+RUN setcap 'cap_net_bind_service=+ep' /arborist/bin/arborist
 WORKDIR /go/src/github.com/uc-cdis/arborist/
-#USER nobody
+USER nobody
 CMD ["/arborist/bin/arborist"]
