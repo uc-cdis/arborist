@@ -39,7 +39,7 @@ RUN dnf update \
     && rm -rf /var/cache/yum
 COPY --from=build-deps /etc_passwd /etc/passwd
 COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build-deps /go/src/github.com/uc-cdis/arborist/ /go/src/github.com/uc-cdis/arborist/
+COPY --from=build-deps /go/src/github.com/uc-cdis/arborist/ /go/src/github.com/uc-cdis/arborist/bin/arborist
 RUN setcap 'cap_net_bind_service=+ep' /go/src/github.com/uc-cdis/arborist/
 WORKDIR /go/src/github.com/uc-cdis/arborist/
 USER nobody
