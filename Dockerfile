@@ -1,8 +1,11 @@
 FROM quay.io/cdis/golang:1.17-bullseye AS build-deps
 
+ARG TARGETOS
+ARG TARGETARCH
+
 ENV CGO_ENABLED=0
-ENV GOOS=linux
-ENV GOARCH=amd64
+ENV GOOS=${TARGETOS}
+ENV GOARCH=${TARGETARCH}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends jq=1.* postgresql=13* \
