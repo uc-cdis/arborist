@@ -33,7 +33,7 @@ jobs:
       - name: Run tests, lint code, install goveralls
         uses: uc-cdis/.github/.github/actions/golang-ci@master
         with:
-          GO_VERSION: "1.17"
+          GO_VERSION: "1.23"
           TESTS_LOCATION: ./arborist/
           COVERAGE_PROFILE_OUTPUT_LOCATION: ${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }}
       - name: Send coverage to coveralls using goveralls
