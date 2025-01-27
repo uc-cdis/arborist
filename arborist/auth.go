@@ -786,7 +786,7 @@ func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResp
 	)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
-		errResponse.log.Error(err.Error())
+		errResponse.log.Error("%s", err.Error())
 		return nil, errResponse
 	}
 	mapping := make(AuthMapping)
