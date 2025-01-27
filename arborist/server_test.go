@@ -83,7 +83,7 @@ func (testJWT *TestJWT) Encode() string {
 		exp = time.Now().Unix() + 10000
 	}
 	var payload []byte
-	if testJWT.policies == nil || len(testJWT.policies) == 0 {
+	if len(testJWT.policies) == 0 {
 		if testJWT.username != "" {
 			payload = []byte(fmt.Sprintf(
 				`{

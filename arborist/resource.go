@@ -146,7 +146,7 @@ func (resourceFromQuery *ResourceFromQuery) standardize() ResourceOut {
 // FormatPathForDb takes a front-end version of a resource path and transforms
 // it to its database version. Inverse of `formatDbPath`.
 //
-//     FormatPathForDb("/a/b/c") == "a.b.c"
+//	FormatPathForDb("/a/b/c") == "a.b.c"
 func FormatPathForDb(path string) string {
 	// -1 means replace everything
 	result := strings.TrimLeft(strings.Replace(UnderscoreEncode(path), "/", ".", -1), ".")
@@ -156,7 +156,7 @@ func FormatPathForDb(path string) string {
 // formatDbPath takes a path from a resource in the database and transforms it
 // to the front-end version of the resource path. Inverse of `FormatPathForDb`.
 //
-//     formatDbPath("a.b.c") == "/a/b/c"
+//	formatDbPath("a.b.c") == "/a/b/c"
 func formatDbPath(path string) string {
 	// -1 means replace everything
 	return UnderscoreDecode("/" + strings.Replace(path, ".", "/", -1))
@@ -318,7 +318,7 @@ func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
 		if resource.Name == "" {
 			err := missingRequiredField("resource", "name")
 			errResponse := newErrorResponse(err.Error(), 400, &err)
-			errResponse.log.Info(err.Error())
+			errResponse.log.Info("%s", err.Error())
 			return errResponse
 		}
 		resource.Path = parent + "/" + resource.Name
