@@ -137,8 +137,8 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	err := db.Select(
 		&users,
 		stmt,
-		strings.ToLower(name),  // $1
-		AnonymousGroup,         // $2
+		strings.ToLower(name), // $1
+		AnonymousGroup,        // $2
 		LoggedInGroup,          // $3
 	)
 	if err != nil {
@@ -146,6 +146,10 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	}
 	if len(users) == 0 {
 		return nil, nil
+	}
+	if len(users) > 1 {
+		fmt.Printf("WARN: More than one record of the user `%s` exists (likely with different cases). Returning the first matching record",
+			name)
 	}
 	user := users[0]
 	return &user, nil
