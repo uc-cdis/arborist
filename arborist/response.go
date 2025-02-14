@@ -78,7 +78,7 @@ func newErrorResponse(message string, code int, err *error) *ErrorResponse {
 	if code >= 500 {
 		response.log.Error(message)
 	} else {
-		response.log.Info(message)
+		response.log.Info("%s", message)
 	}
 	return response
 }

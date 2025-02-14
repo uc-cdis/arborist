@@ -454,7 +454,7 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 // See the FIXME inside. Be careful how this is called, until the implementation is updated.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
-	if request.Policies != nil && len(request.Policies) > 0 {
+	if len(request.Policies) > 0 {
 		values := ""
 		for _, policy := range request.Policies {
 			// FIXME (rudyardrichter, 2019-05-09): this could be a SQL
@@ -639,7 +639,7 @@ func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFrom
 	query, args, err := sqlx.In(stmt, groups)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
-		errResponse.log.Error(err.Error())
+		errResponse.log.Error("%s", err.Error())
 		return nil, errResponse
 	}
 	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax
@@ -704,7 +704,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 	)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
-		errResponse.log.Error(err.Error())
+		errResponse.log.Error("%s", err.Error())
 		return nil, errResponse
 	}
 	mapping := make(AuthMapping)
@@ -738,7 +738,7 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 	query, args, err := sqlx.In(stmt, groups)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
-		errResponse.log.Error(err.Error())
+		errResponse.log.Error("%s", err.Error())
 		return nil, errResponse
 	}
 	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax

@@ -318,7 +318,7 @@ func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
 		if resource.Name == "" {
 			err := missingRequiredField("resource", "name")
 			errResponse := newErrorResponse(err.Error(), 400, &err)
-			errResponse.log.Info(err.Error())
+			errResponse.log.Info("%s", err.Error())
 			return errResponse
 		}
 		resource.Path = parent + "/" + resource.Name
