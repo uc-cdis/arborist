@@ -137,9 +137,9 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	err := db.Select(
 		&users,
 		stmt,
-		name,           // $1
-		AnonymousGroup, // $2
-		LoggedInGroup,  // $3
+		strings.ToLower(name),  // $1
+		AnonymousGroup,         // $2
+		LoggedInGroup,          // $3
 	)
 	if err != nil {
 		return nil, err
