@@ -484,7 +484,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	if !isAnonymous && authRequestJSON.User.Token != "" {
 		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
 		if err != nil {
-			server.logger.Info(err.Error())
+			server.logger.Info("%s", err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
 			_ = errResponse.write(w, r)
 			return
@@ -670,7 +670,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 
 	info, err := server.decodeToken(request.User.Token, scopes)
 	if err != nil {
-		server.logger.Info(err.Error())
+		server.logger.Info("%s", err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)
 		_ = errResponse.write(w, r)
 		return
