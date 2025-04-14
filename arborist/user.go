@@ -137,9 +137,9 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	err := db.Select(
 		&users,
 		stmt,
-		name,           // $1
-		AnonymousGroup, // $2
-		LoggedInGroup,  // $3
+		strings.ToLower(name), // $1
+		AnonymousGroup,        // $2
+		LoggedInGroup,         // $3
 	)
 	if err != nil {
 		return nil, err
@@ -171,8 +171,8 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 	err := db.Select(
 		&policyInfoList,
 		stmt,
-		strings.ToLower(user_name),   // $1
-		policy_name, // $2
+		strings.ToLower(user_name), // $1
+		policy_name,                // $2
 	)
 	if err != nil {
 		return nil, err
