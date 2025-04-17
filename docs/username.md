@@ -10,6 +10,8 @@ Arborist always has 2 default groups:
 
 Some Arborist endpoints require a username (or a JWT to get the username from).
 
+:information_source: Arborist uses usernames in a semi-case sensitive way. That is: Arborist stores usernames in its database case sensitively. But when searching for an user, Arborist treats their usernames case insensitively. This matches the current behavior of Fence, which is for compensating some inconsistent behaviors between certain IdPs. 
+
 Services that communicate with Arborist (Windmill, Peregrine, Fence...) need the user's _complete_ list of resources, so they should receive anonymous and logged-in policies. But when Arborist receives the username as a query parameter, it doesn’t know if the user is logged in. Should it then return the logged-in policies or not?
 
 ## Rationale
