@@ -253,7 +253,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			// Return 400 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
-			server.logger.Info(msg)
+			server.logger.Info("%s", msg)
 			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 			return
 		}
@@ -311,7 +311,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username/client ID from jwt, but jwt decode failed: %s", err.Error())
-			server.logger.Info(msg)
+			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 401, nil)
 			_ = errResponse.write(w, r)
 			return
@@ -328,7 +328,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			server.logger.Info("found client ID in jwt: %s", clientID)
 		} else {
 			msg := "invalid token (no username or client ID)"
-			server.logger.Error(msg)
+			server.logger.Error("%s", msg)
 			errResponse = newErrorResponse(msg, 401, nil)
 			_ = errResponse.write(w, r)
 			return
@@ -346,7 +346,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			clientID = requestBody.ClientID
 			if (username == "") == (clientID == "") {
 				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
-				server.logger.Info(msg)
+				server.logger.Info("%s", msg)
 				errResponse = newErrorResponse(msg, 400, nil)
 			}
 		}
@@ -484,7 +484,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	if !isAnonymous && authRequestJSON.User.Token != "" {
 		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
 		if err != nil {
-			server.logger.Info(err.Error())
+			server.logger.Info("%s", err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
 			_ = errResponse.write(w, r)
 			return
@@ -541,7 +541,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 
-		if (clientID == "") && (username == "") && (info.policies == nil || len(info.policies) == 0) {
+		if (clientID == "") && (username == "") && (len(info.policies) == 0) {
 			msg := "missing both username and policies in request (at least one is required when no client ID is provided)"
 			_ = newErrorResponse(msg, 400, nil).write(w, r)
 			return
@@ -670,7 +670,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 
 	info, err := server.decodeToken(request.User.Token, scopes)
 	if err != nil {
-		server.logger.Info(err.Error())
+		server.logger.Info("%s", err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)
 		_ = errResponse.write(w, r)
 		return
