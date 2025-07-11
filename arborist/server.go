@@ -455,152 +455,152 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
-	authRequestJSON := &AuthRequestJSON{}
-	err := json.Unmarshal(body, authRequestJSON)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
-		server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-		response := newErrorResponse(msg, 400, nil)
-		_ = response.write(w, r)
-		return
-	}
+	// authRequestJSON := &AuthRequestJSON{}
+	// err := json.Unmarshal(body, authRequestJSON)
+	// if err != nil {
+	// 	msg := fmt.Sprintf("could not parse auth request from JSON: %s", err.Error())
+	// 	server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+	// 	response := newErrorResponse(msg, 400, nil)
+	// 	_ = response.write(w, r)
+	// 	return
+	// }
 
-	var scopes []string
-	if authRequestJSON.User.Scopes == nil {
-		scopes = []string{"openid"}
-	} else {
-		scopes = make([]string, len(authRequestJSON.User.Scopes))
-		copy(scopes, authRequestJSON.User.Scopes)
-	}
+	// var scopes []string
+	// if authRequestJSON.User.Scopes == nil {
+	// 	scopes = []string{"openid"}
+	// } else {
+	// 	scopes = make([]string, len(authRequestJSON.User.Scopes))
+	// 	copy(scopes, authRequestJSON.User.Scopes)
+	// }
 
-	var isAnonymous bool
-	if authRequestJSON.User.UserId == "" && authRequestJSON.User.Token == "" {
-		isAnonymous = true
-	} else {
-		isAnonymous = false
-	}
+	// var isAnonymous bool
+	// if authRequestJSON.User.UserId == "" && authRequestJSON.User.Token == "" {
+	// 	isAnonymous = true
+	// } else {
+	// 	isAnonymous = false
+	// }
 
-	var info *TokenInfo
-	if !isAnonymous && authRequestJSON.User.Token != "" {
-		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
-		if err != nil {
-			server.logger.Info("%s", err.Error())
-			errResponse := newErrorResponse(err.Error(), 401, &err)
-			_ = errResponse.write(w, r)
-			return
-		}
-	}
-	policies := []string{}
-	var username string
-	var clientID string
-	if info != nil {
-		policies = info.policies
-		username = info.username
-		clientID = info.clientID
-	} else {
-		username = authRequestJSON.User.UserId
-		clientID = ""
-	}
-	if authRequestJSON.User.Policies != nil {
-		policies = authRequestJSON.User.Policies
-	}
+	// var info *TokenInfo
+	// if !isAnonymous && authRequestJSON.User.Token != "" {
+	// 	info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
+	// 	if err != nil {
+	// 		server.logger.Info("%s", err.Error())
+	// 		errResponse := newErrorResponse(err.Error(), 401, &err)
+	// 		_ = errResponse.write(w, r)
+	// 		return
+	// 	}
+	// }
+	// policies := []string{}
+	// var username string
+	// var clientID string
+	// if info != nil {
+	// 	policies = info.policies
+	// 	username = info.username
+	// 	clientID = info.clientID
+	// } else {
+	// 	username = authRequestJSON.User.UserId
+	// 	clientID = ""
+	// }
+	// if authRequestJSON.User.Policies != nil {
+	// 	policies = authRequestJSON.User.Policies
+	// }
 
-	requests := []AuthRequestJSON_Request{}
-	if authRequestJSON.Request != nil {
-		requests = append(requests, *authRequestJSON.Request)
-	}
-	requests = append(requests, authRequestJSON.Requests...)
+	// requests := []AuthRequestJSON_Request{}
+	// if authRequestJSON.Request != nil {
+	// 	requests = append(requests, *authRequestJSON.Request)
+	// }
+	// requests = append(requests, authRequestJSON.Requests...)
 
-	if len(requests) == 0 {
-		_ = newErrorResponse("auth request missing resources", 400, nil).write(w, r)
-		return
-	}
+	// if len(requests) == 0 {
+	// 	_ = newErrorResponse("auth request missing resources", 400, nil).write(w, r)
+	// 	return
+	// }
 
-	for _, authRequest := range requests {
-		// if no token is provided, use anonymous group to check auth
-		if isAnonymous {
-			request := AuthRequest{
-				Resource: authRequest.Resource,
-				Service:  authRequest.Action.Service,
-				Method:   authRequest.Action.Method,
-				stmts:    server.stmts,
-			}
-			rv, err := authorizeAnonymous(&request)
-			if err != nil {
-				msg := fmt.Sprintf("could not authorize: %s", err.Error())
-				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-				response := newErrorResponse(msg, 400, nil)
-				_ = response.write(w, r)
-				return
-			}
-			if !rv.Auth {
-				server.logger.Debug("anonymous user is unauthorized")
-				_ = jsonResponseFrom(rv, 200).write(w, r)
-				return
-			}
-			continue
-		}
+	// for _, authRequest := range requests {
+	// 	// if no token is provided, use anonymous group to check auth
+	// 	if isAnonymous {
+	// 		request := AuthRequest{
+	// 			Resource: authRequest.Resource,
+	// 			Service:  authRequest.Action.Service,
+	// 			Method:   authRequest.Action.Method,
+	// 			stmts:    server.stmts,
+	// 		}
+	// 		rv, err := authorizeAnonymous(&request)
+	// 		if err != nil {
+	// 			msg := fmt.Sprintf("could not authorize: %s", err.Error())
+	// 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+	// 			response := newErrorResponse(msg, 400, nil)
+	// 			_ = response.write(w, r)
+	// 			return
+	// 		}
+	// 		if !rv.Auth {
+	// 			server.logger.Debug("anonymous user is unauthorized")
+	// 			_ = jsonResponseFrom(rv, 200).write(w, r)
+	// 			return
+	// 		}
+	// 		continue
+	// 	}
 
-		if (clientID == "") && (username == "") && (len(info.policies) == 0) {
-			msg := "missing both username and policies in request (at least one is required when no client ID is provided)"
-			_ = newErrorResponse(msg, 400, nil).write(w, r)
-			return
-		}
+	// 	if (clientID == "") && (username == "") && (len(info.policies) == 0) {
+	// 		msg := "missing both username and policies in request (at least one is required when no client ID is provided)"
+	// 		_ = newErrorResponse(msg, 400, nil).write(w, r)
+	// 		return
+	// 	}
 
-		if (username == "") && (clientID == "") {
-			msg := "unauthorized: did not provide a username and/or client ID in request"
-			_ = newErrorResponse(msg, 403, nil).write(w, r)
-			return
-		}
+	// 	if (username == "") && (clientID == "") {
+	// 		msg := "unauthorized: did not provide a username and/or client ID in request"
+	// 		_ = newErrorResponse(msg, 403, nil).write(w, r)
+	// 		return
+	// 	}
 
-		// username = UserID or username
-		request := &AuthRequest{
-			Username: username,
-			ClientID: clientID,
-			Policies: policies,
-			Resource: authRequest.Resource,
-			Service:  authRequest.Action.Service,
-			Method:   authRequest.Action.Method,
-			stmts:    server.stmts,
-		}
-		server.logger.Info("handling auth request: %#v", *request)
-		rv := &AuthResponse{}
-		rv.Auth = true
-		if request.Username != "" {
-			rv, err = authorizeUser(request)
-			if err != nil {
-				msg := fmt.Sprintf("could not authorize user: %s", err.Error())
-				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-				response := newErrorResponse(msg, 400, nil)
-				_ = response.write(w, r)
-				return
-			}
-			if rv.Auth {
-				server.logger.Debug("user is authorized")
-			} else {
-				server.logger.Debug("user is unauthorized")
-			}
-		}
-		if rv.Auth && request.ClientID != "" {
-			rv, err = authorizeClient(request)
-			if err == nil && rv.Auth {
-				server.logger.Debug("client is authorized")
-			} else {
-				server.logger.Debug("client is unauthorized")
-			}
-			if err != nil {
-				msg := fmt.Sprintf("could not authorize client: %s", err.Error())
-				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
-				response := newErrorResponse(msg, 400, nil)
-				_ = response.write(w, r)
-				return
-			}
-		}
-		if !rv.Auth {
-			_ = jsonResponseFrom(rv, 200).write(w, r)
-			return
-		}
-	}
+	// 	// username = UserID or username
+	// 	request := &AuthRequest{
+	// 		Username: username,
+	// 		ClientID: clientID,
+	// 		Policies: policies,
+	// 		Resource: authRequest.Resource,
+	// 		Service:  authRequest.Action.Service,
+	// 		Method:   authRequest.Action.Method,
+	// 		stmts:    server.stmts,
+	// 	}
+	// 	server.logger.Info("handling auth request: %#v", *request)
+	// 	rv := &AuthResponse{}
+	// 	rv.Auth = true
+	// 	if request.Username != "" {
+	// 		rv, err = authorizeUser(request)
+	// 		if err != nil {
+	// 			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
+	// 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+	// 			response := newErrorResponse(msg, 400, nil)
+	// 			_ = response.write(w, r)
+	// 			return
+	// 		}
+	// 		if rv.Auth {
+	// 			server.logger.Debug("user is authorized")
+	// 		} else {
+	// 			server.logger.Debug("user is unauthorized")
+	// 		}
+	// 	}
+	// 	if rv.Auth && request.ClientID != "" {
+	// 		rv, err = authorizeClient(request)
+	// 		if err == nil && rv.Auth {
+	// 			server.logger.Debug("client is authorized")
+	// 		} else {
+	// 			server.logger.Debug("client is unauthorized")
+	// 		}
+	// 		if err != nil {
+	// 			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
+	// 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
+	// 			response := newErrorResponse(msg, 400, nil)
+	// 			_ = response.write(w, r)
+	// 			return
+	// 		}
+	// 	}
+	// 	if !rv.Auth {
+	// 		_ = jsonResponseFrom(rv, 200).write(w, r)
+	// 		return
+	// 	}
+	// }
 
 	result := AuthResponse{
 		Auth: true,
