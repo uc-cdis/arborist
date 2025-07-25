@@ -35,6 +35,10 @@ type RequestPolicy struct {
 	ExpiresAt  string `json:"expires_at"`
 }
 
+type RevokePolicy struct {
+	PolicyName string `json:"policy"`
+}
+
 func NewServer() *Server {
 	return &Server{}
 }
@@ -137,6 +141,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
+	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserRevokePolicy))).Methods("DELETE") // NEW bulk revoke policy
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 	router.Handle("/user/{username}/resources", http.HandlerFunc(server.handleUserListResources)).Methods("GET")
@@ -1385,6 +1390,30 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 
 	for _, requestPolicy := range requestPolicies {
 		server.userGrantPolicy(w, r, requestPolicy, username)
+	}
+	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
+}
+
+func (server *Server) handleBulkUserRevokePolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	username := mux.Vars(r)["username"]
+	var revokePolicies []RevokePolicy
+	err := json.Unmarshal(body, &revokePolicies)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse policy name in JSON: %s", err.Error())
+		server.logger.Info("tried to revoke policy from user but input was invalid: %s", msg)
+		response := newErrorResponse(msg, 400, nil)
+		_ = response.write(w, r)
+		return
+	}
+
+	authzProvider := getAuthZProvider(r)
+	
+	for _, revokePolicy := range revokePolicies {
+		errResponse := revokeUserPolicy(server.db, username, revokePolicy.PolicyName, authzProvider)
+		if errResponse != nil {
+			_ = errResponse.write(w, r)
+			return
+		}
 	}
 	_ = jsonResponseFrom(nil, http.StatusNoContent).write(w, r)
 }
