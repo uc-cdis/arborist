@@ -62,8 +62,8 @@ func main() {
 	httpLogger := log.New(os.Stdout, "", log.LstdFlags)
 	httpServer := &http.Server{
 		Addr:         addr,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  120 * time.Second,
+		WriteTimeout: 120 * time.Second,
 		ErrorLog:     httpLogger,
 		Handler:      router,
 	}
