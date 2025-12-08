@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
@@ -197,7 +196,7 @@ func (server *Server) parseJsonBody(w http.ResponseWriter, r *http.Request) ([]b
 	if r.Body == nil {
 		return nil, nil
 	}
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse valid JSON from request: %s", err.Error())
 		err := newErrorResponse(msg, 400, nil)
