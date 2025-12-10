@@ -33,6 +33,8 @@ github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ
 github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/uc-cdis/go-authutils v0.1.3-0.20251208205248-359bffa08b29 h1:N8i7B4yp9Bxj+QZ07hBAAVgh/d9ixQC2nLJFekZd1bM=
 github.com/uc-cdis/go-authutils v0.1.3-0.20251208205248-359bffa08b29/go.mod h1:yltnlkJAiTx42kFA7lHGO56gUl6n2MJT3s6LyX57rAo=
+github.com/uc-cdis/go-authutils v0.1.3-0.20251210162059-6e78e9723952 h1:LGY5D3llPGcfUJymb2HJyVkAaqMUTBvVISCeI21p+p0=
+github.com/uc-cdis/go-authutils v0.1.3-0.20251210162059-6e78e9723952/go.mod h1:yltnlkJAiTx42kFA7lHGO56gUl6n2MJT3s6LyX57rAo=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
