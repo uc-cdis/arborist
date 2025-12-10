@@ -3,7 +3,7 @@ module github.com/uc-cdis/arborist
 go 1.17
 
 require (
-	github.com/go-jose/go-jose/v3 v3.0.4
+	github.com/go-jose/go-jose/v3 v3.0.4 // can be upgraded to v4 once we use go 1.21+. see https://github.com/uc-cdis/arborist/pull/181
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.4
