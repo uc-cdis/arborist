@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -67,6 +68,25 @@ func main() {
 		ErrorLog:     httpLogger,
 		Handler:      router,
 	}
-	httpLogger.Println("arborist serving at", httpServer.Addr)
-	httpLogger.Fatal(httpServer.ListenAndServe())
+
+	certPath := "/tls/cert.pem"
+	keyPath := "/tls/key.pem"
+
+	// Check if both certificate and key files exist
+	if _, err := os.Stat(certPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil {
+			// Both files exist, use HTTPS
+			httpLogger.Println("arborist serving at", addr, "with HTTPS")
+			httpLogger.Fatal(httpServer.ListenAndServeTLS(certPath, keyPath))
+		} else {
+			// Certificate exists but key doesn't
+			httpLogger.Printf("WARNING: Certificate found at %s but key file not found at %s, serving over HTTP\n", certPath, keyPath)
+			httpLogger.Println("arborist serving at", httpServer.Addr)
+			httpLogger.Fatal(httpServer.ListenAndServe())
+		}
+	} else {
+		// No certificate found, use HTTP
+		httpLogger.Println("arborist serving at", httpServer.Addr)
+		httpLogger.Fatal(httpServer.ListenAndServe())
+	}
 }
