@@ -974,6 +974,21 @@ paths:
           description: successful granted policies
         404:
           description: user not found, or policy not found
+    delete:
+      tags:
+        - user
+      description: >-
+        Revoke list of policies from a user. The policies must exist and be assigned to the user.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeUserPolicies'
+      responses:
+        204:
+          description: successful revoked policies
+        404:
+          description: user not found, or policy not found
   /user/{username}/policy/{policyName}:
     parameters:
       - in: path
@@ -1625,6 +1640,19 @@ components:
       description: list of policies for a user
       items:
         $ref: '#/components/schemas/GrantUserPolicy'
+    RevokeUserPolicies:
+      type: array
+      description: list of policies to revoke from a user
+      items:
+        $ref: '#/components/schemas/RevokeUserPolicy'
+    RevokeUserPolicy:
+      type: object
+      properties:
+        policy:
+          type: string
+          description: the policy to revoke
+          example: 'policy_name'
+          required: true
     AddUserToGroup:
       type: object
       properties:
