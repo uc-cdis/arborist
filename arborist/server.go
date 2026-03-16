@@ -1448,9 +1448,9 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 			_ = errResponse.write(w, r)
 		}
 	} else {
-		server.logger.Info("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.",
-			policyName, username)
-		_ = jsonResponseFrom(nil, http.StatusBadRequest).write(w, r)
+		msg := fmt.Sprintf("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.", policyName, username)
+		server.logger.Info(msg)
+		_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 	}
 }
 
