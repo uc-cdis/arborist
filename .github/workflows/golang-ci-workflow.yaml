@@ -36,6 +36,9 @@ jobs:
           GO_VERSION: "1.17"
           TESTS_LOCATION: ./arborist/
           COVERAGE_PROFILE_OUTPUT_LOCATION: ${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }}
+          # TODO: reenable linting once arborist uses go 1.18+ and this error is fixed:
+          # `failed to load with go/packages: err: exit status 2: stderr: flag provided but not defined: -buildvcs`
+          LINT_CODE: false
       - name: Send coverage to coveralls using goveralls
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
