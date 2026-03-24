@@ -133,7 +133,7 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PATCH")
-	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
+	router.Handle("/user/{username:.*}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
