@@ -1750,6 +1750,30 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected 400 from trying to create user without name")
 				}
 			})
+
+			t.Run("UsernameWithSlash", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{
+						"name": "username/withslash",
+						"email": "%s"
+					}`,
+					userEmail,
+				))
+				req := newRequest("POST", "/user", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusCreated {
+					httpError(t, w, "couldn't create user")
+				}
+				result := struct {
+					I interface{} `json:"created"`
+				}{}
+				err = json.Unmarshal(w.Body.Bytes(), &result)
+				if err != nil {
+					httpError(t, w, "couldn't read response from user creation")
+				}
+			})
+
 		})
 
 		anonymousPolicies, anonymousResourcePaths, _ := setupAnonymousPolicies(t)
@@ -2159,6 +2183,15 @@ func TestServer(t *testing.T) {
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusNoContent {
 					httpError(t, w, "expected 204 from trying to delete nonexistent user")
+				}
+			})
+
+			t.Run("UsernameWithSlash", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := newRequest("DELETE", "/user/username/withslash", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNoContent {
+					httpError(t, w, "couldn't delete user")
 				}
 			})
 		})
