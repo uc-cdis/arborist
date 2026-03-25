@@ -664,6 +664,30 @@ type AuthMappingQuery struct {
 
 type AuthMapping map[string][]Action
 
+// TODO This is just a patch to filter out excessive resources. When transitioning to pelican import we should have a project_id = xyz parameter instead
+// Future pcdc-20250408
+var authMappingProjectExclusion = `
+ARRAY[
+				'programs.pcdc.projects.20250708.%',
+				'programs.pcdc.projects.20250408.%',
+				'programs.pcdc.projects.20250114.%',
+				'programs.pcdc.projects.20241008.%',
+				'programs.pcdc.projects.20240709.%',
+				'programs.pcdc.projects.20240409.%',
+				'programs.pcdc.projects.20240130.%',
+				'programs.pcdc.projects.20231114.%',
+				'programs.pcdc.projects.20230912.%',
+				'programs.pcdc.projects.20230523.%',
+				'programs.pcdc.projects.20230228.%',
+	            'programs.pcdc.projects.20220808.%',
+				'programs.pcdc.projects.20220501_S01.%',
+				'programs.pcdc.projects.20220201.%',
+	            'programs.pcdc.projects.20220110.%',
+	            'programs.pcdc.projects.20211006.%',
+	            'programs.pcdc.projects.20210915.%',
+	            'programs.pcdc.projects.20210212.%'
+	        ]
+`
 // authMappingForUser gets the auth mapping for the user with this username.
 // The user's auth mapping includes the permissions of the `anonymous` and
 // `logged-in` groups.
@@ -673,28 +697,49 @@ type AuthMapping map[string][]Action
 func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
-		SELECT DISTINCT resource.path, permission.service, permission.method
-		FROM
-		(
-			SELECT usr_policy.policy_id FROM usr
-			INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
-			WHERE LOWER(usr.name) = $1 AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
-			UNION
-			SELECT grp_policy.policy_id FROM usr
-			INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
-			INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
-			WHERE LOWER(usr.name) = $1 AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
-			UNION
-			SELECT grp_policy.policy_id FROM grp
-			INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
-			WHERE grp.name IN ($2, $3)
-		) AS policies
-		INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
-		INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
-		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
-		INNER JOIN permission ON permission.role_id = policy_role.role_id
-		INNER JOIN resource ON resource.path <@ roots.path
+		WITH policies AS (
+		    SELECT usr_policy.policy_id
+		    FROM usr
+		    INNER JOIN usr_policy ON usr_policy.usr_id = usr.id
+		    WHERE LOWER(usr.name) = $1
+		        AND (usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at)
+		    UNION
+		    SELECT grp_policy.policy_id
+		    FROM usr
+		    INNER JOIN usr_grp ON usr_grp.usr_id = usr.id
+		    INNER JOIN grp_policy ON grp_policy.grp_id = usr_grp.grp_id
+		    WHERE LOWER(usr.name) = $1
+		        AND (usr_grp.expires_at IS NULL OR NOW() < usr_grp.expires_at)
+		    UNION
+		    SELECT grp_policy.policy_id
+		    FROM grp
+		    INNER JOIN grp_policy ON grp_policy.grp_id = grp.id
+		    WHERE grp.name IN ($2, $3)
+		),
+		policy_resources AS materialized (
+		    SELECT policies.policy_id, policy_resource.resource_id, roots.path
+		    FROM policies
+		    INNER JOIN policy_resource ON policy_resource.policy_id = policies.policy_id
+		    INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
+		)
+	    SELECT DISTINCT
+	        resource.path,
+	        permission.service,
+	        permission.method
+	    FROM policies
+	    INNER JOIN policy_resources ON policy_resources.policy_id = policies.policy_id
+	    INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
+	    INNER JOIN permission ON permission.role_id = policy_role.role_id
+	    INNER JOIN resource ON resource.path <@ policy_resources.path
+	    WHERE ltree2text(resource.path) NOT LIKE ALL (`
+
+   stmt += authMappingProjectExclusion
+   stmt += `
+	    )
 	`
+	// where resource.path ~ (CAST('programs.pcdc.projects.20230228.*' AS lquery))
+	// where ltree2text(resource.path) not like 'programs.pcdc.projects.20220201.%' and ltree2text(resource.path) not like 'programs.pcdc.projects.20220808.%') as teat;
+		
 	err := db.Select(
 		&mappingQuery,
 		stmt,
@@ -702,6 +747,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 		AnonymousGroup,            // $2
 		LoggedInGroup,             // $3
 	)
+
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error("%s", err.Error())
@@ -732,6 +778,12 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
+		WHERE ltree2text(resource.path) NOT LIKE ALL (`
+
+   	stmt += authMappingProjectExclusion
+   	stmt += `
+	    )
+		
 	`
 	// sqlx.In allows safely binding variable numbers of arguments as bindvars.
 	// See https://jmoiron.github.io/sqlx/#inQueries,
@@ -778,6 +830,11 @@ func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResp
 		INNER JOIN policy_role ON policy_role.policy_id = policies.policy_id
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
+		WHERE ltree2text(resource.path) NOT LIKE ALL (`
+
+   	stmt += authMappingProjectExclusion
+   	stmt += `
+	    )
 	`
 	err := db.Select(
 		&mappingQuery,
