@@ -1453,7 +1453,7 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 		}
 	} else {
 		msg := fmt.Sprintf("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.", policyName, username)
-		server.logger.Info(msg)
+		server.logger.Info("%s", msg)
 		_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 	}
 }
