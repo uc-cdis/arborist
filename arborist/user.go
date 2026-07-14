@@ -137,9 +137,9 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 	err := db.Select(
 		&users,
 		stmt,
-		strings.ToLower(name),  // $1
-		AnonymousGroup,         // $2
-		LoggedInGroup,          // $3
+		strings.ToLower(name), // $1
+		AnonymousGroup,        // $2
+		LoggedInGroup,         // $3
 	)
 	if err != nil {
 		return nil, err
@@ -175,8 +175,8 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 	err := db.Select(
 		&policyInfoList,
 		stmt,
-		strings.ToLower(user_name),   // $1
-		policy_name, // $2
+		strings.ToLower(user_name), // $1
+		policy_name,                // $2
 	)
 	if err != nil {
 		return nil, err
@@ -265,7 +265,7 @@ func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorRes
 			name = COALESCE($1, name),
 			email = COALESCE($2, email)
 		WHERE
-			name = $3
+			LOWER(name) = LOWER($3)
 	`
 	result, err := db.Exec(stmt, name, email, user.Name)
 	if err != nil {
