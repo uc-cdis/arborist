@@ -85,7 +85,7 @@ type LogCache struct {
 
 func (cache *LogCache) write(logger Logger) {
 	for _, log := range cache.logs {
-		logger.Print(log.msg)
+		logger.Print("%s", log.msg)
 	}
 }
 

@@ -133,12 +133,16 @@ func (server *Server) MakeRouter(out io.Writer) http.Handler {
 	router.Handle("/user", http.HandlerFunc(server.parseJSON(server.handleUserCreate))).Methods("POST")
 	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserRead)).Methods("GET")
 	router.Handle("/user/{username}", http.HandlerFunc(server.parseJSON(server.handleUserUpdate))).Methods("PATCH")
-	router.Handle("/user/{username}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.parseJSON(server.handleUserGrantPolicy))).Methods("POST")
-	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST") // NEW bulk grant policy
+	router.Handle("/user/{username}/bulk/policy", http.HandlerFunc(server.parseJSON(server.handleBulkUserGrantPolicy))).Methods("POST")
 	router.Handle("/user/{username}/policy", http.HandlerFunc(server.handleUserRevokeAll)).Methods("DELETE")
 	router.Handle("/user/{username}/policy/{policyName}", http.HandlerFunc(server.handleUserRevokePolicy)).Methods("DELETE")
 	router.Handle("/user/{username}/resources", http.HandlerFunc(server.handleUserListResources)).Methods("GET")
+	// Define this one last because `{username:.*}` matches any character, including slashes.
+	// Other `/user/{username}/xyz` routes must be defined first to be reachable.
+	// Slashes in usernames are not supported by all endpoints, but they should be supported here
+	// so the users can at least be deleted.
+	router.Handle("/user/{username:.*}", http.HandlerFunc(server.handleUserDelete)).Methods("DELETE")
 
 	router.Handle("/client", http.HandlerFunc(server.handleClientList)).Methods("GET")
 	router.Handle("/client", http.HandlerFunc(server.parseJSON(server.handleClientCreate))).Methods("POST")
@@ -1448,9 +1452,9 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 			_ = errResponse.write(w, r)
 		}
 	} else {
-		server.logger.Info("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.",
-			policyName, username)
-		_ = jsonResponseFrom(nil, http.StatusBadRequest).write(w, r)
+		msg := fmt.Sprintf("Policy `%s` does not exist for user `%s`: not revoking. Check if it is assigned through a group.", policyName, username)
+		server.logger.Info("%s", msg)
+		_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 	}
 }
 
