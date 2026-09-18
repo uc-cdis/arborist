@@ -4385,62 +4385,83 @@ func TestServer(t *testing.T) {
 					}
 				})
 
-				t.Run("Policies", func(t *testing.T) {
-					w := httptest.NewRecorder()
-					body := []byte(fmt.Sprintf(
+				t.Run("PoliciesInBodyIgnored", func(t *testing.T) {
+					// The `policies` field in the request body is not consulted:
+					// listing is scoped to the caller's own grants. Naming a policy
+					// the caller does not hold must not surface its resources, and
+					// must not change the result at all.
+					otherUser := "policies-ignored-other-user"
+					leakResourcePath := "/policies-ignored-secret"
+					leakPolicyName := "policies-ignored-secret-policy"
+					createUserBytes(t, []byte(fmt.Sprintf(`{"name": "%s"}`, otherUser)))
+					createResourceBytes(t, []byte(fmt.Sprintf(`{"path": "%s"}`, leakResourcePath)))
+					createPolicyBytes(t, []byte(fmt.Sprintf(
+						`{"id": "%s", "resource_paths": ["%s"], "role_ids": ["%s"]}`,
+						leakPolicyName,
+						leakResourcePath,
+						roleName,
+					)))
+					grantUserPolicy(t, otherUser, leakPolicyName, "null")
+
+					token := TestJWT{username: username}
+					readResources := func(body []byte) []string {
+						w := httptest.NewRecorder()
+						req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+						handler.ServeHTTP(w, req)
+						if w.Code != http.StatusOK {
+							httpError(t, w, "auth resources request failed")
+						}
+						result := struct {
+							Resources []string `json:"resources"`
+						}{}
+						err = json.Unmarshal(w.Body.Bytes(), &result)
+						if err != nil {
+							httpError(t, w, "couldn't read response from auth resources")
+						}
+						return result.Resources
+					}
+
+					// The caller's own effective resources: their direct grant plus
+					// the anonymous and logged-in group resources. Those groups are
+					// the group-based access the removed policies branch used to drop.
+					expected := []string{resourcePath}
+					expected = append(expected, anonymousResourcePaths...)
+					expected = append(expected, loggedInResourcePaths...)
+
+					// Supplying a foreign policy must not leak its resource, and must
+					// return exactly the caller's own resources.
+					withForeign := readResources([]byte(fmt.Sprintf(
 						`{"user": {"token": "%s", "policies": ["%s"]}}`,
 						token.Encode(),
-						policyName,
-					))
-					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusOK {
-						httpError(t, w, "auth resources request failed")
-					}
-					// in this case, since the user has zero access yet, should be empty
-					result := struct {
-						Resources []string `json:"resources"`
-					}{}
-					err = json.Unmarshal(w.Body.Bytes(), &result)
-					if err != nil {
-						httpError(t, w, "couldn't read response from auth resources")
-					}
-					msg := fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+						leakPolicyName,
+					)))
+					assert.NotContains(t, withForeign, leakResourcePath,
+						"listing leaked a resource for a policy the caller does not hold")
+					assert.ElementsMatch(t, expected, withForeign,
+						"body policies changed the result; they must be ignored")
+
+					// Sending no `policies` field yields the same result.
+					withoutField := readResources([]byte(fmt.Sprintf(
+						`{"user": {"token": "%s"}}`,
+						token.Encode(),
+					)))
+					assert.ElementsMatch(t, withForeign, withoutField,
+						"body policies must have no effect on the result")
+
+					revokeUserPolicy(t, otherUser, leakPolicyName)
 				})
 
-				t.Run("PoliciesInjection", func(t *testing.T) {
-					// A policy name is bound as a value, so a quote/paren breakout
-					// resolves to a non-existent policy rather than malforming the SQL.
-					w := httptest.NewRecorder()
+				t.Run("PoliciesInjectionInert", func(t *testing.T) {
+					// The `policies` field is ignored, so a payload in it never
+					// reaches SQL. A stacked-statement payload must be a no-op: the
+					// request succeeds and the usr table survives.
+					token := TestJWT{username: username}
 					body := []byte(fmt.Sprintf(
-						`{"user": {"token": "%s", "policies": ["no') , ('such'"]}}`,
-						token.Encode(),
-					))
-					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusOK {
-						httpError(t, w, "injection payload was not treated as a policy name")
-					}
-					result := struct {
-						Resources []string `json:"resources"`
-					}{}
-					err = json.Unmarshal(w.Body.Bytes(), &result)
-					if err != nil {
-						httpError(t, w, "couldn't read response from auth resources")
-					}
-					msg := fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, []string{}, result.Resources, msg)
-
-					// A stacked-statement payload must not execute the second
-					// statement. Attempt to drop the usr table, then confirm it
-					// still backs an ordinary lookup.
-					w = httptest.NewRecorder()
-					body = []byte(fmt.Sprintf(
 						`{"user": {"token": "%s", "policies": ["x'); DROP TABLE usr; --"]}}`,
 						token.Encode(),
 					))
-					req = newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					w := httptest.NewRecorder()
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
 					handler.ServeHTTP(w, req)
 					assert.Equal(t, http.StatusOK, w.Code, fmt.Sprintf("got response body: %s", w.Body.String()))
 
@@ -4448,28 +4469,8 @@ func TestServer(t *testing.T) {
 					req = newRequest("GET", fmt.Sprintf("/user/%s/resources", username), nil)
 					handler.ServeHTTP(w, req)
 					if w.Code != http.StatusOK {
-						httpError(t, w, "usr table did not survive stacked-statement payload")
+						httpError(t, w, "usr table did not survive injection payload in policies field")
 					}
-
-					// The legitimate policy name still resolves after both attempts,
-					// confirming the bound query is intact and functional.
-					w = httptest.NewRecorder()
-					body = []byte(fmt.Sprintf(
-						`{"user": {"token": "%s", "policies": ["%s"]}}`,
-						token.Encode(),
-						policyName,
-					))
-					req = newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
-					handler.ServeHTTP(w, req)
-					if w.Code != http.StatusOK {
-						httpError(t, w, "auth resources request failed")
-					}
-					err = json.Unmarshal(w.Body.Bytes(), &result)
-					if err != nil {
-						httpError(t, w, "couldn't read response from auth resources")
-					}
-					msg = fmt.Sprintf("got response body: %s", w.Body.String())
-					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
 				})
 
 				t.Run("GET_noDuplicatedMappings", func(t *testing.T) {

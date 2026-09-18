@@ -450,43 +450,9 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 // in the db, this this function will NOT throw an error, but will return only
 // the resources accessible to the `anonymous` and `logged-in` groups.
 //
-// If AuthRequest carries policies, they are used as given and the username is
-// ignored: the result says what those policies grant, not what this user holds.
-// Callers which let request input set the policies must check that the user is
-// entitled to them.
+// The result is resolved from the caller's own grants - the username, or the
+// client ID - and includes group, `anonymous`, and `logged-in` membership.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
-	// if policies are specified in the request, we can use those (simplest query).
-	if len(request.Policies) > 0 {
-		stmt := `
-			SELECT
-				resource.id,
-				resource.name,
-				resource.path,
-				resource.tag,
-				resource.description,
-				array(
-					SELECT child.path
-					FROM resource AS child
-					WHERE child.path ~ (
-						CAST ((ltree2text(resource.path) || '.*{1}') AS lquery)
-					)
-				) AS subresources
-			FROM resource
-			INNER JOIN policy_resource ON resource.id = policy_resource.resource_id
-			INNER JOIN usr_policy ON usr_policy.policy_id = policy_resource.policy_id
-			WHERE (policy_resource.policy_id IN (
-				SELECT id FROM policy WHERE name = ANY($1)
-			)) AND (
-				usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at
-			)
-		`
-		resources := []ResourceFromQuery{}
-		err := db.Select(&resources, stmt, pq.Array(request.Policies))
-		if err != nil {
-			return nil, newErrorResponse("resources query (using policies) failed", 500, &err)
-		}
-		return resources, nil
-	}
 	resources := []ResourceFromQuery{}
 	if request.ClientID == "" {
 		if request.Username == "" {
