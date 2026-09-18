@@ -113,8 +113,8 @@ func (group *Group) users(tx *sqlx.Tx) ([]UserFromQuery, error) {
 		return []UserFromQuery{}, nil
 	}
 	users := []UserFromQuery{}
-	usersStmt := selectInStmt("usr", "name", group.Users)
-	err := tx.Select(&users, usersStmt)
+	usersStmt, usersArg := selectInStmt("usr", "name", group.Users)
+	err := tx.Select(&users, usersStmt, usersArg)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +126,8 @@ func (group *Group) policies(tx *sqlx.Tx) ([]PolicyFromQuery, error) {
 		return []PolicyFromQuery{}, nil
 	}
 	policies := []PolicyFromQuery{}
-	policiesStmt := selectInStmt("policy", "name", group.Policies)
-	err := tx.Select(&policies, policiesStmt)
+	policiesStmt, policiesArg := selectInStmt("policy", "name", group.Policies)
+	err := tx.Select(&policies, policiesStmt, policiesArg)
 	if err != nil {
 		return nil, err
 	}

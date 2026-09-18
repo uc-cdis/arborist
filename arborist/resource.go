@@ -357,19 +357,17 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 			subPathsKeep := []string{}
 			for _, subresource := range resource.Subresources {
 				subresource.addPath(resource.Path)
-				subpath := fmt.Sprintf("'%s'", FormatPathForDb(subresource.Path))
-				subPathsKeep = append(subPathsKeep, subpath)
+				subPathsKeep = append(subPathsKeep, FormatPathForDb(subresource.Path))
 			}
-			stmtFormat := `
+			stmt = `
 				DELETE FROM resource
 				WHERE (
 					path != $1
 					AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
-					AND path NOT IN (%s)
+					AND path != ALL($2::ltree[])
 				)
 			`
-			stmt = fmt.Sprintf(stmtFormat, strings.Join(subPathsKeep, ", "))
-			_, _ = tx.Exec(stmt, path)
+			_, _ = tx.Exec(stmt, path, pq.Array(subPathsKeep))
 		} else {
 			stmt := `
 				DELETE FROM resource

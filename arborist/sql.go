@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 // multiInsertStmt generates a string for a SQL command to insert multiple rows
@@ -40,15 +41,13 @@ func multiInsertStmt(table string, n_rows int) string {
 	return fmt.Sprintf("INSERT INTO %s VALUES %s", table, rowsString)
 }
 
-// `values` must be castable to string.
-func selectInStmt(table string, col string, values []string) string {
-	stmt_values := ""
-	for _, value := range values {
-		stmt_values += fmt.Sprintf("('%s'), ", value)
-	}
-	stmt_values = strings.TrimRight(stmt_values, ", ")
-	stmt := fmt.Sprintf("SELECT %s.* FROM %s INNER JOIN (VALUES %s) values(v) ON %s = v", table, table, stmt_values, col)
-	return stmt
+// selectInStmt builds a query selecting every row of `table` whose `col` matches
+// any of `values`, along with the bind argument carrying those values. `table`
+// and `col` are interpolated and must be trusted (never user input); `values` is
+// always bound as a parameter, never interpolated into the SQL.
+func selectInStmt(table string, col string, values []string) (string, interface{}) {
+	stmt := fmt.Sprintf("SELECT %s.* FROM %s WHERE %s = ANY($1)", table, table, col)
+	return stmt, pq.Array(values)
 }
 
 // transactify lets you pass a `sqlx.DB` to a function which uses a `sqlx.Tx`,
