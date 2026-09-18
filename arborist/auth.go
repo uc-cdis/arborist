@@ -3,7 +3,6 @@ package arborist
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -451,24 +450,14 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 // in the db, this this function will NOT throw an error, but will return only
 // the resources accessible to the `anonymous` and `logged-in` groups.
 //
-// See the FIXME inside. Be careful how this is called, until the implementation is updated.
+// If AuthRequest carries policies, they are used as given and the username is
+// ignored: the result says what those policies grant, not what this user holds.
+// Callers which let request input set the policies must check that the user is
+// entitled to them.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if len(request.Policies) > 0 {
-		values := ""
-		for _, policy := range request.Policies {
-			// FIXME (rudyardrichter, 2019-05-09): this could be a SQL
-			// vulnerability if passed arbitrary inputs. As it is this only
-			// gets passed the policies from decoded validated tokens.
-			values += fmt.Sprintf("('%s'), ", policy)
-		}
-		values = strings.TrimRight(values, ", ")
-		selectPolicyWhereName := fmt.Sprintf(
-			"SELECT id FROM policy INNER JOIN (VALUES %s) values(v) ON name = v",
-			values,
-		)
-		stmt := fmt.Sprintf(
-			`
+		stmt := `
 			SELECT
 				resource.id,
 				resource.name,
@@ -485,14 +474,14 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			FROM resource
 			INNER JOIN policy_resource ON resource.id = policy_resource.resource_id
 			INNER JOIN usr_policy ON usr_policy.policy_id = policy_resource.policy_id
-			WHERE (policy_resource.policy_id IN (%s)) AND (
+			WHERE (policy_resource.policy_id IN (
+				SELECT id FROM policy WHERE name = ANY($1)
+			)) AND (
 				usr_policy.expires_at IS NULL OR NOW() < usr_policy.expires_at
 			)
-			`,
-			selectPolicyWhereName,
-		)
+		`
 		resources := []ResourceFromQuery{}
-		err := db.Select(&resources, stmt)
+		err := db.Select(&resources, stmt, pq.Array(request.Policies))
 		if err != nil {
 			return nil, newErrorResponse("resources query (using policies) failed", 500, &err)
 		}
