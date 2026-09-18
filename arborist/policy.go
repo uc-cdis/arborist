@@ -148,8 +148,8 @@ func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 	for i, path := range policy.ResourcePaths {
 		queryPaths[i] = FormatPathForDb(path)
 	}
-	resourcesStmt := selectInStmt("resource", "ltree2text(path)", queryPaths)
-	err := tx.Select(&resources, resourcesStmt)
+	resourcesStmt, resourcesArg := selectInStmt("resource", "ltree2text(path)", queryPaths)
+	err := tx.Select(&resources, resourcesStmt, resourcesArg)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +160,8 @@ func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 // returned, resulted from the database operation.
 func (policy *Policy) roles(tx *sqlx.Tx) ([]RoleFromQuery, error) {
 	roles := []RoleFromQuery{}
-	rolesStmt := selectInStmt("role", "name", policy.RoleIDs)
-	err := tx.Select(&roles, rolesStmt)
+	rolesStmt, rolesArg := selectInStmt("role", "name", policy.RoleIDs)
+	err := tx.Select(&roles, rolesStmt, rolesArg)
 	if err != nil {
 		return nil, err
 	}

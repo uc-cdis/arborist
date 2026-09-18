@@ -1493,6 +1493,30 @@ func TestServer(t *testing.T) {
 				}
 			})
 
+			t.Run("RoleInjection", func(t *testing.T) {
+				// Role IDs arrive from the request body unencoded, so the
+				// lookup binds them as values: a stacked-statement payload
+				// resolves to a non-existent role rather than executing.
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"id": "testPolicyRoleInjection",
+					"resource_paths": ["/test_resource"],
+					"role_ids": ["x'); DROP TABLE role; --"]
+				}`)
+				req = newRequest("POST", "/policy", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "injection payload was not treated as a role name")
+				}
+
+				w = httptest.NewRecorder()
+				req = newRequest("GET", "/role", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "role table did not survive stacked-statement payload")
+				}
+			})
+
 			t.Run("ResourceNotExist", func(t *testing.T) {
 				w := httptest.NewRecorder()
 				body := []byte(fmt.Sprintf(
@@ -2486,6 +2510,49 @@ func TestServer(t *testing.T) {
 				handler.ServeHTTP(w, req)
 				if w.Code != http.StatusConflict {
 					httpError(t, w, "creating group that already exists didn't error as expected")
+				}
+			})
+
+			t.Run("UsersInjection", func(t *testing.T) {
+				// Group users arrive from the request body unencoded, so the
+				// lookup binds them as values: a stacked-statement payload
+				// resolves to a non-existent user rather than executing.
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"name": "test-group-users-injection",
+					"users": ["x'); DROP TABLE usr; --"]
+				}`)
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "injection payload was not treated as a user name")
+				}
+
+				w = httptest.NewRecorder()
+				req = newRequest("GET", "/user", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "usr table did not survive stacked-statement payload")
+				}
+			})
+
+			t.Run("PoliciesInjection", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{
+					"name": "test-group-policies-injection",
+					"policies": ["x'); DROP TABLE policy; --"]
+				}`)
+				req := newRequest("POST", "/group", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "injection payload was not treated as a policy name")
+				}
+
+				w = httptest.NewRecorder()
+				req = newRequest("GET", "/policy", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusOK {
+					httpError(t, w, "policy table did not survive stacked-statement payload")
 				}
 			})
 		})
@@ -4339,6 +4406,69 @@ func TestServer(t *testing.T) {
 						httpError(t, w, "couldn't read response from auth resources")
 					}
 					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
+				})
+
+				t.Run("PoliciesInjection", func(t *testing.T) {
+					// A policy name is bound as a value, so a quote/paren breakout
+					// resolves to a non-existent policy rather than malforming the SQL.
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(
+						`{"user": {"token": "%s", "policies": ["no') , ('such'"]}}`,
+						token.Encode(),
+					))
+					req := newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "injection payload was not treated as a policy name")
+					}
+					result := struct {
+						Resources []string `json:"resources"`
+					}{}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, []string{}, result.Resources, msg)
+
+					// A stacked-statement payload must not execute the second
+					// statement. Attempt to drop the usr table, then confirm it
+					// still backs an ordinary lookup.
+					w = httptest.NewRecorder()
+					body = []byte(fmt.Sprintf(
+						`{"user": {"token": "%s", "policies": ["x'); DROP TABLE usr; --"]}}`,
+						token.Encode(),
+					))
+					req = newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					assert.Equal(t, http.StatusOK, w.Code, fmt.Sprintf("got response body: %s", w.Body.String()))
+
+					w = httptest.NewRecorder()
+					req = newRequest("GET", fmt.Sprintf("/user/%s/resources", username), nil)
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "usr table did not survive stacked-statement payload")
+					}
+
+					// The legitimate policy name still resolves after both attempts,
+					// confirming the bound query is intact and functional.
+					w = httptest.NewRecorder()
+					body = []byte(fmt.Sprintf(
+						`{"user": {"token": "%s", "policies": ["%s"]}}`,
+						token.Encode(),
+						policyName,
+					))
+					req = newRequest("POST", "/auth/resources", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					if w.Code != http.StatusOK {
+						httpError(t, w, "auth resources request failed")
+					}
+					err = json.Unmarshal(w.Body.Bytes(), &result)
+					if err != nil {
+						httpError(t, w, "couldn't read response from auth resources")
+					}
+					msg = fmt.Sprintf("got response body: %s", w.Body.String())
 					assert.Equal(t, []string{resourcePath}, result.Resources, msg)
 				})
 
