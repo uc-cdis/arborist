@@ -450,7 +450,10 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 // in the db, this this function will NOT throw an error, but will return only
 // the resources accessible to the `anonymous` and `logged-in` groups.
 //
-// See the FIXME inside. Be careful how this is called, until the implementation is updated.
+// If AuthRequest carries policies, they are used as given and the username is
+// ignored: the result says what those policies grant, not what this user holds.
+// Callers which let request input set the policies must check that the user is
+// entitled to them.
 func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	// if policies are specified in the request, we can use those (simplest query).
 	if len(request.Policies) > 0 {
