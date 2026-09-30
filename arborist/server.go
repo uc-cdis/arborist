@@ -681,10 +681,6 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 
 	authRequest.Username = info.username
 	authRequest.ClientID = info.clientID
-	authRequest.Policies = info.policies
-	if request.User.Policies != nil {
-		authRequest.Policies = request.User.Policies
-	}
 	authResources, errResponse := authorizedResources(server.db, authRequest)
 	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
