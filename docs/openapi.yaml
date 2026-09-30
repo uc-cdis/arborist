@@ -250,7 +250,8 @@ paths:
       description: >-
         Given a user token in the Authorization header, return a list of
         resources which are accessible to the user (using any action) according
-        to the policies listed in the token. This includes the resources available 
+        to the policies granted to the user in arborist, directly or through group
+        membership. This includes the resources available 
         to members of the `anonymous` and `logged-in` groups, which apply to all users 
         (anonymous) and to all logged-in users (logged-in).
 
@@ -298,13 +299,18 @@ paths:
       description: >-
         Given a user token in the body of the request, return a list of
         resources which are accessible to the user (using any action) according
-        to the policies listed in the token. This includes the resources available 
+        to the policies granted to the user in arborist, directly or through group
+        membership. This includes the resources available 
         to members of the `anonymous` and `logged-in` groups, which apply to all users 
         (anonymous) and to all logged-in users (logged-in).
 
 
         If the specified user is not recognized by arborist, this endpoint returns
         ONLY the resources available to members of the `anonymous` and `logged-in` groups.
+
+
+        A `policies` field in the request body is ignored; the result is always
+        resolved from the user's own grants.
 
 
         If the `tags` query string parameter is passed, this endpoint returns the resource

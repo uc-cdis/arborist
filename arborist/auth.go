@@ -19,9 +19,10 @@ type AuthRequestJSON struct {
 type AuthRequestJSON_User struct {
 	Token  string `json:"token"`
 	UserId string `json:"user_id"`
-	// The Policies field is optional, and if the request provides a token
-	// this gets filled in using the Token field.
-	// Could use UserId if its provided instead of Token
+	// The Policies field is optional. For POST /auth/request, if it is not
+	// provided, it gets filled in using the Token field (or UserId if that is
+	// provided instead of Token). POST /auth/resources ignores this field and
+	// always resolves resources from the caller's own grants.
 	Policies []string `json:"policies,omitempty"`
 	Scopes   []string `json:"scope,omitempty"`
 }
