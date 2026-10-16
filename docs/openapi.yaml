@@ -1362,6 +1362,12 @@ components:
               description: >-
                 Username of the user registered in arborist
               example: "username"
+        aud:
+          type: array
+          description: Expected receivers or uses of the token
+          items:
+            type: string
+            example: 'gen3'
         request:
           type: object
           description: >-
