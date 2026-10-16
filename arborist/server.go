@@ -472,6 +472,14 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	var aud []string
+	if authRequestJSON.Audiences == nil {
+		aud = DefaultTokenAudiences
+	} else {
+		aud = make([]string, len(authRequestJSON.Audiences))
+		copy(aud, authRequestJSON.Audiences)
+	}
+
 	var scopes []string
 	if authRequestJSON.User.Scopes == nil {
 		scopes = []string{"openid"}
@@ -489,7 +497,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 	var info *TokenInfo
 	if !isAnonymous && authRequestJSON.User.Token != "" {
-		info, err = server.decodeToken(authRequestJSON.User.Token, DefaultTokenAudiences, scopes)
+		info, err = server.decodeToken(authRequestJSON.User.Token, aud, scopes)
 		if err != nil {
 			server.logger.Info("%s", err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
