@@ -89,6 +89,7 @@ func (testJWT *TestJWT) Encode() string {
 	if len(testJWT.audiences) > 0 {
 		if len(testJWT.audiences) > 1 {
 			panic("these tests assume the jwt only contains one audience")
+			// TODO add tests for no aud and more than 1 aud
 		}
 		aud = testJWT.audiences[0]
 	}
@@ -3269,6 +3270,15 @@ func TestServer(t *testing.T) {
 					}
 					assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
 				})
+
+				t.Run("audienceInBody", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"username": "%s", "aud": ["%s"]}`, username, "not-the-same-aud"))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, 400, w.Code, msg)
+				})
 			})
 
 			t.Run("POST_token", func(t *testing.T) {
@@ -3353,6 +3363,74 @@ func TestServer(t *testing.T) {
 						httpError(t, w, "couldn't read response from auth mapping")
 					}
 					assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
+				})
+
+				t.Run("Audience", func(t *testing.T) {
+					t.Run("DefaultTokenAud", func(t *testing.T) {
+						tokenNoAud := TestJWT{username: username}
+
+						t.Run("BodyAudNotSpecified", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("POST", "/auth/mapping", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 200, w.Code, msg)
+						})
+
+						t.Run("BodyAudMatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, DefaultTokenAudience))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 200, w.Code, msg)
+						})
+
+						t.Run("BodyAudMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, "not-the-same-aud"))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
+					})
+					t.Run("CustomTokenAud", func(t *testing.T) {
+						const CustomAud string = "custom-aud"
+						tokenWithAud := TestJWT{username: username, audiences: []string{CustomAud}}
+
+						t.Run("BodyAudNotSpecified", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("POST", "/auth/mapping", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
+
+						t.Run("BodyAudMatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, CustomAud))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 200, w.Code, msg)
+						})
+
+						t.Run("BodyAudMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, "not-the-same-aud"))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
+					})
 				})
 			})
 

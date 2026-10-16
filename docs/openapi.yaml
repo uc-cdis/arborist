@@ -1364,8 +1364,7 @@ components:
               example: "username"
         aud:
           type: array
-          description: >-
-            Expected receivers or uses of the token
+          description: Expected receivers or uses of the token
           items:
             type: string
             example: 'gen3'
