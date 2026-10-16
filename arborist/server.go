@@ -256,10 +256,21 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
+
+		aud := []string{}
+		audQS, ok := r.URL.Query()["aud"]
+		if ok {
+			for _, a := range audQS {
+				aud = append(aud, a)
+			}
+		} else {
+			aud = DefaultExpectedTokenAudiences
+		}
+
 		// TODO get provided `aud` (query param?) and default to `DefaultExpectedTokenAudiences`
 		// or just don't support a non-default `aud` for this endpoint until we have a use case
 		// for it?
-		info, err := server.decodeToken(userJWT, DefaultExpectedTokenAudiences, scopes)
+		info, err := server.decodeToken(userJWT, aud, scopes)
 		if err != nil {
 			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
