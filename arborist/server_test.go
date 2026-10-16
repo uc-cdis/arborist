@@ -3406,7 +3406,7 @@ func TestServer(t *testing.T) {
 
 			t.Run("Audience", func(t *testing.T) {
 				t.Run("DefaultTokenAud", func(t *testing.T) {
-					token = TestJWT{username: username}
+					tokenNoAud := TestJWT{username: username}
 
 					t.Run("RequestAudNotSpecified", func(t *testing.T) {
 						w = httptest.NewRecorder()
@@ -3421,7 +3421,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenNoAud.Encode(),
 							resourcePath,
 							serviceName,
 							methodName,
@@ -3447,7 +3447,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenNoAud.Encode(),
 							DefaultTokenAudience,
 							resourcePath,
 							serviceName,
@@ -3474,7 +3474,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenNoAud.Encode(),
 							"not-the-same-aud",
 							resourcePath,
 							serviceName,
@@ -3489,7 +3489,7 @@ func TestServer(t *testing.T) {
 				})
 				t.Run("CustomTokenAud", func(t *testing.T) {
 					const CustomAud string = "custom-aud"
-					token = TestJWT{username: username, audiences: []string{CustomAud}}
+					tokenWithAud := TestJWT{username: username, audiences: []string{CustomAud}}
 
 					t.Run("RequestAudNotSpecified", func(t *testing.T) {
 						w = httptest.NewRecorder()
@@ -3504,7 +3504,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenWithAud.Encode(),
 							resourcePath,
 							serviceName,
 							methodName,
@@ -3530,7 +3530,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenWithAud.Encode(),
 							CustomAud,
 							resourcePath,
 							serviceName,
@@ -3557,7 +3557,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							token.Encode(),
+							tokenWithAud.Encode(),
 							"not-the-same-aud",
 							resourcePath,
 							serviceName,
