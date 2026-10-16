@@ -18,6 +18,10 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const DefaultTokenAudience = "gen3"
+
+var DefaultTokenAudiences = []string{DefaultTokenAudience}
+
 type JWTDecoder interface {
 	Decode(string) (*map[string]interface{}, error)
 }
@@ -252,12 +256,12 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
-		info, err := server.decodeToken(userJWT, scopes)
+		info, err := server.decodeToken(userJWT, DefaultTokenAudiences, scopes)
 		if err != nil {
-			// Return 400 on failure to decode JWT
+			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info("%s", msg)
-			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
+			_ = jsonResponseFrom(msg, http.StatusUnauthorized).write(w, r)
 			return
 		}
 		server.logger.Info("found username in jwt: %s", info.username)
@@ -310,7 +314,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
-		info, err := server.decodeToken(userJWT, scopes)
+		info, err := server.decodeToken(userJWT, DefaultTokenAudiences, scopes)
 		if err != nil {
 			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username/client ID from jwt, but jwt decode failed: %s", err.Error())
@@ -485,7 +489,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 	var info *TokenInfo
 	if !isAnonymous && authRequestJSON.User.Token != "" {
-		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
+		info, err = server.decodeToken(authRequestJSON.User.Token, DefaultTokenAudiences, scopes)
 		if err != nil {
 			server.logger.Info("%s", err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
@@ -671,7 +675,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 		copy(scopes, request.User.Scopes)
 	}
 
-	info, err := server.decodeToken(request.User.Token, scopes)
+	info, err := server.decodeToken(request.User.Token, DefaultTokenAudiences, scopes)
 	if err != nil {
 		server.logger.Info("%s", err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)

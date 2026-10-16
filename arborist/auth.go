@@ -403,7 +403,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	return &AuthResponse{result}, nil
 }
 
-func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
+func authRequestFromGET(decode func(string, []string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
 	resourcePath := ""
 	resourcePathQS, ok := r.URL.Query()["resource"]
 	if ok {
@@ -428,7 +428,7 @@ func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *ht
 	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 	userJWT = strings.TrimPrefix(userJWT, "bearer ")
 	scopes := []string{"openid"}
-	info, err := decode(userJWT, scopes)
+	info, err := decode(userJWT, DefaultTokenAudiences, scopes)
 	if err != nil {
 		return nil, newErrorResponse(err.Error(), 401, &err)
 	}

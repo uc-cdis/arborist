@@ -87,6 +87,7 @@ func (testJWT *TestJWT) Encode() string {
 		if testJWT.username != "" {
 			payload = []byte(fmt.Sprintf(
 				`{
+					"aud": ["gen3"],
 					"scope": ["openid"],
 					"exp": %d,
 					"sub": "0",
@@ -104,6 +105,7 @@ func (testJWT *TestJWT) Encode() string {
 		} else { // client_credentials token
 			payload = []byte(fmt.Sprintf(
 				`{
+					"aud": ["gen3"],
 					"scope": ["openid"],
 					"exp": %d,
 					"context": {},
@@ -117,6 +119,7 @@ func (testJWT *TestJWT) Encode() string {
 		policies := fmt.Sprintf(`["%s"]`, strings.Join(testJWT.policies, `", "`))
 		payload = []byte(fmt.Sprintf(
 			`{
+				"aud": ["gen3"],
 				"scope": ["openid"],
 				"exp": %d,
 				"sub": "0",
