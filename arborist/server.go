@@ -257,7 +257,6 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 
-		// TODO multiple aud values
 		aud := []string{}
 		audQS, ok := r.URL.Query()["aud"]
 		if ok && len(audQS) > 0 {
