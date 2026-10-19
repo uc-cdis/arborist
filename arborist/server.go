@@ -257,21 +257,18 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 
-		// TODO add `aud` to openapi doc and gen3authz
+		// TODO add `aud` to gen3authz
 		// TODO what happens if `?aud=` empty?
+		// TODO multiple aud values
 		aud := []string{}
-		server.logger.Info("r.URL.Query() = %v", r.URL.Query())
 		audQS, ok := r.URL.Query()["aud"]
-		server.logger.Info("ok = %v", ok)
 		if ok {
-			server.logger.Info("audQS = %v", audQS)
 			for _, a := range audQS {
 				aud = append(aud, a)
 			}
 		} else {
 			aud = DefaultExpectedTokenAudiences
 		}
-		server.logger.Info("final aud = %v", aud)
 
 		info, err := server.decodeToken(userJWT, aud, scopes)
 		if err != nil {
@@ -296,7 +293,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 		return
 	} else {
-		// If no username provided in query string or JWT, return the
+		// If no username provided in the JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
 		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
 		if errResponse != nil {
@@ -385,7 +382,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		username = requestBody.Username
 		clientID = requestBody.ClientID
 		if requestBody.Audiences != nil {
-			// TODO add `aud` to openapi doc and gen3authz
+			// TODO add `aud` to gen3authz
 			msg := "`aud` cannot be specified in the request body when a token is not provided"
 			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)

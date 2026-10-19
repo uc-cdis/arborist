@@ -45,6 +45,13 @@ paths:
           schema:
             type: string
           required: false
+        - in: query
+          name: aud
+          description: Expected receivers or uses of the token
+          schema:
+            type: string
+            example: 'gen3'
+          required: false
       responses:
         200:
           description: successful response
@@ -82,6 +89,9 @@ paths:
         If a token is provided and is linked to a client but is NOT linked to a user, the client's mapping is returned.
 
 
+        If a token is provided, the `aud` field can be provided as well to ensure the token is validated against the appropriate audience.
+
+
         If no token is provided, this endpoint accepts a username OR a client ID in the body, but not both.
 
 
@@ -116,6 +126,12 @@ paths:
                 clientID:
                   type: string
                   description: the client in arborist to return results for
+                aud:
+                  type: array
+                  description: Expected receivers or uses of the token
+                  items:
+                    type: string
+                    example: 'gen3'
       responses:
         200:
           description: successful response
