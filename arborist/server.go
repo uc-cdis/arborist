@@ -257,19 +257,22 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 
+		// TODO add `aud` to openapi doc and gen3authz
+		// TODO what happens if `?aud=` empty?
 		aud := []string{}
+		server.logger.Info("r.URL.Query() = %v", r.URL.Query())
 		audQS, ok := r.URL.Query()["aud"]
+		server.logger.Info("ok = %v", ok)
 		if ok {
+			server.logger.Info("audQS = %v", audQS)
 			for _, a := range audQS {
 				aud = append(aud, a)
 			}
 		} else {
 			aud = DefaultExpectedTokenAudiences
 		}
+		server.logger.Info("final aud = %v", aud)
 
-		// TODO get provided `aud` (query param?) and default to `DefaultExpectedTokenAudiences`
-		// or just don't support a non-default `aud` for this endpoint until we have a use case
-		// for it?
 		info, err := server.decodeToken(userJWT, aud, scopes)
 		if err != nil {
 			// Return 401 on failure to decode JWT
@@ -382,7 +385,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		username = requestBody.Username
 		clientID = requestBody.ClientID
 		if requestBody.Audiences != nil {
-			// TODO add `aud` to openapi doc
+			// TODO add `aud` to openapi doc and gen3authz
 			msg := "`aud` cannot be specified in the request body when a token is not provided"
 			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
