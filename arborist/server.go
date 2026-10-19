@@ -257,12 +257,10 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
 
-		// TODO add `aud` to gen3authz
-		// TODO what happens if `?aud=` empty?
 		// TODO multiple aud values
 		aud := []string{}
 		audQS, ok := r.URL.Query()["aud"]
-		if ok {
+		if ok && len(audQS) > 0 {
 			for _, a := range audQS {
 				aud = append(aud, a)
 			}
@@ -382,7 +380,6 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		username = requestBody.Username
 		clientID = requestBody.ClientID
 		if requestBody.Audiences != nil {
-			// TODO add `aud` to gen3authz
 			msg := "`aud` cannot be specified in the request body when a token is not provided"
 			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)

@@ -85,20 +85,21 @@ func (testJWT *TestJWT) Encode() string {
 	if exp == 0 {
 		exp = time.Now().Unix() + 10000
 	}
-	aud := DefaultTokenAudience
+	aud := []string{DefaultTokenAudience}
 	if len(testJWT.audiences) > 0 {
-		if len(testJWT.audiences) > 1 {
-			panic("these tests assume the jwt only contains one audience")
-			// TODO add tests for no aud and more than 1 aud
-		}
-		aud = testJWT.audiences[0]
+		aud = testJWT.audiences
 	}
+	audBytes, err := json.Marshal(aud)
+	if err != nil {
+		log.Fatalf("Error marshaling aud to JSON: %v", err)
+	}
+
 	var payload []byte
 	if len(testJWT.policies) == 0 {
 		if testJWT.username != "" {
 			payload = []byte(fmt.Sprintf(
 				`{
-					"aud": ["%s"],
+					"aud": %s,
 					"scope": ["openid"],
 					"exp": %d,
 					"sub": "0",
@@ -109,7 +110,7 @@ func (testJWT *TestJWT) Encode() string {
 					},
 					"azp": "%s"
 				}`,
-				aud,
+				audBytes,
 				exp,
 				testJWT.username,
 				testJWT.clientID,
@@ -3162,6 +3163,15 @@ func TestServer(t *testing.T) {
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
 							assert.Equal(t, 401, w.Code, msg)
 						})
+
+						t.Run("QueryAudEmptyMatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("GET", "/auth/mapping?aud=", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
 					})
 					t.Run("CustomTokenAud", func(t *testing.T) {
 						const CustomAud string = "custom-aud"
@@ -3188,6 +3198,35 @@ func TestServer(t *testing.T) {
 						t.Run("QueryAudMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", "not-the-same-aud"), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
+
+						t.Run("QueryAudEmptyMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("GET", "/auth/mapping?aud=", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 401, w.Code, msg)
+						})
+
+						t.Run("QueryAudMultipleMatch", func(t *testing.T) {
+							tokenWithMultipleAud := TestJWT{username: username, audiences: []string{DefaultTokenAudience, CustomAud}}
+							w := httptest.NewRecorder()
+							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", DefaultTokenAudience, CustomAud), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, 200, w.Code, msg)
+						})
+
+						t.Run("QueryAudMultipleMismatch", func(t *testing.T) {
+							const CustomAud string = "custom-aud"
+							w := httptest.NewRecorder()
+							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", CustomAud, "not-the-same-aud"), nil)
 							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
