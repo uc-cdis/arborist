@@ -714,7 +714,8 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 		copy(scopes, request.User.Scopes)
 	}
 
-	// TODO get provided `aud` and default to `DefaultExpectedTokenAudiences`
+	// NOTE: `POST /auth/resources` does not support a custom token audience parameter yet.
+	// This endpoint assumes the token has `aud=gen3`.
 	info, err := server.decodeToken(request.User.Token, DefaultExpectedTokenAudiences, scopes)
 	if err != nil {
 		server.logger.Info("%s", err.Error())

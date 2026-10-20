@@ -429,9 +429,9 @@ func authRequestFromGET(decode func(string, []string, []string) (*TokenInfo, err
 	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 	userJWT = strings.TrimPrefix(userJWT, "bearer ")
 	scopes := []string{"openid"}
-	// TODO get provided `aud` from `handleAuthProxy` or `handleListAuthResourcesGET` and default
-	// to `DefaultExpectedTokenAudiences`
-	// or document that these endpoints assume the token has `aud=gen3`
+
+	// NOTE: `GET /auth/proxy` and `GET /auth/resources` do not support a custom token audience
+	// parameter yet. These endpoints assume the token has `aud=gen3`.
 	info, err := decode(userJWT, DefaultExpectedTokenAudiences, scopes)
 	if err != nil {
 		return nil, newErrorResponse(err.Error(), 401, &err)
