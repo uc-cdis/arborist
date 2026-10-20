@@ -223,6 +223,10 @@ paths:
         If the given JWT has `azp` field, the permission of
         the corresponding client will be also checked; only when both the user
         and the client have permission can the response be positive.
+
+
+        NOTE: This endpoint does not support a custom token audience parameter yet. It assumes
+        the token has `aud=gen3`.
       parameters:
         - in: query
           name: resource
@@ -282,6 +286,10 @@ paths:
 
         If the `tags` query string parameter is passed, this endpoint returns the resource
         tags for the resources, not the resources themselves.
+
+
+        NOTE: This endpoint does not support a custom token audience parameter yet. It assumes
+        the token has `aud=gen3`.
       parameters:
         - in: header
           name: Authorization
@@ -331,6 +339,10 @@ paths:
 
         If the `tags` query string parameter is passed, this endpoint returns the resource
         tags for the resources, not the resources themselves.
+
+
+        NOTE: This endpoint does not support a custom token audience parameter yet. It assumes
+        the token has `aud=gen3`.
       parameters:
         - in: query
           name: tags
