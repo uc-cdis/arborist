@@ -265,7 +265,8 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 					aud = append(aud, a)
 				}
 			}
-		} else {
+		}
+		if len(aud) == 0 {
 			aud = DefaultExpectedTokenAudiences
 		}
 
@@ -342,7 +343,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		scopes := []string{"openid"}
 
 		var aud []string
-		if requestBody.Audiences == nil {
+		if requestBody.Audiences == nil || len(requestBody.Audiences) == 0 {
 			aud = DefaultExpectedTokenAudiences
 		} else {
 			aud = make([]string, len(requestBody.Audiences))
@@ -506,7 +507,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	var aud []string
-	if authRequestJSON.Audiences == nil {
+	if authRequestJSON.Audiences == nil || len(authRequestJSON.Audiences) == 0 {
 		aud = DefaultExpectedTokenAudiences
 	} else {
 		aud = make([]string, len(authRequestJSON.Audiences))
