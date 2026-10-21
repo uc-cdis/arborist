@@ -28,6 +28,8 @@ import (
 
 const DefaultTokenAudience = "gen3"
 
+var DefaultExpectedTokenAudiences = []string{DefaultTokenAudience}
+
 // For testing we use a mock JWT decoder which will always just return all the
 // claims without trying to make HTTP calls or validating the token. The test
 // server is set up using this mock JWT app to skip validation.
@@ -85,7 +87,7 @@ func (testJWT *TestJWT) Encode() string {
 	if exp == 0 {
 		exp = time.Now().Unix() + 10000
 	}
-	aud := []string{DefaultTokenAudience}
+	aud := []string{}
 	if len(testJWT.audiences) > 0 {
 		aud = testJWT.audiences
 	}
@@ -3020,6 +3022,11 @@ func TestServer(t *testing.T) {
 	t.Run("Auth", func(t *testing.T) {
 		tearDown := testSetup(t)
 
+		const CustomAud string = "custom-aud"
+		tokenWithCustomAud := TestJWT{username: username, audiences: []string{CustomAud}}
+		tokenWithoutAud := TestJWT{username: username}
+		tokenWithMultipleAud := TestJWT{username: username, audiences: []string{DefaultTokenAudience, CustomAud}}
+
 		t.Run("Mapping", func(t *testing.T) {
 			setupTestPolicy(t)
 			_, _, anonymousAuthMapping := setupAnonymousPolicies(t)
@@ -3127,7 +3134,7 @@ func TestServer(t *testing.T) {
 				w := httptest.NewRecorder()
 				url := "/auth/mapping"
 				req := newRequest("GET", url, nil)
-				token := TestJWT{username: username}
+				token := TestJWT{username: username, audiences: DefaultExpectedTokenAudiences}
 				req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 				handler.ServeHTTP(w, req)
 				// expect to receive user's auth mappings, as well as auth mappings of anonymous and logged-in policies
@@ -3135,102 +3142,118 @@ func TestServer(t *testing.T) {
 
 				t.Run("Audience", func(t *testing.T) {
 					t.Run("DefaultTokenAud", func(t *testing.T) {
-						tokenNoAud := TestJWT{username: username}
-
 						t.Run("QueryAudNotSpecified", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", "/auth/mapping", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("QueryAudMatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", DefaultTokenAudience), nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("QueryAudMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", "not-the-same-aud"), nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
-						})
-
-						t.Run("QueryAudEmptyMatch", func(t *testing.T) {
-							w := httptest.NewRecorder()
-							req := newRequest("GET", "/auth/mapping?aud=", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
-							handler.ServeHTTP(w, req)
-							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 					})
 					t.Run("CustomTokenAud", func(t *testing.T) {
-						const CustomAud string = "custom-aud"
-						tokenWithAud := TestJWT{username: username, audiences: []string{CustomAud}}
-
 						t.Run("QueryAudNotSpecified", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", "/auth/mapping", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 
 						t.Run("QueryAudMatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", CustomAud), nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("QueryAudMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", "not-the-same-aud"), nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+					})
+
+					t.Run("EmptyAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("GET", "/auth/mapping?aud=", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithoutAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusOK, w.Code, msg)
+						})
+
+						t.Run("QueryAudNonEmptyMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s", DefaultTokenAudience), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithoutAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 
 						t.Run("QueryAudEmptyMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", "/auth/mapping?aud=", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
+					})
 
-						t.Run("QueryAudMultipleMatch", func(t *testing.T) {
-							tokenWithMultipleAud := TestJWT{username: username, audiences: []string{DefaultTokenAudience, CustomAud}}
+					t.Run("MultipleAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", DefaultTokenAudience, CustomAud), nil)
 							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
-						t.Run("QueryAudMultipleMismatch", func(t *testing.T) {
-							const CustomAud string = "custom-aud"
+						t.Run("MultipleTokenAudMismatch", func(t *testing.T) {
+							// one requested audience matches, one doesn't
 							w := httptest.NewRecorder()
-							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", CustomAud, "not-the-same-aud"), nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", DefaultTokenAudience, "not-the-same-aud"), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+
+						t.Run("SingleTokenAudMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", DefaultTokenAudience, "not-the-same-aud"), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 					})
 				})
@@ -3469,69 +3492,130 @@ func TestServer(t *testing.T) {
 				})
 
 				t.Run("Audience", func(t *testing.T) {
-					t.Run("DefaultTokenAud", func(t *testing.T) {
-						tokenNoAud := TestJWT{username: username}
+					token := TestJWT{username: username, audiences: DefaultExpectedTokenAudiences}
 
+					t.Run("DefaultTokenAud", func(t *testing.T) {
 						t.Run("BodyAudNotSpecified", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("POST", "/auth/mapping", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("BodyAudMatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, DefaultTokenAudience))
 							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("BodyAudMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, "not-the-same-aud"))
 							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenNoAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 					})
 					t.Run("CustomTokenAud", func(t *testing.T) {
-						const CustomAud string = "custom-aud"
-						tokenWithAud := TestJWT{username: username, audiences: []string{CustomAud}}
-
 						t.Run("BodyAudNotSpecified", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							req := newRequest("POST", "/auth/mapping", nil)
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 
 						t.Run("BodyAudMatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, CustomAud))
 							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 200, w.Code, msg)
+							assert.Equal(t, http.StatusOK, w.Code, msg)
 						})
 
 						t.Run("BodyAudMismatch", func(t *testing.T) {
 							w := httptest.NewRecorder()
 							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, "not-the-same-aud"))
 							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
-							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithAud.Encode()))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithCustomAud.Encode()))
 							handler.ServeHTTP(w, req)
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
-							assert.Equal(t, 401, w.Code, msg)
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+					})
+
+					t.Run("EmptyAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": []}`))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithoutAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusOK, w.Code, msg)
+						})
+
+						t.Run("BodyAudNonEmptyMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							req := newRequest("POST", "/auth/mapping", nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithoutAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+
+						t.Run("BodyAudEmptyMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": []}`))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+					})
+
+					t.Run("MultipleAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s", "%s"]}`, DefaultTokenAudience, CustomAud))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusOK, w.Code, msg)
+						})
+
+						t.Run("MultipleTokenAudMismatch", func(t *testing.T) {
+							// one requested audience matches, one doesn't
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s", "%s"]}`, DefaultTokenAudience, "not-the-same-aud"))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+						})
+
+						t.Run("SingleTokenAudMismatch", func(t *testing.T) {
+							w := httptest.NewRecorder()
+							body := []byte(fmt.Sprintf(`{"aud": ["%s"]}`, "not-the-same-aud"))
+							req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+							handler.ServeHTTP(w, req)
+							msg := fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 						})
 					})
 				})
@@ -3587,8 +3671,6 @@ func TestServer(t *testing.T) {
 
 			t.Run("Audience", func(t *testing.T) {
 				t.Run("DefaultTokenAud", func(t *testing.T) {
-					tokenNoAud := TestJWT{username: username}
-
 					t.Run("RequestAudNotSpecified", func(t *testing.T) {
 						w = httptest.NewRecorder()
 						body = []byte(fmt.Sprintf(
@@ -3602,7 +3684,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenNoAud.Encode(),
+							token.Encode(),
 							resourcePath,
 							serviceName,
 							methodName,
@@ -3628,7 +3710,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenNoAud.Encode(),
+							token.Encode(),
 							DefaultTokenAudience,
 							resourcePath,
 							serviceName,
@@ -3655,7 +3737,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenNoAud.Encode(),
+							token.Encode(),
 							"not-the-same-aud",
 							resourcePath,
 							serviceName,
@@ -3669,9 +3751,6 @@ func TestServer(t *testing.T) {
 					})
 				})
 				t.Run("CustomTokenAud", func(t *testing.T) {
-					const CustomAud string = "custom-aud"
-					tokenWithAud := TestJWT{username: username, audiences: []string{CustomAud}}
-
 					t.Run("RequestAudNotSpecified", func(t *testing.T) {
 						w = httptest.NewRecorder()
 						body = []byte(fmt.Sprintf(
@@ -3685,7 +3764,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenWithAud.Encode(),
+							tokenWithCustomAud.Encode(),
 							resourcePath,
 							serviceName,
 							methodName,
@@ -3711,7 +3790,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenWithAud.Encode(),
+							tokenWithCustomAud.Encode(),
 							CustomAud,
 							resourcePath,
 							serviceName,
@@ -3738,7 +3817,7 @@ func TestServer(t *testing.T) {
 									}
 								}
 							}`,
-							tokenWithAud.Encode(),
+							tokenWithCustomAud.Encode(),
 							"not-the-same-aud",
 							resourcePath,
 							serviceName,
@@ -3749,6 +3828,174 @@ func TestServer(t *testing.T) {
 						if w.Code != http.StatusUnauthorized {
 							httpError(t, w, "auth request should have failed")
 						}
+					})
+
+					t.Run("EmptyAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": [],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								tokenWithoutAud.Encode(),
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusOK {
+								httpError(t, w, "auth request failed")
+							}
+						})
+
+						t.Run("RequestAudNonEmptyMismatch", func(t *testing.T) {
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": ["%s"],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								tokenWithoutAud.Encode(),
+								"not-the-same-aud",
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusUnauthorized {
+								httpError(t, w, "auth request failed")
+							}
+						})
+
+						t.Run("RequestAudEmptyMismatch", func(t *testing.T) {
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": [],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								token.Encode(),
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusUnauthorized {
+								httpError(t, w, "auth request failed")
+							}
+						})
+					})
+
+					t.Run("MultipleAud", func(t *testing.T) {
+						t.Run("Match", func(t *testing.T) {
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": ["%s", "%s"],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								tokenWithMultipleAud.Encode(),
+								DefaultTokenAudience,
+								CustomAud,
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusOK {
+								httpError(t, w, "auth request failed")
+							}
+						})
+
+						t.Run("MultipleTokenAudMismatch", func(t *testing.T) {
+							// one requested audience matches, one doesn't
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": ["%s", "%s"],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								tokenWithMultipleAud.Encode(),
+								DefaultTokenAudience,
+								"not-the-same-aud",
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusUnauthorized {
+								httpError(t, w, "auth request failed")
+							}
+						})
+
+						t.Run("SingleTokenAudMismatch", func(t *testing.T) {
+							w = httptest.NewRecorder()
+							body = []byte(fmt.Sprintf(
+								`{
+								"user": {"token": "%s"},
+								"aud": ["%s", "%s"],
+								"request": {
+									"resource": "%s",
+									"action": {
+										"service": "%s",
+										"method": "%s"
+									}
+								}
+							}`,
+								token.Encode(),
+								DefaultTokenAudience,
+								CustomAud,
+								resourcePath,
+								serviceName,
+								methodName,
+							))
+							req = newRequest("POST", "/auth/request", bytes.NewBuffer(body))
+							handler.ServeHTTP(w, req)
+							if w.Code != http.StatusUnauthorized {
+								httpError(t, w, "auth request failed")
+							}
+						})
 					})
 				})
 			})
