@@ -259,9 +259,11 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 
 		aud := []string{}
 		audQS, ok := r.URL.Query()["aud"]
-		if ok && len(audQS) > 0 {
+		if ok {
 			for _, a := range audQS {
-				aud = append(aud, a)
+				if len(a) > 0 {
+					aud = append(aud, a)
+				}
 			}
 		} else {
 			aud = DefaultExpectedTokenAudiences
