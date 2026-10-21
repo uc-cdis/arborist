@@ -330,7 +330,6 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			_ = errResponse.write(w, r)
 			return
 		}
-		fmt.Println(requestBody)
 	}
 
 	username := ""
