@@ -11,10 +11,9 @@ import (
 )
 
 type AuthRequestJSON struct {
-	User      AuthRequestJSON_User      `json:"user"`
-	Audiences []string                  `json:"aud"`
-	Request   *AuthRequestJSON_Request  `json:"request"`
-	Requests  []AuthRequestJSON_Request `json:"requests"`
+	User     AuthRequestJSON_User      `json:"user"`
+	Request  *AuthRequestJSON_Request  `json:"request"`
+	Requests []AuthRequestJSON_Request `json:"requests"`
 }
 
 type AuthRequestJSON_User struct {
@@ -404,7 +403,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	return &AuthResponse{result}, nil
 }
 
-func authRequestFromGET(decode func(string, []string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
+func authRequestFromGET(decode func(string, []string) (*TokenInfo, error), r *http.Request) (*AuthRequest, *ErrorResponse) {
 	resourcePath := ""
 	resourcePathQS, ok := r.URL.Query()["resource"]
 	if ok {
@@ -429,10 +428,7 @@ func authRequestFromGET(decode func(string, []string, []string) (*TokenInfo, err
 	userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 	userJWT = strings.TrimPrefix(userJWT, "bearer ")
 	scopes := []string{"openid"}
-
-	// NOTE: `GET /auth/proxy` and `GET /auth/resources` do not support a custom token audience
-	// parameter yet. These endpoints assume the token has `aud=gen3`.
-	info, err := decode(userJWT, DefaultExpectedTokenAudiences, scopes)
+	info, err := decode(userJWT, scopes)
 	if err != nil {
 		return nil, newErrorResponse(err.Error(), 401, &err)
 	}
