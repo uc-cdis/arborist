@@ -18,10 +18,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const DefaultTokenAudience = "gen3"
-
-var DefaultExpectedTokenAudiences = []string{DefaultTokenAudience}
-
 type JWTDecoder interface {
 	Decode(string) (*map[string]interface{}, error)
 }
@@ -256,26 +252,12 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
-
-		aud := []string{}
-		audQS, ok := r.URL.Query()["aud"]
-		if ok {
-			for _, a := range audQS {
-				if len(a) > 0 {
-					aud = append(aud, a)
-				}
-			}
-		}
-		if len(aud) == 0 {
-			aud = DefaultExpectedTokenAudiences
-		}
-
-		info, err := server.decodeToken(userJWT, aud, scopes)
+		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
-			// Return 401 on failure to decode JWT
+			// Return 400 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username from jwt, but jwt decode failed: %s", err.Error())
 			server.logger.Info("%s", msg)
-			_ = jsonResponseFrom(msg, http.StatusUnauthorized).write(w, r)
+			_ = jsonResponseFrom(msg, http.StatusBadRequest).write(w, r)
 			return
 		}
 		server.logger.Info("found username in jwt: %s", info.username)
@@ -293,7 +275,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 		_ = jsonResponseFrom(mappings, http.StatusOK).write(w, r)
 		return
 	} else {
-		// If no username provided in the JWT, return the
+		// If no username provided in query string or JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
 		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
 		if errResponse != nil {
@@ -309,9 +291,8 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request) {
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
-		Username  string   `json:"username"`
-		ClientID  string   `json:"clientID"`
-		Audiences []string `json:"aud"`
+		Username string `json:"username"`
+		ClientID string `json:"clientID"`
 	}{}
 
 	body, err := server.parseJsonBody(w, r)
@@ -319,17 +300,6 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		err.log.write(server.logger)
 		_ = err.write(w, r)
 		return
-	}
-
-	if len(body) > 0 {
-		errResp := json.Unmarshal(body, &requestBody)
-		if errResp != nil {
-			msg := fmt.Sprintf("could not parse JSON: %s", errResp.Error())
-			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
-			errResponse = newErrorResponse(msg, 400, nil)
-			_ = errResponse.write(w, r)
-			return
-		}
 	}
 
 	username := ""
@@ -340,16 +310,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
 		userJWT = strings.TrimPrefix(userJWT, "bearer ")
 		scopes := []string{"openid"}
-
-		var aud []string
-		if len(requestBody.Audiences) == 0 {
-			aud = DefaultExpectedTokenAudiences
-		} else {
-			aud = make([]string, len(requestBody.Audiences))
-			copy(aud, requestBody.Audiences)
-		}
-
-		info, err := server.decodeToken(userJWT, aud, scopes)
+		info, err := server.decodeToken(userJWT, scopes)
 		if err != nil {
 			// Return 401 on failure to decode JWT
 			msg := fmt.Sprintf("tried to get username/client ID from jwt, but jwt decode failed: %s", err.Error())
@@ -378,19 +339,21 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	} else if len(body) > 0 {
 		// If they are not present in the token, fallback on the request body
 		server.logger.Info("No jwt provided, checking request body")
-		username = requestBody.Username
-		clientID = requestBody.ClientID
-		if requestBody.Audiences != nil {
-			msg := "`aud` cannot be specified in the request body when a token is not provided"
-			server.logger.Info("%s", msg)
+		err := json.Unmarshal(body, &requestBody)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse JSON: %s", err.Error())
+			server.logger.Error("tried to handle auth mapping request but input was invalid: %s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
-			_ = errResponse.write(w, r)
-			return
+		} else {
+			username = requestBody.Username
+			clientID = requestBody.ClientID
+			if (username == "") == (clientID == "") {
+				msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
+				server.logger.Info("%s", msg)
+				errResponse = newErrorResponse(msg, 400, nil)
+			}
 		}
-		if (username == "") == (clientID == "") {
-			msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
-			server.logger.Info("%s", msg)
-			errResponse = newErrorResponse(msg, 400, nil)
+		if errResponse != nil {
 			_ = errResponse.write(w, r)
 			return
 		}
@@ -505,14 +468,6 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	var aud []string
-	if len(authRequestJSON.Audiences) == 0 {
-		aud = DefaultExpectedTokenAudiences
-	} else {
-		aud = make([]string, len(authRequestJSON.Audiences))
-		copy(aud, authRequestJSON.Audiences)
-	}
-
 	var scopes []string
 	if authRequestJSON.User.Scopes == nil {
 		scopes = []string{"openid"}
@@ -530,7 +485,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 
 	var info *TokenInfo
 	if !isAnonymous && authRequestJSON.User.Token != "" {
-		info, err = server.decodeToken(authRequestJSON.User.Token, aud, scopes)
+		info, err = server.decodeToken(authRequestJSON.User.Token, scopes)
 		if err != nil {
 			server.logger.Info("%s", err.Error())
 			errResponse := newErrorResponse(err.Error(), 401, &err)
@@ -716,9 +671,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 		copy(scopes, request.User.Scopes)
 	}
 
-	// NOTE: `POST /auth/resources` does not support a custom token audience parameter yet.
-	// This endpoint assumes the token has `aud=gen3`.
-	info, err := server.decodeToken(request.User.Token, DefaultExpectedTokenAudiences, scopes)
+	info, err := server.decodeToken(request.User.Token, scopes)
 	if err != nil {
 		server.logger.Info("%s", err.Error())
 		errResponse := newErrorResponse(err.Error(), 401, &err)
