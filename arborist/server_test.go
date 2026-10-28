@@ -3537,6 +3537,28 @@ func TestServer(t *testing.T) {
 					assert.Equal(t, map[string][]arborist.Action{}, result, "expected an empty result")
 				})
 
+				t.Run("usernameInToken_clientIdInBody", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"clientID": "%s"}`, clientID))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Encode()))
+					handler.ServeHTTP(w, req)
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, 400, w.Code, msg)
+					assert.Contains(t, w.Body.String(), "`username` or `clientID` cannot be specified in the request body when a token is provided")
+				})
+
+				t.Run("clientIdInToken_usernameInBody", func(t *testing.T) {
+					w := httptest.NewRecorder()
+					body := []byte(fmt.Sprintf(`{"username": "%s"}`, username))
+					req := newRequest("POST", "/auth/mapping", bytes.NewBuffer(body))
+					req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithClientOnly.Encode()))
+					handler.ServeHTTP(w, req)
+					msg := fmt.Sprintf("got response body: %s", w.Body.String())
+					assert.Equal(t, 400, w.Code, msg)
+					assert.Contains(t, w.Body.String(), "`username` or `clientID` cannot be specified in the request body when a token is provided")
+				})
+
 				t.Run("Audience", func(t *testing.T) {
 					t.Run("DefaultTokenAud", func(t *testing.T) {
 						t.Run("BodyAudNotSpecified", func(t *testing.T) {

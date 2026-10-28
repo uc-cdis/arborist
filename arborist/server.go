@@ -335,6 +335,14 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	clientID := requestBody.ClientID
 
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		if username != "" || clientID != "" {
+			msg := "`username` or `clientID` cannot be specified in the request body when a token is provided"
+			server.logger.Info("%s", msg)
+			errResponse = newErrorResponse(msg, 400, nil)
+			_ = errResponse.write(w, r)
+			return
+		}
+
 		// Try to get username or clientID from the JWT.
 		server.logger.Info("Attempting to get username or client ID from jwt...")
 		userJWT := strings.TrimPrefix(authHeader, "Bearer ")
@@ -379,6 +387,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 		// If they are not present in the token, fallback on the request body
 		server.logger.Info("No jwt provided, checking request body")
 		if requestBody.Audiences != nil {
+			// there is no token, so the audience cannot be validated, so the aud param is rejected
 			msg := "`aud` cannot be specified in the request body when a token is not provided"
 			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
