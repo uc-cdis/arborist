@@ -331,9 +331,9 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
+	username := requestBody.Username
+	clientID := requestBody.ClientID
 
-	username := ""
-	clientID := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		// Try to get username or clientID from the JWT.
 		server.logger.Info("Attempting to get username or client ID from jwt...")
@@ -375,11 +375,9 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			_ = errResponse.write(w, r)
 			return
 		}
-	} else if len(body) > 0 {
+	} else if username != "" || clientID != "" {
 		// If they are not present in the token, fallback on the request body
 		server.logger.Info("No jwt provided, checking request body")
-		username = requestBody.Username
-		clientID = requestBody.ClientID
 		if requestBody.Audiences != nil {
 			msg := "`aud` cannot be specified in the request body when a token is not provided"
 			server.logger.Info("%s", msg)
@@ -387,8 +385,8 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 			_ = errResponse.write(w, r)
 			return
 		}
-		if (username == "") == (clientID == "") {
-			msg := "must provide a token or specify exactly one of `username` or `clientID` in the request body"
+		if username != "" && clientID != "" {
+			msg := "Only one of `username` or `clientID` can be specified in the request body. This endpoint only supports returning the user's mapping, not the combination of user+client access"
 			server.logger.Info("%s", msg)
 			errResponse = newErrorResponse(msg, 400, nil)
 			_ = errResponse.write(w, r)
