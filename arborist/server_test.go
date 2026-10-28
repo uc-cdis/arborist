@@ -3285,6 +3285,16 @@ func TestServer(t *testing.T) {
 							msg := fmt.Sprintf("got response body: %s", w.Body.String())
 							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
 							assert.Contains(t, w.Body.String(), fmt.Sprintf("token missing required audience (at least one of: %s)", "not-the-same-aud"))
+
+							// same, but requesting multiple audiences, none of which match the
+							// token
+							w = httptest.NewRecorder()
+							req = newRequest("GET", fmt.Sprintf("/auth/mapping?aud=%s&aud=%s", "not-the-same-aud", "not-the-same-aud2"), nil)
+							req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenWithMultipleAud.Encode()))
+							handler.ServeHTTP(w, req)
+							msg = fmt.Sprintf("got response body: %s", w.Body.String())
+							assert.Equal(t, http.StatusUnauthorized, w.Code, msg)
+							assert.Contains(t, w.Body.String(), fmt.Sprintf("token missing required audience (at least one of: %s, %s)", "not-the-same-aud", "not-the-same-aud2"))
 						})
 
 						t.Run("SingleTokenAudMatch", func(t *testing.T) {
