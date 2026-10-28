@@ -9,7 +9,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
-	github.com/uc-cdis/go-authutils v0.1.3-0.20261027224007-ce3924e0b215
+	github.com/uc-cdis/go-authutils v0.1.3-0.20261028153253-7897f0125407
 )
 
 require (
