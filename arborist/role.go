@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -90,7 +91,7 @@ func (roleFromQuery *RoleFromQuery) standardize() Role {
 	return role
 }
 
-func roleWithName(db *sqlx.DB, name string) (*RoleFromQuery, error) {
+func roleWithName(ctx context.Context, db *sqlx.DB, name string) (*RoleFromQuery, error) {
 	stmt := `
 		SELECT
 			role.id,
@@ -103,7 +104,7 @@ func roleWithName(db *sqlx.DB, name string) (*RoleFromQuery, error) {
 		LIMIT 1
 	`
 	roles := []RoleFromQuery{}
-	err := db.Select(&roles, stmt, name)
+	err := db.SelectContext(ctx, &roles, stmt, name)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func roleWithName(db *sqlx.DB, name string) (*RoleFromQuery, error) {
 	return &role, nil
 }
 
-func rolesWithNames(db *sqlx.DB, roleNames []string) ([]RoleFromQuery, error) {
+func rolesWithNames(ctx context.Context, db *sqlx.DB, roleNames []string) ([]RoleFromQuery, error) {
 	roleNamesString := "'" + strings.Join(roleNames, "','") + "'"
 	stmtFormat := `
 		SELECT
@@ -129,7 +130,7 @@ func rolesWithNames(db *sqlx.DB, roleNames []string) ([]RoleFromQuery, error) {
 	stmt := fmt.Sprintf(stmtFormat, roleNamesString)
 
 	roles := []RoleFromQuery{}
-	err := db.Select(&roles, stmt)
+	err := db.SelectContext(ctx, &roles, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func rolesWithNames(db *sqlx.DB, roleNames []string) ([]RoleFromQuery, error) {
 	return roles, nil
 }
 
-func listRolesFromDb(db *sqlx.DB) ([]RoleFromQuery, error) {
+func listRolesFromDb(ctx context.Context, db *sqlx.DB) ([]RoleFromQuery, error) {
 	stmt := `
 		SELECT
 			role.id,
@@ -150,20 +151,20 @@ func listRolesFromDb(db *sqlx.DB) ([]RoleFromQuery, error) {
 		GROUP BY role.id
 	`
 	roles := []RoleFromQuery{}
-	err := db.Select(&roles, stmt)
+	err := db.SelectContext(ctx, &roles, stmt)
 	if err != nil {
 		return nil, err
 	}
 	return roles, nil
 }
 
-func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
+func (role *Role) createInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
 	errResponse := role.validate()
 	if errResponse != nil {
 		return errResponse
 	}
 
-	tx, err := db.Beginx()
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -180,7 +181,7 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 		VALUES ($1, $2)
 		RETURNING id
 	`
-	row := tx.QueryRowx(stmt, role.Name, role.Description)
+	row := tx.QueryRowxContext(ctx, stmt, role.Name, role.Description)
 	err = row.Scan(&roleID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
@@ -218,7 +219,7 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 		}
 		permissionRows = append(permissionRows, row...)
 	}
-	_, err = tx.Exec(stmt, permissionRows...)
+	_, err = tx.ExecContext(ctx, stmt, permissionRows...)
 	if err != nil {
 		_ = tx.Rollback()
 		msg := fmt.Sprintf("couldn't create permissions: %s", err.Error())
@@ -235,13 +236,13 @@ func (role *Role) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
+func (role *Role) overwriteInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
 	errResponse := role.validate()
 	if errResponse != nil {
 		return errResponse
 	}
 
-	tx, err := db.Beginx()
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -255,7 +256,7 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 		SET description = $2
 		RETURNING id
 	`
-	row := tx.QueryRowx(stmt, role.Name, role.Description)
+	row := tx.QueryRowxContext(ctx, stmt, role.Name, role.Description)
 	err = row.Scan(&roleID)
 	if err != nil {
 		_ = tx.Rollback()
@@ -286,7 +287,7 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 			)
 			return newErrorResponse(msg, 500, &err)
 		}
-		_, err = tx.Exec(
+		_, err = tx.ExecContext(ctx,
 			stmt,
 			roleID,
 			permission.Name,
@@ -312,9 +313,9 @@ func (role *Role) overwriteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func (role *Role) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (role *Role) deleteInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM role WHERE name = $1"
-	_, err := db.Exec(stmt, role.Name)
+	_, err := db.ExecContext(ctx, stmt, role.Name)
 	if err != nil {
 		// TODO: verify correct error
 		msg := fmt.Sprintf("failed to delete role: role does not exist: `%s", role.Name)

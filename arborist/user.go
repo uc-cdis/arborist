@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -85,7 +86,7 @@ func (userFromQuery *UserFromQuery) standardize() User {
 	return user
 }
 
-func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
+func userWithName(ctx context.Context, db *sqlx.DB, name string) (*UserFromQuery, error) {
 	// NOTE @mpingram 2019-12-11: An explanation of the user's policies and their expiration
 	// dates returned from this query.
 	// The user's policies can come from three different sources, and policies from different
@@ -134,7 +135,7 @@ func userWithName(db *sqlx.DB, name string) (*UserFromQuery, error) {
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
-	err := db.Select(
+	err := db.SelectContext(ctx,
 		&users,
 		stmt,
 		strings.ToLower(name),  // $1
@@ -162,7 +163,7 @@ type UserPolicyInfoFromQuery struct {
 	AuthzProvider sql.NullString `db:"authz_provider"`
 }
 
-func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*UserPolicyInfoFromQuery, error) {
+func fetchUserPolicyInfo(ctx context.Context, db *sqlx.DB, user_name string, policy_name string) (*UserPolicyInfoFromQuery, error) {
 
 	stmt := `
 		SELECT usr.name as username, policy.name AS policy_name, usr_policy.expires_at as expires_at, usr_policy.authz_provider as authz_provider
@@ -172,7 +173,7 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 			WHERE LOWER(usr.name) like $1 and policy.name like $2;
 	`
 	policyInfoList := []UserPolicyInfoFromQuery{}
-	err := db.Select(
+	err := db.SelectContext(ctx,
 		&policyInfoList,
 		stmt,
 		strings.ToLower(user_name),   // $1
@@ -193,7 +194,7 @@ func fetchUserPolicyInfo(db *sqlx.DB, user_name string, policy_name string) (*Us
 	return &policyInfo, nil
 }
 
-func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
+func listUsersFromDb(ctx context.Context, db *sqlx.DB) ([]UserFromQuery, error) {
 	stmt := `
 		SELECT
 			usr.id,
@@ -212,15 +213,15 @@ func listUsersFromDb(db *sqlx.DB) ([]UserFromQuery, error) {
 		GROUP BY usr.id
 	`
 	users := []UserFromQuery{}
-	err := db.Select(&users, stmt)
+	err := db.SelectContext(ctx, &users, stmt)
 	if err != nil {
 		return nil, err
 	}
 	return users, nil
 }
 
-func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
-	tx, err := db.Beginx()
+func (user *User) createInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -237,7 +238,7 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 		VALUES ($1, $2)
 		RETURNING id
 	`
-	row := tx.QueryRowx(stmt, user.Name, user.Email)
+	row := tx.QueryRowxContext(ctx, stmt, user.Name, user.Email)
 	err = row.Scan(&userID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
@@ -258,7 +259,7 @@ func (user *User) createInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorResponse {
+func (user *User) updateInDb(ctx context.Context, db *sqlx.DB, name *string, email *string) *ErrorResponse {
 	stmt := `
 		UPDATE usr
 		SET
@@ -267,7 +268,7 @@ func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorRes
 		WHERE
 			name = $3
 	`
-	result, err := db.Exec(stmt, name, email, user.Name)
+	result, err := db.ExecContext(ctx, stmt, name, email, user.Name)
 	if err != nil {
 		// this should only fail because the target name was not unique
 		msg := fmt.Sprintf(`failed to update name to "%s": user with this name already exists`, *name)
@@ -285,9 +286,9 @@ func (user *User) updateInDb(db *sqlx.DB, name *string, email *string) *ErrorRes
 	return nil
 }
 
-func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (user *User) deleteInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM usr WHERE name = $1"
-	_, err := db.Exec(stmt, user.Name)
+	_, err := db.ExecContext(ctx, stmt, user.Name)
 	if err != nil {
 		// TODO: verify correct error
 		// user does not exist; that's fine
@@ -296,15 +297,15 @@ func (user *User) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
+func grantUserPolicy(ctx context.Context, db *sqlx.DB, username string, policyName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		INSERT INTO usr_policy(usr_id, policy_id, expires_at, authz_provider)
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3, $4)
 		ON CONFLICT (usr_id, policy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, policyName, expiresAt, authzProvider)
+	_, err := db.ExecContext(ctx, stmt, username, policyName, expiresAt, authzProvider)
 	if err != nil {
-		user, err := userWithName(db, username)
+		user, err := userWithName(ctx, db, username)
 		if user == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to user: user does not exist: %s",
@@ -316,7 +317,7 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt 
 			msg := "user query failed"
 			return newErrorResponse(msg, 500, &err)
 		}
-		policy, err := policyWithName(db, policyName)
+		policy, err := policyWithName(ctx, db, policyName)
 		if policy == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to user: policy does not exist: %s",
@@ -333,7 +334,7 @@ func grantUserPolicy(db *sqlx.DB, username string, policyName string, expiresAt 
 	return nil
 }
 
-func revokeUserPolicy(db *sqlx.DB, username string, policyName string, authzProvider sql.NullString) *ErrorResponse {
+func revokeUserPolicy(ctx context.Context, db *sqlx.DB, username string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
@@ -342,9 +343,9 @@ func revokeUserPolicy(db *sqlx.DB, username string, policyName string, authzProv
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $3"
-		_, err = db.Exec(stmt, username, policyName, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, username, policyName, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, username, policyName)
+		_, err = db.ExecContext(ctx, stmt, username, policyName)
 	}
 	if err != nil {
 		msg := "revoke policy query failed"
@@ -353,7 +354,7 @@ func revokeUserPolicy(db *sqlx.DB, username string, policyName string, authzProv
 	return nil
 }
 
-func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
+func revokeUserPolicyAll(ctx context.Context, db *sqlx.DB, username string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_policy
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
@@ -361,9 +362,9 @@ func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullStr
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $2"
-		_, err = db.Exec(stmt, username, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, username, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, username)
+		_, err = db.ExecContext(ctx, stmt, username)
 	}
 	if err != nil {
 		msg := "revoke policy query failed"
@@ -372,7 +373,7 @@ func revokeUserPolicyAll(db *sqlx.DB, username string, authzProvider sql.NullStr
 	return nil
 }
 
-func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
+func addUserToGroup(ctx context.Context, db *sqlx.DB, username string, groupName string, expiresAt *time.Time, authzProvider sql.NullString) *ErrorResponse {
 	if groupName == AnonymousGroup || groupName == LoggedInGroup {
 		return newErrorResponse("can't add users to built-in groups", 400, nil)
 	}
@@ -384,9 +385,9 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 		VALUES ((SELECT id FROM usr WHERE name = $1), (SELECT id FROM grp WHERE name = $2), $3, $4)
 		ON CONFLICT (usr_id, grp_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
 	`
-	_, err := db.Exec(stmt, username, groupName, expiresAt, authzProvider)
+	_, err := db.ExecContext(ctx, stmt, username, groupName, expiresAt, authzProvider)
 	if err != nil {
-		user, err := userWithName(db, username)
+		user, err := userWithName(ctx, db, username)
 		if user == nil {
 			msg := fmt.Sprintf(
 				"failed to add user to group: user does not exist: `%s`",
@@ -398,7 +399,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 			msg := "user query failed"
 			return newErrorResponse(msg, 500, &err)
 		}
-		group, err := groupWithName(db, groupName)
+		group, err := groupWithName(ctx, db, groupName)
 		if group == nil {
 			msg := fmt.Sprintf(
 				"failed to add user to group: group does not exist: %s",
@@ -415,7 +416,7 @@ func addUserToGroup(db *sqlx.DB, username string, groupName string, expiresAt *t
 	return nil
 }
 
-func removeUserFromGroup(db *sqlx.DB, username string, groupName string, authzProvider sql.NullString) *ErrorResponse {
+func removeUserFromGroup(ctx context.Context, db *sqlx.DB, username string, groupName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM usr_grp
 		WHERE usr_id = (SELECT id FROM usr WHERE name = $1)
@@ -424,9 +425,9 @@ func removeUserFromGroup(db *sqlx.DB, username string, groupName string, authzPr
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $3"
-		_, err = db.Exec(stmt, username, groupName, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, username, groupName, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, username, groupName)
+		_, err = db.ExecContext(ctx, stmt, username, groupName)
 	}
 	if err != nil {
 		msg := "remove user from group query failed"

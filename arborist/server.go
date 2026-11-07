@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -249,6 +250,7 @@ func handleNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// Try to get username from the JWT.
 	username := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
@@ -284,7 +286,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 
 	usernameProvided := username != ""
 	if usernameProvided {
-		mappings, errResponse := authMappingForUser(server.db, username)
+		mappings, errResponse := authMappingForUser(ctx, server.db, username)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -295,7 +297,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 	} else {
 		// If no username provided in the JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
-		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		mappings, errResponse := authMappingForGroups(ctx, server.db, AnonymousGroup)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -307,6 +309,7 @@ func (server *Server) handleAuthMappingGET(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var errResponse *ErrorResponse = nil
 	requestBody := struct {
 		Username  string   `json:"username"`
@@ -404,7 +407,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 	} else {
 		// If no username or client ID provided in query string or JWT, return the
 		// auth mapping for the `anonymous` group. (See `docs/username.md` for more detail)
-		mappings, errResponse := authMappingForGroups(server.db, AnonymousGroup)
+		mappings, errResponse := authMappingForGroups(ctx, server.db, AnonymousGroup)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -416,9 +419,9 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 
 	var mappings AuthMapping
 	if clientID != "" {
-		mappings, errResponse = authMappingForClient(server.db, clientID)
+		mappings, errResponse = authMappingForClient(ctx, server.db, clientID)
 	} else {
-		mappings, errResponse = authMappingForUser(server.db, username)
+		mappings, errResponse = authMappingForUser(ctx, server.db, username)
 	}
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
@@ -429,6 +432,7 @@ func (server *Server) handleAuthMappingPOST(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	authRequest, errResponse := authRequestFromGET(server.decodeToken, r)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
@@ -465,7 +469,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 	rv.Auth = true
 	var err error = nil
 	if authRequest.Username != "" {
-		rv, err = authorizeUser(authRequest)
+		rv, err = authorizeUser(ctx, authRequest)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize user: %s", err.Error())
 			server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -480,7 +484,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if rv.Auth && authRequest.ClientID != "" {
-		rv, err = authorizeClient(authRequest)
+		rv, err = authorizeClient(ctx, authRequest)
 		if err != nil {
 			msg := fmt.Sprintf("could not authorize client: %s", err.Error())
 			server.logger.Info("error during client auth check: %s", msg)
@@ -502,6 +506,7 @@ func (server *Server) handleAuthProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	authRequestJSON := &AuthRequestJSON{}
 	err := json.Unmarshal(body, authRequestJSON)
 	if err != nil {
@@ -580,7 +585,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 				Method:   authRequest.Action.Method,
 				stmts:    server.stmts,
 			}
-			rv, err := authorizeAnonymous(&request)
+			rv, err := authorizeAnonymous(ctx, &request)
 			if err != nil {
 				msg := fmt.Sprintf("could not authorize: %s", err.Error())
 				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -622,7 +627,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 		rv := &AuthResponse{}
 		rv.Auth = true
 		if request.Username != "" {
-			rv, err = authorizeUser(request)
+			rv, err = authorizeUser(ctx, request)
 			if err != nil {
 				msg := fmt.Sprintf("could not authorize user: %s", err.Error())
 				server.logger.Info("tried to handle auth request but input was invalid: %s", msg)
@@ -637,7 +642,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		if rv.Auth && request.ClientID != "" {
-			rv, err = authorizeClient(request)
+			rv, err = authorizeClient(ctx, request)
 			if err == nil && rv.Auth {
 				server.logger.Debug("client is authorized")
 			} else {
@@ -664,6 +669,7 @@ func (server *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request, 
 }
 
 func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
 	hasJWT := r.Header.Get("Authorization") != ""
@@ -679,19 +685,20 @@ func (server *Server) handleListAuthResourcesGET(w http.ResponseWriter, r *http.
 	}
 
 	if hasJWT && usernameInJWT {
-		authResources, errResponse := authorizedResources(server.db, authRequest)
+		authResources, errResponse := authorizedResources(ctx, server.db, authRequest)
 		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	} else {
 		// If no JWT is provided or no username in JWT, return only `anonymous` policies.
 		// See `docs/username.md` for more details.
-		authResources, errResponse := authorizedResourcesForGroups(server.db, AnonymousGroup)
+		authResources, errResponse := authorizedResourcesForGroups(ctx, server.db, AnonymousGroup)
 		server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 		return
 	}
 }
 
 func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	authRequest := &AuthRequest{}
 	var errResponse *ErrorResponse
 	request := struct {
@@ -735,7 +742,7 @@ func (server *Server) handleListAuthResourcesPOST(w http.ResponseWriter, r *http
 
 	authRequest.Username = info.username
 	authRequest.ClientID = info.clientID
-	authResources, errResponse := authorizedResources(server.db, authRequest)
+	authResources, errResponse := authorizedResources(ctx, server.db, authRequest)
 	server.makeAuthResourcesResponse(w, r, authResources, errResponse)
 }
 
@@ -774,8 +781,9 @@ func (server *Server) makeAuthResourcesResponse(w http.ResponseWriter, r *http.R
 }
 
 func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	_, expandFlag := r.URL.Query()["expand"]
-	policiesFromQuery, err := listPoliciesFromDb(server.db)
+	policiesFromQuery, err := listPoliciesFromDb(ctx, server.db)
 	if err != nil {
 		msg := fmt.Sprintf("policies query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -798,7 +806,7 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 	if expandFlag {
 		// query role details
 		roleMap := make(map[string]Role) // {role ID: role instance} map
-		rolesFromQuery, err := rolesWithNames(server.db, allPoliciesRoleIDs)
+		rolesFromQuery, err := rolesWithNames(ctx, server.db, allPoliciesRoleIDs)
 		if err != nil {
 			msg := fmt.Sprintf("unable to list roles with IDs %v: %s", allPoliciesRoleIDs, err.Error())
 			errResponse := newErrorResponse(msg, 400, nil)
@@ -845,6 +853,7 @@ func (server *Server) handlePolicyList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	policy := &Policy{}
 	err := json.Unmarshal(body, policy)
 	if err != nil {
@@ -854,7 +863,7 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := transactify(server.db, policy.createInDb)
+	errResponse := transactify(ctx, server.db, policy.createInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -870,13 +879,14 @@ func (server *Server) handlePolicyCreate(w http.ResponseWriter, r *http.Request,
 }
 
 func (server *Server) overwritePolicy(w http.ResponseWriter, r *http.Request, policy Policy) *ErrorResponse {
+	ctx := r.Context()
 	// Overwrite policy name from json with policy name from query arg.
 	// After 3.0.0, when PUT /policy is deprecated and only PUT /policy/{policyID} is allowed,
 	// can remove the !="" check. For now, if policy name not found in url, default to name in json.
 	if mux.Vars(r)["policyID"] != "" {
 		policy.Name = mux.Vars(r)["policyID"]
 	}
-	errResponse := transactify(server.db, policy.updateInDb)
+	errResponse := transactify(ctx, server.db, policy.updateInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -933,8 +943,9 @@ func (server *Server) handleBulkPoliciesOverwrite(w http.ResponseWriter, r *http
 }
 
 func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["policyID"]
-	policyFromQuery, err := policyWithName(server.db, name)
+	policyFromQuery, err := policyWithName(ctx, server.db, name)
 	if policyFromQuery == nil {
 		msg := fmt.Sprintf("no policy found with id: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -954,9 +965,10 @@ func (server *Server) handlePolicyRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["policyID"]
 	policy := &Policy{Name: name}
-	errResponse := transactify(server.db, policy.deleteInDb)
+	errResponse := transactify(ctx, server.db, policy.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -967,7 +979,8 @@ func (server *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request)
 }
 
 func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request) {
-	resourcesFromQuery, err := listResourcesFromDb(server.db)
+	ctx := r.Context()
+	resourcesFromQuery, err := listResourcesFromDb(ctx, server.db)
 	resources := []ResourceOut{}
 	for _, resourceFromQuery := range resourcesFromQuery {
 		resources = append(resources, resourceFromQuery.standardize())
@@ -990,6 +1003,7 @@ func (server *Server) handleResourceList(w http.ResponseWriter, r *http.Request)
 var regSlashes *regexp.Regexp = regexp.MustCompile(`/+`)
 
 func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	// parse & validate resource input
 	resource := &ResourceIn{}
 	errResponse := unmarshal(body, resource)
@@ -1011,26 +1025,26 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		for i := 0; i < len(segments)-1; i++ {
 			path := "/" + strings.Join(segments[:i+1], "/")
 			toCreate := ResourceIn{Path: path}
-			_ = transactify(server.db, toCreate.createRecursively)
+			_ = transactify(ctx, server.db, toCreate.createRecursively)
 		}
 	}
 
 	write := resource.createInDb
 	if r.Method == "PUT" {
 		_, mergeFlag := r.URL.Query()["merge"]
-		write = func(tx *sqlx.Tx) *ErrorResponse {
-			return resource.updateInDb(tx, mergeFlag)
+		write = func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
+			return resource.updateInDb(ctx, tx, mergeFlag)
 		}
 	}
 	// Read the resource back inside the same transaction: if the commit
 	// succeeds this is exactly what was written, and if it fails nothing was.
 	var created *ResourceFromQuery
-	errResponse = transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse {
-		if errResponse := write(tx); errResponse != nil {
+	errResponse = transactify(ctx, server.db, func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
+		if errResponse := write(ctx, tx); errResponse != nil {
 			return errResponse
 		}
 		var err error
-		created, err = resourceWithPath(tx, resource.Path)
+		created, err = resourceWithPath(ctx, tx, resource.Path)
 		if err != nil {
 			msg := fmt.Sprintf("couldn't read back resource %s: %s", resource.Path, err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -1048,7 +1062,7 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		}
 		if errResponse.HTTPError.Code == 409 {
 			// nothing was written; if the requested resource exists, include it
-			existing, err := resourceWithPath(server.db, resource.Path)
+			existing, err := resourceWithPath(ctx, server.db, resource.Path)
 			if err == nil && existing != nil {
 				out := existing.standardize()
 				server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
@@ -1079,8 +1093,9 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	path := parseResourcePath(r)
-	resourceFromQuery, err := resourceWithPath(server.db, path)
+	resourceFromQuery, err := resourceWithPath(ctx, server.db, path)
 	if resourceFromQuery == nil {
 		msg := fmt.Sprintf("no resource found with path: `%s`", path)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1099,8 +1114,9 @@ func (server *Server) handleResourceRead(w http.ResponseWriter, r *http.Request)
 }
 
 func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	tag := mux.Vars(r)["tag"]
-	resourceFromQuery, err := resourceWithTag(server.db, tag)
+	resourceFromQuery, err := resourceWithTag(ctx, server.db, tag)
 	if resourceFromQuery == nil {
 		msg := fmt.Sprintf("no resource found with tag: `%s`", tag)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1119,9 +1135,10 @@ func (server *Server) handleResourceReadByTag(w http.ResponseWriter, r *http.Req
 }
 
 func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	path := parseResourcePath(r)
 	resource := ResourceIn{Path: path}
-	errResponse := transactify(server.db, resource.deleteInDb)
+	errResponse := transactify(ctx, server.db, resource.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1132,7 +1149,8 @@ func (server *Server) handleResourceDelete(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
-	rolesFromQuery, err := listRolesFromDb(server.db)
+	ctx := r.Context()
+	rolesFromQuery, err := listRolesFromDb(ctx, server.db)
 	if err != nil {
 		msg := fmt.Sprintf("roles query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1153,6 +1171,7 @@ func (server *Server) handleRoleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	role := &Role{}
 	err := json.Unmarshal(body, role)
 	if err != nil {
@@ -1162,7 +1181,7 @@ func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, b
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := role.createInDb(server.db)
+	errResponse := role.createInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1178,8 +1197,9 @@ func (server *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request, b
 }
 
 func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["roleID"]
-	roleFromQuery, err := roleWithName(server.db, name)
+	roleFromQuery, err := roleWithName(ctx, server.db, name)
 	if roleFromQuery == nil {
 		msg := fmt.Sprintf("no role found with id: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1199,6 +1219,7 @@ func (server *Server) handleRoleRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	role := &Role{}
 	err := json.Unmarshal(body, role)
 	if err != nil {
@@ -1218,7 +1239,7 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	roleFromQuery, err := roleWithName(server.db, name)
+	roleFromQuery, err := roleWithName(ctx, server.db, name)
 	if err != nil {
 		msg := fmt.Sprintf("role query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1229,7 +1250,7 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 
 	var errResponse *ErrorResponse
 	if roleFromQuery == nil {
-		errResponse = role.createInDb(server.db)
+		errResponse = role.createInDb(ctx, server.db)
 		if errResponse != nil {
 			errResponse.log.write(server.logger)
 			_ = errResponse.write(w, r)
@@ -1245,7 +1266,7 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	errResponse = role.overwriteInDb(server.db)
+	errResponse = role.overwriteInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1261,9 +1282,10 @@ func (server *Server) handleRoleOverwrite(w http.ResponseWriter, r *http.Request
 }
 
 func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["roleID"]
 	role := &Role{Name: name}
-	errResponse := role.deleteInDb(server.db)
+	errResponse := role.deleteInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1274,7 +1296,8 @@ func (server *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
-	usersFromQuery, err := listUsersFromDb(server.db)
+	ctx := r.Context()
+	usersFromQuery, err := listUsersFromDb(ctx, server.db)
 	if err != nil {
 		msg := fmt.Sprintf("users query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1295,6 +1318,7 @@ func (server *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	user := &User{}
 	err := json.Unmarshal(body, user)
 	if err != nil {
@@ -1304,7 +1328,7 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := user.createInDb(server.db)
+	errResponse := user.createInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1320,8 +1344,9 @@ func (server *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, b
 }
 
 func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["username"]
-	userFromQuery, err := userWithName(server.db, name)
+	userFromQuery, err := userWithName(ctx, server.db, name)
 	if err != nil {
 		msg := fmt.Sprintf("user query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1341,6 +1366,7 @@ func (server *Server) handleUserRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	name := mux.Vars(r)["username"]
 	user := User{Name: name}
 
@@ -1362,7 +1388,7 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
-	errResponse := user.updateInDb(server.db, userWithScalars.Name, userWithScalars.Email)
+	errResponse := user.updateInDb(ctx, server.db, userWithScalars.Name, userWithScalars.Email)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1373,9 +1399,10 @@ func (server *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, b
 }
 
 func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["username"]
 	user := User{Name: name}
-	errResponse := user.deleteInDb(server.db)
+	errResponse := user.deleteInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1386,6 +1413,7 @@ func (server *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) userGrantPolicy(w http.ResponseWriter, r *http.Request, requestPolicy RequestPolicy, username string) {
+	ctx := r.Context()
 	var expiresAt *time.Time
 	if requestPolicy.ExpiresAt != "" {
 		exp, err := time.Parse(time.RFC3339, requestPolicy.ExpiresAt)
@@ -1398,7 +1426,7 @@ func (server *Server) userGrantPolicy(w http.ResponseWriter, r *http.Request, re
 		}
 		expiresAt = &exp
 	}
-	errResponse := grantUserPolicy(server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
+	errResponse := grantUserPolicy(ctx, server.db, username, requestPolicy.PolicyName, expiresAt, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1441,9 +1469,10 @@ func (server *Server) handleBulkUserGrantPolicy(w http.ResponseWriter, r *http.R
 }
 
 func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	username := mux.Vars(r)["username"]
 	authzProvider := getAuthZProvider(r)
-	errResponse := revokeUserPolicyAll(server.db, username, authzProvider)
+	errResponse := revokeUserPolicyAll(ctx, server.db, username, authzProvider)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1458,10 +1487,11 @@ func (server *Server) handleUserRevokeAll(w http.ResponseWriter, r *http.Request
 }
 
 func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	username := mux.Vars(r)["username"]
 	policyName := mux.Vars(r)["policyName"]
 	authzProvider := getAuthZProvider(r)
-	policyInfo, err := fetchUserPolicyInfo(server.db, username, policyName)
+	policyInfo, err := fetchUserPolicyInfo(ctx, server.db, username, policyName)
 
 	if err != nil {
 		server.logger.Info("Error Fetching policy Info: %s", err.Error())
@@ -1482,7 +1512,7 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 			policyInfo.PolicyName, dbAuthzProvider, policyInfo.ExpiresAt, policyInfo.Username)
 
 		if !authzProvider.Valid || (providerExists && dbAuthzProvider == authzProvider.String) {
-			errResponse := revokeUserPolicy(
+			errResponse := revokeUserPolicy(ctx,
 				server.db, username, policyName, authzProvider)
 			if errResponse != nil {
 				errResponse.log.write(server.logger)
@@ -1507,10 +1537,11 @@ func (server *Server) handleUserRevokePolicy(w http.ResponseWriter, r *http.Requ
 }
 
 func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	username := mux.Vars(r)["username"]
 
 	// check if user exists at all first
-	user, err := userWithName(server.db, username)
+	user, err := userWithName(ctx, server.db, username)
 	if user == nil || err != nil {
 		msg := fmt.Sprintf("no user found with username: `%s`", username)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1534,7 +1565,7 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 		Service:  service,
 		Method:   method,
 	}
-	resourcesFromQuery, errResponse := authorizedResources(server.db, request)
+	resourcesFromQuery, errResponse := authorizedResources(ctx, server.db, request)
 	if errResponse != nil {
 		_ = errResponse.write(w, r)
 		return
@@ -1561,7 +1592,8 @@ func (server *Server) handleUserListResources(w http.ResponseWriter, r *http.Req
 }
 
 func (server *Server) handleClientList(w http.ResponseWriter, r *http.Request) {
-	clientsFromQuery, err := listClientsFromDb(server.db)
+	ctx := r.Context()
+	clientsFromQuery, err := listClientsFromDb(ctx, server.db)
 	if err != nil {
 		msg := fmt.Sprintf("clients query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1582,6 +1614,7 @@ func (server *Server) handleClientList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	client := &Client{}
 	err := json.Unmarshal(body, client)
 	if err != nil {
@@ -1591,7 +1624,7 @@ func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request,
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := client.createInDb(server.db, getAuthZProvider(r))
+	errResponse := client.createInDb(ctx, server.db, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1606,8 +1639,9 @@ func (server *Server) handleClientCreate(w http.ResponseWriter, r *http.Request,
 }
 
 func (server *Server) handleClientRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	clientID := mux.Vars(r)["clientID"]
-	clientFromQuery, err := clientWithClientID(server.db, clientID)
+	clientFromQuery, err := clientWithClientID(ctx, server.db, clientID)
 	if clientFromQuery == nil {
 		msg := fmt.Sprintf("no client found with clientID: %s", clientID)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1627,9 +1661,10 @@ func (server *Server) handleClientRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleClientDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	clientID := mux.Vars(r)["clientID"]
 	client := Client{ClientID: clientID}
-	errResponse := client.deleteInDb(server.db)
+	errResponse := client.deleteInDb(ctx, server.db)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1639,6 +1674,7 @@ func (server *Server) handleClientDelete(w http.ResponseWriter, r *http.Request)
 }
 
 func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	clientID := mux.Vars(r)["clientID"]
 	requestPolicy := struct {
 		PolicyName string `json:"policy"`
@@ -1652,7 +1688,7 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 		return
 	}
 	server.logger.Info("attempting to grant policy %s to client %s", requestPolicy.PolicyName, clientID)
-	errResponse := grantClientPolicy(server.db, clientID, requestPolicy.PolicyName, getAuthZProvider(r))
+	errResponse := grantClientPolicy(ctx, server.db, clientID, requestPolicy.PolicyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1662,8 +1698,9 @@ func (server *Server) handleClientGrantPolicy(w http.ResponseWriter, r *http.Req
 }
 
 func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	clientID := mux.Vars(r)["clientID"]
-	errResponse := revokeClientPolicyAll(server.db, clientID, getAuthZProvider(r))
+	errResponse := revokeClientPolicyAll(ctx, server.db, clientID, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1673,9 +1710,10 @@ func (server *Server) handleClientRevokeAll(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleClientRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	clientID := mux.Vars(r)["clientID"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeClientPolicy(server.db, clientID, policyName, getAuthZProvider(r))
+	errResponse := revokeClientPolicy(ctx, server.db, clientID, policyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1685,7 +1723,8 @@ func (server *Server) handleClientRevokePolicy(w http.ResponseWriter, r *http.Re
 }
 
 func (server *Server) handleGroupList(w http.ResponseWriter, r *http.Request) {
-	groupsFromQuery, err := listGroupsFromDb(server.db)
+	ctx := r.Context()
+	groupsFromQuery, err := listGroupsFromDb(ctx, server.db)
 	if err != nil {
 		msg := fmt.Sprintf("groups query failed: %s", err.Error())
 		errResponse := newErrorResponse(msg, 500, nil)
@@ -1706,6 +1745,7 @@ func (server *Server) handleGroupList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	group := &Group{}
 	err := json.Unmarshal(body, group)
 	if err != nil {
@@ -1716,11 +1756,11 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	authzProvider := getAuthZProvider(r)
-	errResponse := transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse {
+	errResponse := transactify(ctx, server.db, func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 		if r.Method == "PUT" {
-			return group.overwriteInDb(tx, authzProvider)
+			return group.overwriteInDb(ctx, tx, authzProvider)
 		} else {
-			return group.createInDb(tx, authzProvider)
+			return group.createInDb(ctx, tx, authzProvider)
 		}
 	})
 	if errResponse != nil {
@@ -1742,8 +1782,9 @@ func (server *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, 
 }
 
 func (server *Server) handleGroupRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	name := mux.Vars(r)["groupName"]
-	groupFromQuery, err := groupWithName(server.db, name)
+	groupFromQuery, err := groupWithName(ctx, server.db, name)
 	if groupFromQuery == nil {
 		msg := fmt.Sprintf("no group found with name: %s", name)
 		errResponse := newErrorResponse(msg, 404, nil)
@@ -1763,9 +1804,10 @@ func (server *Server) handleGroupRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	groupName := mux.Vars(r)["groupName"]
 	group := Group{Name: groupName}
-	errResponse := transactify(server.db, group.deleteInDb)
+	errResponse := transactify(ctx, server.db, group.deleteInDb)
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1775,6 +1817,7 @@ func (server *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) 
 }
 
 func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	groupName := mux.Vars(r)["groupName"]
 	requestUser := struct {
 		Username  string `json:"username"`
@@ -1800,7 +1843,7 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 		}
 		expiresAt = &exp
 	}
-	errResponse := addUserToGroup(server.db, requestUser.Username, groupName, expiresAt, getAuthZProvider(r))
+	errResponse := addUserToGroup(ctx, server.db, requestUser.Username, groupName, expiresAt, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1811,9 +1854,10 @@ func (server *Server) handleGroupAddUser(w http.ResponseWriter, r *http.Request,
 }
 
 func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	groupName := mux.Vars(r)["groupName"]
 	username := mux.Vars(r)["username"]
-	errResponse := removeUserFromGroup(server.db, username, groupName, getAuthZProvider(r))
+	errResponse := removeUserFromGroup(ctx, server.db, username, groupName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1823,6 +1867,7 @@ func (server *Server) handleGroupRemoveUser(w http.ResponseWriter, r *http.Reque
 }
 
 func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Request, body []byte) {
+	ctx := r.Context()
 	groupName := mux.Vars(r)["groupName"]
 	requestPolicy := struct {
 		PolicyName string `json:"policy"`
@@ -1835,7 +1880,7 @@ func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Requ
 		_ = response.write(w, r)
 		return
 	}
-	errResponse := grantGroupPolicy(server.db, groupName, requestPolicy.PolicyName, getAuthZProvider(r))
+	errResponse := grantGroupPolicy(ctx, server.db, groupName, requestPolicy.PolicyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)
@@ -1845,9 +1890,10 @@ func (server *Server) handleGroupGrantPolicy(w http.ResponseWriter, r *http.Requ
 }
 
 func (server *Server) handleGroupRevokePolicy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	groupName := mux.Vars(r)["groupName"]
 	policyName := mux.Vars(r)["policyName"]
-	errResponse := revokeGroupPolicy(server.db, groupName, policyName, getAuthZProvider(r))
+	errResponse := revokeGroupPolicy(ctx, server.db, groupName, policyName, getAuthZProvider(r))
 	if errResponse != nil {
 		errResponse.log.write(server.logger)
 		_ = errResponse.write(w, r)

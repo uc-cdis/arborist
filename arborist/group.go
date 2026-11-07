@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -60,7 +61,7 @@ func (groupFromQuery *GroupFromQuery) standardize() Group {
 	return group
 }
 
-func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
+func groupWithName(ctx context.Context, db *sqlx.DB, name string) (*GroupFromQuery, error) {
 	stmt := `
 		SELECT
 			grp.name,
@@ -76,7 +77,7 @@ func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
 		LIMIT 1
 	`
 	groups := []GroupFromQuery{}
-	err := db.Select(&groups, stmt, name)
+	err := db.SelectContext(ctx, &groups, stmt, name)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func groupWithName(db *sqlx.DB, name string) (*GroupFromQuery, error) {
 	return &group, nil
 }
 
-func listGroupsFromDb(db *sqlx.DB) ([]GroupFromQuery, error) {
+func listGroupsFromDb(ctx context.Context, db *sqlx.DB) ([]GroupFromQuery, error) {
 	stmt := `
 		SELECT
 			grp.name,
@@ -101,43 +102,43 @@ func listGroupsFromDb(db *sqlx.DB) ([]GroupFromQuery, error) {
 		GROUP BY grp.id
 	`
 	groups := []GroupFromQuery{}
-	err := db.Select(&groups, stmt)
+	err := db.SelectContext(ctx, &groups, stmt)
 	if err != nil {
 		return nil, err
 	}
 	return groups, nil
 }
 
-func (group *Group) users(tx *sqlx.Tx) ([]UserFromQuery, error) {
+func (group *Group) users(ctx context.Context, tx *sqlx.Tx) ([]UserFromQuery, error) {
 	if len(group.Users) == 0 {
 		return []UserFromQuery{}, nil
 	}
 	users := []UserFromQuery{}
 	usersStmt, usersArg := selectInStmt("usr", "name", group.Users)
-	err := tx.Select(&users, usersStmt, usersArg)
+	err := tx.SelectContext(ctx, &users, usersStmt, usersArg)
 	if err != nil {
 		return nil, err
 	}
 	return users, nil
 }
 
-func (group *Group) policies(tx *sqlx.Tx) ([]PolicyFromQuery, error) {
+func (group *Group) policies(ctx context.Context, tx *sqlx.Tx) ([]PolicyFromQuery, error) {
 	if len(group.Policies) == 0 {
 		return []PolicyFromQuery{}, nil
 	}
 	policies := []PolicyFromQuery{}
 	policiesStmt, policiesArg := selectInStmt("policy", "name", group.Policies)
-	err := tx.Select(&policies, policiesStmt, policiesArg)
+	err := tx.SelectContext(ctx, &policies, policiesStmt, policiesArg)
 	if err != nil {
 		return nil, err
 	}
 	return policies, nil
 }
 
-func (group *Group) createInDb(tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
+func (group *Group) createInDb(ctx context.Context, tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
 	var groupID int
 	stmt := "INSERT INTO grp(name) VALUES ($1) RETURNING id"
-	row := tx.QueryRowx(stmt, group.Name)
+	row := tx.QueryRowxContext(ctx, stmt, group.Name)
 	err := row.Scan(&groupID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
@@ -147,13 +148,13 @@ func (group *Group) createInDb(tx *sqlx.Tx, authzProvider sql.NullString) *Error
 		return newErrorResponse(msg, 409, &err)
 	}
 
-	return group.attachUsrAndPolicy(tx, groupID, authzProvider)
+	return group.attachUsrAndPolicy(ctx, tx, groupID, authzProvider)
 }
 
-func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider sql.NullString) *ErrorResponse {
+func (group *Group) attachUsrAndPolicy(ctx context.Context, tx *sqlx.Tx, groupID int, authzProvider sql.NullString) *ErrorResponse {
 	// add users to the group
 	if len(group.Users) > 0 {
-		users, err := group.users(tx)
+		users, err := group.users(ctx, tx)
 		if err != nil {
 			msg := fmt.Sprintf("database call for users failed: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -167,7 +168,7 @@ func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider s
 			msg := fmt.Sprintf("failed to create group %s while adding users: Some users do not exist", group.Name)
 			return newErrorResponse(msg, 400, nil)
 		}
-		_, err = tx.Exec(stmt, userGroupRows...)
+		_, err = tx.ExecContext(ctx, stmt, userGroupRows...)
 		if err != nil {
 			msg := fmt.Sprintf("failed to create group while adding users: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -176,7 +177,7 @@ func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider s
 
 	// add policies to the group
 	if len(group.Policies) > 0 {
-		policies, err := group.policies(tx)
+		policies, err := group.policies(ctx, tx)
 		if err != nil {
 			msg := fmt.Sprintf("database call for policies failed: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -190,7 +191,7 @@ func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider s
 			msg := fmt.Sprintf("failed to create group %s while adding policies: Some policies do not exist", group.Name)
 			return newErrorResponse(msg, 400, nil)
 		}
-		_, err = tx.Exec(stmt, groupPolicyRows...)
+		_, err = tx.ExecContext(ctx, stmt, groupPolicyRows...)
 		if err != nil {
 			msg := fmt.Sprintf("failed to create group while adding policies: %s", err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -200,12 +201,12 @@ func (group *Group) attachUsrAndPolicy(tx *sqlx.Tx, groupID int, authzProvider s
 	return nil
 }
 
-func (group *Group) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
+func (group *Group) deleteInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	if group.Name == AnonymousGroup || group.Name == LoggedInGroup {
 		return newErrorResponse("can't delete built-in groups", 400, nil)
 	}
 	stmt := "DELETE FROM grp WHERE name = $1"
-	_, err := tx.Exec(stmt, group.Name)
+	_, err := tx.ExecContext(ctx, stmt, group.Name)
 	if err != nil {
 		// TODO: verify correct error
 		// group does not exist; that's fine
@@ -214,21 +215,21 @@ func (group *Group) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (group *Group) overwriteInDb(tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
+func (group *Group) overwriteInDb(ctx context.Context, tx *sqlx.Tx, authzProvider sql.NullString) *ErrorResponse {
 	var groupID int
 	stmt := "SELECT id FROM grp WHERE name = $1 FOR UPDATE"
-	row := tx.QueryRowx(stmt, group.Name)
+	row := tx.QueryRowxContext(ctx, stmt, group.Name)
 	err := row.Scan(&groupID)
 	if err != nil {
-		return group.createInDb(tx, authzProvider)
+		return group.createInDb(ctx, tx, authzProvider)
 	}
 
 	stmt = "DELETE FROM usr_grp WHERE grp_id = $1"
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $2"
-		_, err = tx.Exec(stmt, groupID, authzProvider.String)
+		_, err = tx.ExecContext(ctx, stmt, groupID, authzProvider.String)
 	} else {
-		_, err = tx.Exec(stmt, groupID)
+		_, err = tx.ExecContext(ctx, stmt, groupID)
 	}
 	if err != nil {
 		var msg string
@@ -243,9 +244,9 @@ func (group *Group) overwriteInDb(tx *sqlx.Tx, authzProvider sql.NullString) *Er
 	stmt = "DELETE FROM grp_policy WHERE grp_id = $1"
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $2"
-		_, err = tx.Exec(stmt, groupID, authzProvider.String)
+		_, err = tx.ExecContext(ctx, stmt, groupID, authzProvider.String)
 	} else {
-		_, err = tx.Exec(stmt, groupID)
+		_, err = tx.ExecContext(ctx, stmt, groupID)
 	}
 	if err != nil {
 		var msg string
@@ -257,17 +258,17 @@ func (group *Group) overwriteInDb(tx *sqlx.Tx, authzProvider sql.NullString) *Er
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	return group.attachUsrAndPolicy(tx, groupID, authzProvider)
+	return group.attachUsrAndPolicy(ctx, tx, groupID, authzProvider)
 }
 
-func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
+func grantGroupPolicy(ctx context.Context, db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		INSERT INTO grp_policy(grp_id, policy_id, authz_provider)
 		VALUES ((SELECT id FROM grp WHERE name = $1), (SELECT id FROM policy WHERE name = $2), $3)
 	`
-	_, err := db.Exec(stmt, groupName, policyName, authzProvider)
+	_, err := db.ExecContext(ctx, stmt, groupName, policyName, authzProvider)
 	if err != nil {
-		group, err := groupWithName(db, groupName)
+		group, err := groupWithName(ctx, db, groupName)
 		if group == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to group: group does not exist: %s",
@@ -279,7 +280,7 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzPro
 			msg := "group query failed"
 			return newErrorResponse(msg, 500, &err)
 		}
-		policy, err := policyWithName(db, policyName)
+		policy, err := policyWithName(ctx, db, policyName)
 		if policy == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to group: policy does not exist: %s",
@@ -296,7 +297,7 @@ func grantGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzPro
 	return nil
 }
 
-func revokeGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
+func revokeGroupPolicy(ctx context.Context, db *sqlx.DB, groupName string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM grp_policy
 		WHERE grp_id = (SELECT id FROM grp WHERE name = $1)
@@ -305,9 +306,9 @@ func revokeGroupPolicy(db *sqlx.DB, groupName string, policyName string, authzPr
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $3"
-		_, err = db.Exec(stmt, groupName, policyName, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, groupName, policyName, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, groupName, policyName)
+		_, err = db.ExecContext(ctx, stmt, groupName, policyName)
 	}
 	if err != nil {
 		msg := "revoke policy query failed"

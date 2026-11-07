@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"os"
 	"sync"
 	"testing"
@@ -36,7 +37,7 @@ func TestTransactify(t *testing.T) {
 
 	t.Run("RetriesTransientError", func(t *testing.T) {
 		attempts := 0
-		errResponse := transactify(db, func(tx *sqlx.Tx) *ErrorResponse {
+		errResponse := transactify(context.Background(), db, func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 			attempts++
 			if attempts < maxTransactionAttempts {
 				return newErrorResponse("deadlock", 400, &deadlock)
@@ -49,7 +50,7 @@ func TestTransactify(t *testing.T) {
 
 	t.Run("GivesUpWith503", func(t *testing.T) {
 		attempts := 0
-		errResponse := transactify(db, func(tx *sqlx.Tx) *ErrorResponse {
+		errResponse := transactify(context.Background(), db, func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 			attempts++
 			return newErrorResponse("deadlock", 400, &deadlock)
 		})
@@ -61,7 +62,7 @@ func TestTransactify(t *testing.T) {
 	t.Run("DoesNotRetryOtherErrors", func(t *testing.T) {
 		attempts := 0
 		missingParent := error(&pq.Error{Code: "23503"})
-		errResponse := transactify(db, func(tx *sqlx.Tx) *ErrorResponse {
+		errResponse := transactify(context.Background(), db, func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 			attempts++
 			return newErrorResponse("missing parent", 400, &missingParent)
 		})
@@ -87,8 +88,8 @@ func TestTransactify(t *testing.T) {
 			}
 			return nil
 		}
-		lockInOrder := func(first, second string, attempts *int) func(tx *sqlx.Tx) *ErrorResponse {
-			return func(tx *sqlx.Tx) *ErrorResponse {
+		lockInOrder := func(first, second string, attempts *int) func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
+			return func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 				*attempts++
 				if errResponse := lock(tx, first); errResponse != nil {
 					return errResponse
@@ -107,11 +108,11 @@ func TestTransactify(t *testing.T) {
 		done.Add(2)
 		go func() {
 			defer done.Done()
-			errAB = transactify(db, lockInOrder("deadlock_a", "deadlock_b", &attemptsAB))
+			errAB = transactify(context.Background(), db, lockInOrder("deadlock_a", "deadlock_b", &attemptsAB))
 		}()
 		go func() {
 			defer done.Done()
-			errBA = transactify(db, lockInOrder("deadlock_b", "deadlock_a", &attemptsBA))
+			errBA = transactify(context.Background(), db, lockInOrder("deadlock_b", "deadlock_a", &attemptsBA))
 		}()
 		done.Wait()
 

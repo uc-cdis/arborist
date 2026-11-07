@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -71,10 +72,10 @@ const transactionRetryBackoff = 20 * time.Millisecond
 // If the transaction fails because of a deadlock or serialization failure,
 // the whole call is retried, so it must be safe to run more than once. Retries
 // rely on the error response carrying the original database error.
-func transactify(db *sqlx.DB, call func(tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
+func transactify(ctx context.Context, db *sqlx.DB, call func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
 	backoff := transactionRetryBackoff
 	for attempt := 1; ; attempt++ {
-		errResponse := transactOnce(db, call)
+		errResponse := transactOnce(ctx, db, call)
 		if errResponse == nil || !isTransientError(errResponse.err) {
 			return errResponse
 		}
@@ -105,13 +106,13 @@ func isTransientError(err error) bool {
 	return false
 }
 
-func transactOnce(db *sqlx.DB, call func(tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
-	tx, err := db.Beginx()
+func transactOnce(ctx context.Context, db *sqlx.DB, call func(ctx context.Context, tx *sqlx.Tx) *ErrorResponse) *ErrorResponse {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
-	errResponse := call(tx)
+	errResponse := call(ctx, tx)
 	if errResponse != nil {
 		errResponse.log.Info("rolling back transaction")
 		_ = tx.Rollback()

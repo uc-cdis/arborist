@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -168,7 +169,7 @@ func formatDbPath(path string) string {
 // schema guarantees such a resource to be unique. Any error returned is because
 // of internal database failure. Pass a transaction as `db` to see that
 // transaction's uncommitted writes.
-func resourceWithPath(db sqlx.Queryer, path string) (*ResourceFromQuery, error) {
+func resourceWithPath(ctx context.Context, db sqlx.QueryerContext, path string) (*ResourceFromQuery, error) {
 	path = FormatPathForDb(path)
 	resources := []ResourceFromQuery{}
 	stmt := `
@@ -190,7 +191,7 @@ func resourceWithPath(db sqlx.Queryer, path string) (*ResourceFromQuery, error) 
 		GROUP BY parent.id
 		LIMIT 1
 	`
-	err := sqlx.Select(db, &resources, stmt, path)
+	err := sqlx.SelectContext(ctx, db, &resources, stmt, path)
 	if len(resources) == 0 {
 		// not found
 		return nil, nil
@@ -206,7 +207,7 @@ func resourceWithPath(db sqlx.Queryer, path string) (*ResourceFromQuery, error) 
 // resourceWithTag looks up a resource matching the given tag. The database
 // schema guarantees such a resource to be unique. Any error returned is because
 // of internal database failure.
-func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
+func resourceWithTag(ctx context.Context, db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
 	stmt := `
 		SELECT
@@ -225,7 +226,7 @@ func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 		FROM resource AS parent
 		WHERE parent.tag = $1
 	`
-	err := db.Select(&resources, stmt, tag)
+	err := db.SelectContext(ctx, &resources, stmt, tag)
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -236,7 +237,7 @@ func resourceWithTag(db *sqlx.DB, tag string) (*ResourceFromQuery, error) {
 	return &resource, nil
 }
 
-func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
+func listResourcesFromDb(ctx context.Context, db *sqlx.DB) ([]ResourceFromQuery, error) {
 	stmt := `
 		SELECT
 			parent.id,
@@ -255,22 +256,22 @@ func listResourcesFromDb(db *sqlx.DB) ([]ResourceFromQuery, error) {
 		GROUP BY parent.id
 	`
 	var resources []ResourceFromQuery
-	err := db.Select(&resources, stmt)
+	err := db.SelectContext(ctx, &resources, stmt)
 	if err != nil {
 		return nil, err
 	}
 	return resources, nil
 }
 
-func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
-	errResponse := resource.createRecursively(tx)
+func (resource *ResourceIn) createInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
+	errResponse := resource.createRecursively(ctx, tx)
 	if errResponse != nil {
 		return errResponse
 	}
 	return nil
 }
 
-func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
+func (resource *ResourceIn) createRecursively(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := FormatPathForDb(resource.Path)
 	// If a concurrent transaction holds this path, even uncommitted, this waits
@@ -282,7 +283,7 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 		RETURNING id
 	`
 	var id int
-	err := tx.Get(&id, stmt, path, resource.Description)
+	err := tx.GetContext(ctx, &id, stmt, path, resource.Description)
 	if errors.Is(err, sql.ErrNoRows) {
 		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
 		return newErrorResponse(msg, 409, nil)
@@ -299,7 +300,7 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 		if subresource.Path == "" {
 			subresource.Path = resource.Path + "/" + subresource.Name
 		}
-		errResponse := subresource.createRecursively(tx)
+		errResponse := subresource.createRecursively(ctx, tx)
 		if errResponse != nil {
 			return errResponse
 		}
@@ -345,13 +346,13 @@ func isMissingParentError(err error) bool {
 	return false
 }
 
-func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
+func (resource *ResourceIn) deleteInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	if resource.Path == "" {
 		msg := "resource missing required field `path`"
 		return newErrorResponse(msg, 400, nil)
 	}
 	stmt := "DELETE FROM resource WHERE path = $1"
-	_, err := tx.Exec(stmt, FormatPathForDb(resource.Path))
+	_, err := tx.ExecContext(ctx, stmt, FormatPathForDb(resource.Path))
 	if err != nil {
 		// resource already doesn't exist; this is fine
 		return nil
@@ -378,11 +379,11 @@ func (resource *ResourceIn) addPath(parent string) *ErrorResponse {
 	return nil
 }
 
-func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
+func (resource *ResourceIn) updateInDb(ctx context.Context, tx *sqlx.Tx, merge bool) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := FormatPathForDb(resource.Path)
 	stmt := "INSERT INTO resource(path) VALUES ($1) ON CONFLICT DO NOTHING"
-	_, err := tx.Exec(stmt, path)
+	_, err := tx.ExecContext(ctx, stmt, path)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
 		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
@@ -394,7 +395,7 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 	if resource.Description != nil {
 		// update description
 		stmt = "UPDATE resource SET description = $2 WHERE path = $1"
-		_, err = tx.Exec(stmt, path, resource.Description)
+		_, err = tx.ExecContext(ctx, stmt, path, resource.Description)
 		if err != nil {
 			msg := fmt.Sprintf("failed to update resource `%s`: %s", resource.Path, err.Error())
 			return newErrorResponse(msg, 500, &err)
@@ -417,13 +418,13 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 					AND path != ALL($2::ltree[])
 				)
 			`
-			_, err = tx.Exec(stmt, path, pq.Array(subPathsKeep))
+			_, err = tx.ExecContext(ctx, stmt, path, pq.Array(subPathsKeep))
 		} else {
 			stmt := `
 				DELETE FROM resource
 				WHERE path != $1 AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
 			`
-			_, err = tx.Exec(stmt, path)
+			_, err = tx.ExecContext(ctx, stmt, path)
 		}
 		if err != nil {
 			msg := fmt.Sprintf("failed to remove old subresources of `%s`: %s", resource.Path, err.Error())
@@ -438,7 +439,7 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 		if errResponse != nil {
 			return errResponse
 		}
-		errResponse = subresource.updateInDb(tx, merge)
+		errResponse = subresource.updateInDb(ctx, tx, merge)
 		if errResponse != nil {
 			return errResponse
 		}

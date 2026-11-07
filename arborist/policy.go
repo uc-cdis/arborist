@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -88,7 +89,7 @@ func (policyFromQuery *PolicyFromQuery) standardize() Policy {
 	return policy
 }
 
-func policyWithName(db *sqlx.DB, name string) (*PolicyFromQuery, error) {
+func policyWithName(ctx context.Context, db *sqlx.DB, name string) (*PolicyFromQuery, error) {
 	stmt := `
 		SELECT
 			policy.id,
@@ -106,7 +107,7 @@ func policyWithName(db *sqlx.DB, name string) (*PolicyFromQuery, error) {
 		LIMIT 1
 	`
 	policies := []PolicyFromQuery{}
-	err := db.Select(&policies, stmt, name)
+	err := db.SelectContext(ctx, &policies, stmt, name)
 	if len(policies) == 0 {
 		return nil, nil
 	}
@@ -117,7 +118,7 @@ func policyWithName(db *sqlx.DB, name string) (*PolicyFromQuery, error) {
 	return &policy, nil
 }
 
-func listPoliciesFromDb(db *sqlx.DB) ([]PolicyFromQuery, error) {
+func listPoliciesFromDb(ctx context.Context, db *sqlx.DB) ([]PolicyFromQuery, error) {
 	stmt := `
 		SELECT
 			policy.id,
@@ -133,7 +134,7 @@ func listPoliciesFromDb(db *sqlx.DB) ([]PolicyFromQuery, error) {
 		GROUP BY policy.id
 	`
 	var policies []PolicyFromQuery
-	err := db.Select(&policies, stmt)
+	err := db.SelectContext(ctx, &policies, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +143,14 @@ func listPoliciesFromDb(db *sqlx.DB) ([]PolicyFromQuery, error) {
 
 // resources looks up all the resources with paths in this policy. An error, if
 // returned, resulted from the database operation.
-func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
+func (policy *Policy) resources(ctx context.Context, tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 	resources := []ResourceFromQuery{}
 	queryPaths := make([]string, len(policy.ResourcePaths))
 	for i, path := range policy.ResourcePaths {
 		queryPaths[i] = FormatPathForDb(path)
 	}
 	resourcesStmt, resourcesArg := selectInStmt("resource", "ltree2text(path)", queryPaths)
-	err := tx.Select(&resources, resourcesStmt, resourcesArg)
+	err := tx.SelectContext(ctx, &resources, resourcesStmt, resourcesArg)
 	if err != nil {
 		return nil, err
 	}
@@ -158,10 +159,10 @@ func (policy *Policy) resources(tx *sqlx.Tx) ([]ResourceFromQuery, error) {
 
 // roles looks up the roles which this policy references. An error, if
 // returned, resulted from the database operation.
-func (policy *Policy) roles(tx *sqlx.Tx) ([]RoleFromQuery, error) {
+func (policy *Policy) roles(ctx context.Context, tx *sqlx.Tx) ([]RoleFromQuery, error) {
 	roles := []RoleFromQuery{}
 	rolesStmt, rolesArg := selectInStmt("role", "name", policy.RoleIDs)
-	err := tx.Select(&roles, rolesStmt, rolesArg)
+	err := tx.SelectContext(ctx, &roles, rolesStmt, rolesArg)
 	if err != nil {
 		return nil, err
 	}
@@ -187,10 +188,10 @@ func (policy *Policy) validate() *ErrorResponse {
 
 // addResourcesAndRoles takes a policy and links it in the database
 // to each of its resources and roles.
-func (policy *Policy) addResourcesAndRoles(tx *sqlx.Tx, policyID int) *ErrorResponse {
+func (policy *Policy) addResourcesAndRoles(ctx context.Context, tx *sqlx.Tx, policyID int) *ErrorResponse {
 
 	// `resources` is a list of looked-up resources which appear in the input policy
-	resources, err := policy.resources(tx)
+	resources, err := policy.resources(ctx, tx)
 	if err != nil {
 		msg := fmt.Sprintf("database call for resources failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -219,13 +220,13 @@ func (policy *Policy) addResourcesAndRoles(tx *sqlx.Tx, policyID int) *ErrorResp
 		policyResourceRows = append(policyResourceRows, policyID)
 		policyResourceRows = append(policyResourceRows, resource.ID)
 	}
-	_, err = tx.Exec(stmt, policyResourceRows...)
+	_, err = tx.ExecContext(ctx, stmt, policyResourceRows...)
 	if err != nil {
 		msg := fmt.Sprintf("failed to insert policy while linking resources: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 
-	roles, err := policy.roles(tx)
+	roles, err := policy.roles(ctx, tx)
 	if err != nil {
 		msg := fmt.Sprintf("database call for roles failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -253,7 +254,7 @@ func (policy *Policy) addResourcesAndRoles(tx *sqlx.Tx, policyID int) *ErrorResp
 		policyRoleRows = append(policyRoleRows, policyID)
 		policyRoleRows = append(policyRoleRows, role.ID)
 	}
-	_, err = tx.Exec(stmt, policyRoleRows...)
+	_, err = tx.ExecContext(ctx, stmt, policyRoleRows...)
 	if err != nil {
 		msg := fmt.Sprintf("failed to insert policy while linking roles: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -263,7 +264,7 @@ func (policy *Policy) addResourcesAndRoles(tx *sqlx.Tx, policyID int) *ErrorResp
 }
 
 // createInDb writes out the policy to the database.
-func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
+func (policy *Policy) createInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	errResponse := policy.validate()
 	if errResponse != nil {
 		return errResponse
@@ -272,7 +273,7 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	var policyID int
 	// TODO: make sure description works as expected
 	stmt := "INSERT INTO policy(name, description) VALUES ($1, $2) RETURNING id"
-	row := tx.QueryRowx(stmt, policy.Name, policy.Description)
+	row := tx.QueryRowxContext(ctx, stmt, policy.Name, policy.Description)
 	err := row.Scan(&policyID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
@@ -282,7 +283,7 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 		return newErrorResponse(msg, 409, &err)
 	}
 
-	errResponse = policy.addResourcesAndRoles(tx, policyID)
+	errResponse = policy.addResourcesAndRoles(ctx, tx, policyID)
 	if errResponse != nil {
 		return errResponse
 	}
@@ -290,9 +291,9 @@ func (policy *Policy) createInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (policy *Policy) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
+func (policy *Policy) deleteInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	stmt := "DELETE FROM policy WHERE name = $1"
-	_, err := tx.Exec(stmt, policy.Name)
+	_, err := tx.ExecContext(ctx, stmt, policy.Name)
 	if err != nil {
 		// TODO: verify correct error
 		// doesn't exist, this is fine
@@ -301,7 +302,7 @@ func (policy *Policy) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
 	return nil
 }
 
-func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
+func (policy *Policy) updateInDb(ctx context.Context, tx *sqlx.Tx) *ErrorResponse {
 	// We do not allow updates to policy name (or id).
 
 	errResponse := policy.validate()
@@ -311,7 +312,7 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 
 	var policyID int
 	stmt := "UPDATE policy SET description = $1 WHERE name = $2 RETURNING id"
-	row := tx.QueryRowx(stmt, policy.Description, policy.Name)
+	row := tx.QueryRowxContext(ctx, stmt, policy.Description, policy.Name)
 	err := row.Scan(&policyID)
 	switch {
 	case err == sql.ErrNoRows:
@@ -324,20 +325,20 @@ func (policy *Policy) updateInDb(tx *sqlx.Tx) *ErrorResponse {
 
 	// First delete resources and roles that were previously attached to policy
 	stmt = "DELETE FROM policy_resource WHERE policy_id = $1"
-	_, err = tx.Exec(stmt, policyID)
+	_, err = tx.ExecContext(ctx, stmt, policyID)
 	if err != nil {
 		msg := fmt.Sprintf("database deletion from policy_resource failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 	stmt = "DELETE FROM policy_role WHERE policy_id = $1"
-	_, err = tx.Exec(stmt, policyID)
+	_, err = tx.ExecContext(ctx, stmt, policyID)
 	if err != nil {
 		msg := fmt.Sprintf("database deletion from policy_role failed: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
 	}
 
 	// Now add the new resources and roles
-	errResponse = policy.addResourcesAndRoles(tx, policyID)
+	errResponse = policy.addResourcesAndRoles(ctx, tx, policyID)
 	if errResponse != nil {
 		return errResponse
 	}

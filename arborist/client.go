@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -26,7 +27,7 @@ func (clientFromQuery *ClientFromQuery) standardize() Client {
 	return client
 }
 
-func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) {
+func clientWithClientID(ctx context.Context, db *sqlx.DB, clientID string) (*ClientFromQuery, error) {
 	stmt := `
 		SELECT
 			client.external_client_id,
@@ -39,7 +40,7 @@ func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) 
 		LIMIT 1
 	`
 	clients := []ClientFromQuery{}
-	err := db.Select(&clients, stmt, clientID)
+	err := db.SelectContext(ctx, &clients, stmt, clientID)
 	if len(clients) == 0 {
 		return nil, nil
 	}
@@ -50,7 +51,7 @@ func clientWithClientID(db *sqlx.DB, clientID string) (*ClientFromQuery, error) 
 	return &client, nil
 }
 
-func listClientsFromDb(db *sqlx.DB) ([]ClientFromQuery, error) {
+func listClientsFromDb(ctx context.Context, db *sqlx.DB) ([]ClientFromQuery, error) {
 	stmt := `
 		SELECT
 			client.external_client_id,
@@ -61,15 +62,15 @@ func listClientsFromDb(db *sqlx.DB) ([]ClientFromQuery, error) {
 		GROUP BY client.id
 	`
 	clients := []ClientFromQuery{}
-	err := db.Select(&clients, stmt)
+	err := db.SelectContext(ctx, &clients, stmt)
 	if err != nil {
 		return nil, err
 	}
 	return clients, nil
 }
 
-func (client *Client) createInDb(db *sqlx.DB, authzProvider sql.NullString) *ErrorResponse {
-	tx, err := db.Beginx()
+func (client *Client) createInDb(ctx context.Context, db *sqlx.DB, authzProvider sql.NullString) *ErrorResponse {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		msg := fmt.Sprintf("couldn't open database transaction: %s", err.Error())
 		return newErrorResponse(msg, 500, &err)
@@ -81,7 +82,7 @@ func (client *Client) createInDb(db *sqlx.DB, authzProvider sql.NullString) *Err
 		VALUES ($1)
 		RETURNING id
 	`
-	row := tx.QueryRowx(stmt, client.ClientID)
+	row := tx.QueryRowxContext(ctx, stmt, client.ClientID)
 	err = row.Scan(&clientDBID)
 	if err != nil {
 		// should add more checking here to guarantee the correct error
@@ -108,7 +109,7 @@ func (client *Client) createInDb(db *sqlx.DB, authzProvider sql.NullString) *Err
 			)
 			SELECT name FROM policies
 		`
-		rows, err := tx.Query(stmt, pq.Array(client.Policies), clientDBID, authzProvider)
+		rows, err := tx.QueryContext(ctx, stmt, pq.Array(client.Policies), clientDBID, authzProvider)
 		if err != nil {
 			_ = tx.Rollback()
 			return newErrorResponse("failed to grant policy", 500, &err)
@@ -148,9 +149,9 @@ func (client *Client) createInDb(db *sqlx.DB, authzProvider sql.NullString) *Err
 	return nil
 }
 
-func (client *Client) deleteInDb(db *sqlx.DB) *ErrorResponse {
+func (client *Client) deleteInDb(ctx context.Context, db *sqlx.DB) *ErrorResponse {
 	stmt := "DELETE FROM client WHERE external_client_id = $1"
-	_, err := db.Exec(stmt, client.ClientID)
+	_, err := db.ExecContext(ctx, stmt, client.ClientID)
 	if err != nil {
 		// TODO: verify correct error
 		msg := fmt.Sprintf("failed to delete client: client does not exist: %s", client.ClientID)
@@ -159,14 +160,14 @@ func (client *Client) deleteInDb(db *sqlx.DB) *ErrorResponse {
 	return nil
 }
 
-func grantClientPolicy(db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
+func grantClientPolicy(ctx context.Context, db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		INSERT INTO client_policy(client_id, policy_id, authz_provider)
 		VALUES ((SELECT id FROM client WHERE external_client_id = $1), (SELECT id FROM policy WHERE name = $2), $3)
 	`
-	_, err := db.Exec(stmt, clientID, policyName, authzProvider)
+	_, err := db.ExecContext(ctx, stmt, clientID, policyName, authzProvider)
 	if err != nil {
-		client, err := clientWithClientID(db, clientID)
+		client, err := clientWithClientID(ctx, db, clientID)
 		if client == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to client: client does not exist: %s",
@@ -178,7 +179,7 @@ func grantClientPolicy(db *sqlx.DB, clientID string, policyName string, authzPro
 			msg := "client query failed"
 			return newErrorResponse(msg, 500, &err)
 		}
-		policy, err := policyWithName(db, policyName)
+		policy, err := policyWithName(ctx, db, policyName)
 		if policy == nil {
 			msg := fmt.Sprintf(
 				"failed to grant policy to client: policy does not exist: %s",
@@ -195,7 +196,7 @@ func grantClientPolicy(db *sqlx.DB, clientID string, policyName string, authzPro
 	return nil
 }
 
-func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
+func revokeClientPolicy(ctx context.Context, db *sqlx.DB, clientID string, policyName string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
 		WHERE client_id = (SELECT id FROM client WHERE external_client_id = $1)
@@ -204,9 +205,9 @@ func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string, authzPr
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $3"
-		_, err = db.Exec(stmt, clientID, policyName, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, clientID, policyName, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, clientID, policyName)
+		_, err = db.ExecContext(ctx, stmt, clientID, policyName)
 	}
 	if err != nil {
 		msg := "revoke policy query failed"
@@ -215,7 +216,7 @@ func revokeClientPolicy(db *sqlx.DB, clientID string, policyName string, authzPr
 	return nil
 }
 
-func revokeClientPolicyAll(db *sqlx.DB, clientID string, authzProvider sql.NullString) *ErrorResponse {
+func revokeClientPolicyAll(ctx context.Context, db *sqlx.DB, clientID string, authzProvider sql.NullString) *ErrorResponse {
 	stmt := `
 		DELETE FROM client_policy
 		WHERE client_id = (SELECT id FROM client WHERE external_client_id = $1)
@@ -223,9 +224,9 @@ func revokeClientPolicyAll(db *sqlx.DB, clientID string, authzProvider sql.NullS
 	var err error = nil
 	if authzProvider.Valid {
 		stmt += " AND authz_provider = $2"
-		_, err = db.Exec(stmt, clientID, authzProvider)
+		_, err = db.ExecContext(ctx, stmt, clientID, authzProvider)
 	} else {
-		_, err = db.Exec(stmt, clientID)
+		_, err = db.ExecContext(ctx, stmt, clientID)
 	}
 	if err != nil {
 		msg := "revoke policy query failed"

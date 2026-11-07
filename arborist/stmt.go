@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"database/sql"
 	"github.com/jmoiron/sqlx"
 )
@@ -14,12 +15,12 @@ func NewCachedStmts(db *sqlx.DB) *CachedStmts {
 	return &CachedStmts{db, make(map[string]*sqlx.Stmt)}
 }
 
-func (s *CachedStmts) Prepare(query string) (*sqlx.Stmt, error) {
+func (s *CachedStmts) Prepare(ctx context.Context, query string) (*sqlx.Stmt, error) {
 	stmt, ok := s.stmts[query]
 	if !ok {
 		// GOTCHA: It's okay not to lock this lazy initialization
 		var err error
-		stmt, err = s.db.Preparex(query)
+		stmt, err = s.db.PreparexContext(ctx, query)
 		if err != nil {
 			return nil, err
 		}
@@ -28,18 +29,18 @@ func (s *CachedStmts) Prepare(query string) (*sqlx.Stmt, error) {
 	return stmt, nil
 }
 
-func (s *CachedStmts) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	stmt, err := s.Prepare(query)
+func (s *CachedStmts) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	stmt, err := s.Prepare(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	return stmt.Query(args...)
+	return stmt.QueryContext(ctx, args...)
 }
 
-func (s *CachedStmts) Select(query string, dest interface{}, args ...interface{}) error {
-	stmt, err := s.Prepare(query)
+func (s *CachedStmts) Select(ctx context.Context, query string, dest interface{}, args ...interface{}) error {
+	stmt, err := s.Prepare(ctx, query)
 	if err != nil {
 		return err
 	}
-	return stmt.Select(dest, args...)
+	return stmt.SelectContext(ctx, dest, args...)
 }

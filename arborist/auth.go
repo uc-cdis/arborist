@@ -1,6 +1,7 @@
 package arborist
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -117,7 +118,7 @@ type AuthResponse struct {
 
 // Authorize a request where the end user is anonymous, so there is no token
 // involved, and access is granted only through the built-in anonymous group.
-func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
+func authorizeAnonymous(ctx context.Context, request *AuthRequest) (*AuthResponse, error) {
 	var tag string
 	var err error
 
@@ -134,7 +135,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 
 	if resource != "" {
 		// run authorization query
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce(text2ltree($5) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
@@ -167,7 +168,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 			AnonymousGroup,             // $6
 		)
 	} else if tag != "" {
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce((SELECT resource.path AS request FROM resource WHERE resource.tag = $5) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
@@ -210,7 +211,7 @@ func authorizeAnonymous(request *AuthRequest) (*AuthResponse, error) {
 }
 
 // Authorize the given token to access resources by service and method.
-func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
+func authorizeUser(ctx context.Context, request *AuthRequest) (*AuthResponse, error) {
 	var authorized []bool
 	var tag string
 	var err error
@@ -225,7 +226,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 	}
 
 	if resource != "" {
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce(text2ltree($6) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
@@ -269,7 +270,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 			LoggedInGroup,                     // $8
 		)
 	} else if tag != "" {
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
@@ -323,7 +324,7 @@ func authorizeUser(request *AuthRequest) (*AuthResponse, error) {
 }
 
 // This is similar to authorizeUser, only that this method checks for clientID only
-func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
+func authorizeClient(ctx context.Context, request *AuthRequest) (*AuthResponse, error) {
 	var err error
 	var tag string
 	var authorized []bool
@@ -338,7 +339,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 	}
 
 	if resource != "" {
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce(text2ltree($4) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM client
@@ -362,7 +363,7 @@ func authorizeClient(request *AuthRequest) (*AuthResponse, error) {
 			resource,         // $4
 		)
 	} else if tag != "" {
-		err = request.stmts.Select(
+		err = request.stmts.Select(ctx,
 			`
 			SELECT coalesce((SELECT resource.path FROM resource WHERE resource.tag = $6) <@ allowed, FALSE) FROM (
 				SELECT array_agg(resource.path) AS allowed FROM (
@@ -457,7 +458,7 @@ func authRequestFromGET(decode func(string, []string, []string) (*TokenInfo, err
 //
 // The result is resolved from the caller's own grants - the username, or the
 // client ID - and includes group, `anonymous`, and `logged-in` membership.
-func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
+func authorizedResources(ctx context.Context, db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery, *ErrorResponse) {
 	resources := []ResourceFromQuery{}
 	if request.ClientID == "" {
 		if request.Username == "" {
@@ -500,7 +501,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err := db.Select(
+		err := db.SelectContext(ctx,
 			&resources,
 			stmt,
 			strings.ToLower(request.Username), // $1
@@ -553,7 +554,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 			INNER JOIN resource AS roots ON roots.id = policy_resource.resource_id
 			LEFT JOIN resource ON resource.path <@ roots.path
 		`
-		err := db.Select(&resources, stmt, strings.ToLower(request.Username), request.ClientID)
+		err := db.SelectContext(ctx, &resources, stmt, strings.ToLower(request.Username), request.ClientID)
 		if err != nil {
 			errResponse := newErrorResponse(
 				"resources query (using username + client) failed",
@@ -568,7 +569,7 @@ func authorizedResources(db *sqlx.DB, request *AuthRequest) ([]ResourceFromQuery
 
 // authorizedResourcesForGroups returns the resources that are accessible (with any action)
 // to these groups.
-func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
+func authorizedResourcesForGroups(ctx context.Context, db *sqlx.DB, groups ...string) ([]ResourceFromQuery, *ErrorResponse) {
 	resources := []ResourceFromQuery{}
 	stmt := `
 		SELECT DISTINCT
@@ -604,7 +605,7 @@ func authorizedResourcesForGroups(db *sqlx.DB, groups ...string) ([]ResourceFrom
 	}
 	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax
 	query = db.Rebind(query)
-	err = db.Select(&resources, query, args...)
+	err = db.SelectContext(ctx, &resources, query, args...)
 	if err != nil {
 		errResponse := newErrorResponse(
 			"resources query (using no username) failed",
@@ -630,7 +631,7 @@ type AuthMapping map[string][]Action
 // If there is no user with this username in the db, this function will NOT
 // throw an error, but will return only the auth mapping of the `anonymous`
 // and `logged-in` groups.
-func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
+func authMappingForUser(ctx context.Context, db *sqlx.DB, username string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -655,7 +656,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 	`
-	err := db.Select(
+	err := db.SelectContext(ctx,
 		&mappingQuery,
 		stmt,
 		strings.ToLower(username), // $1
@@ -677,7 +678,7 @@ func authMappingForUser(db *sqlx.DB, username string) (AuthMapping, *ErrorRespon
 }
 
 // authMappingForGroups returns the auth mapping of resources associated with groups.
-func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorResponse) {
+func authMappingForGroups(ctx context.Context, db *sqlx.DB, groups ...string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -703,7 +704,7 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 	}
 	// db.Rebind converts the '?' bindvar syntax required by sqlx.In to postgres $1 bindvar syntax
 	query = db.Rebind(query)
-	err = db.Select(&mappingQuery, query, args...)
+	err = db.SelectContext(ctx, &mappingQuery, query, args...)
 	if err != nil {
 		errResponse := newErrorResponse("mapping query failed", 500, &err)
 		errResponse.log.Error("%s", err.Error())
@@ -723,7 +724,7 @@ func authMappingForGroups(db *sqlx.DB, groups ...string) (AuthMapping, *ErrorRes
 // `logged-in` groups.
 // If there is no client with this ID in the db, this function will NOT
 // throw an error, but will return an empty response.
-func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResponse) {
+func authMappingForClient(ctx context.Context, db *sqlx.DB, clientID string) (AuthMapping, *ErrorResponse) {
 	mappingQuery := []AuthMappingQuery{}
 	stmt := `
 		SELECT DISTINCT resource.path, permission.service, permission.method
@@ -739,7 +740,7 @@ func authMappingForClient(db *sqlx.DB, clientID string) (AuthMapping, *ErrorResp
 		INNER JOIN permission ON permission.role_id = policy_role.role_id
 		INNER JOIN resource ON resource.path <@ roots.path
 	`
-	err := db.Select(
+	err := db.SelectContext(ctx,
 		&mappingQuery,
 		stmt,
 		clientID, // $1
