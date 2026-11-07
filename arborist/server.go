@@ -1015,61 +1015,59 @@ func (server *Server) handleResourceCreate(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	errResponse = nil
+	write := resource.createInDb
 	if r.Method == "PUT" {
 		_, mergeFlag := r.URL.Query()["merge"]
-		updateResource := func(tx *sqlx.Tx) *ErrorResponse {
-			resource.updateInDb(tx, mergeFlag)
-			return nil
+		write = func(tx *sqlx.Tx) *ErrorResponse {
+			return resource.updateInDb(tx, mergeFlag)
 		}
-		errResponse = transactify(server.db, updateResource)
-	} else {
-		errResponse = transactify(server.db, resource.createInDb)
 	}
-	if errResponse != nil && errResponse.HTTPError.Code != 409 {
-		// `transactify` returns 500 if there was a SQL error. Here we'll assume
-		// that this would be because of an invalid resource input from the caller.
-		// This could definitely do with some better error handling to make sure
-		// this is accurate.
-		if errResponse.HTTPError.Code == 500 {
+	// Read the resource back inside the same transaction: if the commit
+	// succeeds this is exactly what was written, and if it fails nothing was.
+	var created *ResourceFromQuery
+	errResponse = transactify(server.db, func(tx *sqlx.Tx) *ErrorResponse {
+		if errResponse := write(tx); errResponse != nil {
+			return errResponse
+		}
+		var err error
+		created, err = resourceWithPath(tx, resource.Path)
+		if err != nil {
+			msg := fmt.Sprintf("couldn't read back resource %s: %s", resource.Path, err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
+		if created == nil {
+			msg := fmt.Sprintf("resource %s missing right after writing it", resource.Path)
+			return newErrorResponse(msg, 500, nil)
+		}
+		return nil
+	})
+	if errResponse != nil {
+		if errResponse.HTTPError.Code == 500 && isMissingParentError(errResponse.err) {
+			// the parent check failed at commit (see `isMissingParentError`)
 			errResponse.HTTPError.Code = 400
 		}
-		// TODO: patch error message to be intelligible if dumping resource path
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	resourceFromQuery, err := resourceWithPath(server.db, resource.Path)
-	if err != nil {
-		errResponse := newErrorResponse(err.Error(), 500, &err)
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	if resourceFromQuery == nil {
-		msg := fmt.Sprintf(
-			"couldn't return resource for %s, but it may have been created OK",
-			resource.Path,
-		)
-		errResponse := newErrorResponse(msg, 500, &err)
-		errResponse.log.write(server.logger)
-		_ = errResponse.write(w, r)
-		return
-	}
-	out := resourceFromQuery.standardize()
-	if errResponse != nil {
-		// otherwise, must be 409 (already handled non-409 errors).
-		server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
-		result := struct {
-			Error  HTTPError    `json:"error"`
-			Exists *ResourceOut `json:"exists"`
-		}{
-			Error:  errResponse.HTTPError,
-			Exists: &out,
+		if errResponse.HTTPError.Code == 409 {
+			// nothing was written; if the requested resource exists, include it
+			existing, err := resourceWithPath(server.db, resource.Path)
+			if err == nil && existing != nil {
+				out := existing.standardize()
+				server.logger.Info("not creating resource %s (%s), already exists", out.Path, out.Tag)
+				result := struct {
+					Error  HTTPError    `json:"error"`
+					Exists *ResourceOut `json:"exists"`
+				}{
+					Error:  errResponse.HTTPError,
+					Exists: &out,
+				}
+				_ = jsonResponseFrom(result, 409).write(w, r)
+				return
+			}
 		}
-		_ = jsonResponseFrom(result, 409).write(w, r)
+		errResponse.log.write(server.logger)
+		_ = errResponse.write(w, r)
 		return
 	}
+	out := created.standardize()
 
 	server.logger.Info("created resource %s (%s)", out.Path, out.Tag)
 	result := struct {
