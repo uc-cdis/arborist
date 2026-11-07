@@ -15,6 +15,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -798,6 +799,112 @@ func TestServer(t *testing.T) {
 					httpError(t, w, "expected 400 from request missing JSON")
 				}
 			})
+
+			// exceeds the ltree label length limit, so the INSERT itself fails
+			invalidName := strings.Repeat("a", 2000)
+
+			t.Run("InvalidPath", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"name": "%s"}`, invalidName))
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from creating resource with invalid path")
+				}
+			})
+
+			t.Run("InvalidSubresource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(
+					`{"name": "invalidsub", "subresources": [{"name": "%s"}]}`,
+					invalidName,
+				))
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from creating resource with invalid subresource")
+				}
+				w = httptest.NewRecorder()
+				req = newRequest("GET", "/resource/invalidsub", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "resource with invalid subresource should not have been created")
+				}
+			})
+
+			t.Run("DuplicateSubresource", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(`{"name": "dupsub", "subresources": [{"name": "a"}, {"name": "a"}]}`)
+				req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusConflict {
+					httpError(t, w, "expected 409 from creating resource with duplicate subresources")
+				}
+				w = httptest.NewRecorder()
+				req = newRequest("GET", "/resource/dupsub", nil)
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusNotFound {
+					httpError(t, w, "resource with duplicate subresources should not have been created")
+				}
+			})
+
+			t.Run("UpdateInvalidPath", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				body := []byte(fmt.Sprintf(`{"name": "%s"}`, invalidName))
+				req := newRequest("PUT", "/resource", bytes.NewBuffer(body))
+				handler.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					httpError(t, w, "expected 400 from updating resource with invalid path")
+				}
+				assert.Contains(t, w.Body.String(), "failed to insert resource", "PUT should report the insert error")
+			})
+		})
+
+		t.Run("CreateConcurrently", func(t *testing.T) {
+			const n = 20
+			codes := make([]int, n)
+			bodies := make([][]byte, n)
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					w := httptest.NewRecorder()
+					body := []byte(`{"path": "/concurrent-create", "subresources": [{"name": "sub"}]}`)
+					req := newRequest("POST", "/resource", bytes.NewBuffer(body))
+					handler.ServeHTTP(w, req)
+					codes[i] = w.Code
+					bodies[i] = w.Body.Bytes()
+				}(i)
+			}
+			wg.Wait()
+
+			created := 0
+			for i, code := range codes {
+				msg := fmt.Sprintf("got response body: %s", bodies[i])
+				switch code {
+				case http.StatusCreated:
+					created++
+				case http.StatusConflict:
+					result := struct {
+						Exists struct {
+							Path string `json:"path"`
+						} `json:"exists"`
+					}{}
+					assert.NoError(t, json.Unmarshal(bodies[i], &result), msg)
+					assert.Equal(t, "/concurrent-create", result.Exists.Path, msg)
+				default:
+					t.Errorf("unexpected status %d from concurrent create; %s", code, msg)
+				}
+			}
+			assert.Equal(t, 1, created, "exactly one concurrent create should succeed")
+
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/resource/concurrent-create/sub", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				httpError(t, w, "concurrently created resource is missing its subresource")
+			}
 		})
 
 		// We're going to create a resource and save the tag into this variable
