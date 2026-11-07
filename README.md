@@ -70,6 +70,18 @@ createdb
 ./bin/arborist --port 8080 --jwks https://dev.planx-pla.net/user/.well-known/jwks
 ```
 
+#### Database connection pool
+
+Each arborist process opens at most 10 Postgres connections, which stay open and
+are reused between requests. Set `DB_POOL_SIZE` to change that limit, for
+example `DB_POOL_SIZE=20`. When all connections are busy, requests wait for one
+to become free.
+
+Connections count against `max_connections` on the whole Postgres server, so
+when several services share it, keep `DB_POOL_SIZE` multiplied by the maximum
+number of arborist replicas (including extra pods during rolling deploys) within
+the connections the other services leave free.
+
 ### Quickstart with Helm
 
 You can now deploy individual services via Helm! 

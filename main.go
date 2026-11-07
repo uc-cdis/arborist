@@ -6,12 +6,44 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/uc-cdis/arborist/arborist"
 	"github.com/uc-cdis/go-authutils/authutils"
 )
+
+// dbPoolSizeEnv names the environment variable which sets the maximum number of
+// database connections each arborist process keeps open.
+const dbPoolSizeEnv = "DB_POOL_SIZE"
+
+// defaultDBPoolSize is the pool size used when `dbPoolSizeEnv` is not set.
+const defaultDBPoolSize = 10
+
+// dbPoolSizeFromEnv returns the configured database pool size, or
+// `defaultDBPoolSize` if it's not set. It returns an error if the value is not
+// a positive integer.
+func dbPoolSizeFromEnv() (int, error) {
+	value := os.Getenv(dbPoolSizeEnv)
+	if value == "" {
+		return defaultDBPoolSize, nil
+	}
+	size, err := strconv.Atoi(value)
+	if err != nil || size < 1 {
+		return 0, fmt.Errorf("$%s must be a positive integer, got %q", dbPoolSizeEnv, value)
+	}
+	return size, nil
+}
+
+// dbConnMaxLifetime is how long a database connection is used before it's
+// closed and replaced, so that connections broken by a database restart,
+// failover or proxy are eventually dropped.
+const dbConnMaxLifetime = 30 * time.Minute
+
+// dbConnMaxIdleTime is how long a database connection can sit unused before
+// it's closed, so that idle pods release connections on a shared database.
+const dbConnMaxIdleTime = 5 * time.Minute
 
 func main() {
 	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
@@ -38,6 +70,10 @@ func main() {
 	if *jwkEndpoint == "" {
 		print("WARNING: no $JWKS_ENDPOINT or --jwks specified; endpoints requiring JWT validation will error\n")
 	}
+	poolSize, err := dbPoolSizeFromEnv()
+	if err != nil {
+		panic(err)
+	}
 	// if database URL is not provided it can use environment variables
 
 	db, err := sqlx.Open("postgres", *dbUrl)
@@ -45,6 +81,12 @@ func main() {
 		panic(err)
 	}
 	defer db.Close()
+	// Keep as many idle connections as open ones, so that connections are
+	// reused instead of opened and closed again for each request.
+	db.SetMaxOpenConns(poolSize)
+	db.SetMaxIdleConns(poolSize)
+	db.SetConnMaxLifetime(dbConnMaxLifetime)
+	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
 	logFlags := log.Ldate | log.Ltime
 	logger := log.New(os.Stdout, "", logFlags)
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
