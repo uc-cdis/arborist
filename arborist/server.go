@@ -28,10 +28,13 @@ type JWTDecoder interface {
 }
 
 type Server struct {
-	db     *sqlx.DB
-	jwtApp JWTDecoder
-	logger *LogHandler
-	stmts  *CachedStmts
+	db *sqlx.DB
+	// healthDB is used only by the health check, so that it doesn't have to wait
+	// for a connection when every connection in `db` is busy. Falls back to `db`.
+	healthDB *sqlx.DB
+	jwtApp   JWTDecoder
+	logger   *LogHandler
+	stmts    *CachedStmts
 }
 
 type RequestPolicy struct {
@@ -56,6 +59,15 @@ func (server *Server) WithJWTApp(jwtApp JWTDecoder) *Server {
 func (server *Server) WithDB(db *sqlx.DB) *Server {
 	server.db = db
 	server.stmts = NewCachedStmts(db)
+	return server
+}
+
+// WithHealthDB sets a separate connection pool for the health check. Without
+// one, the health check uses the main pool and fails whenever that pool stays
+// fully busy for longer than the probe's timeout, even though the database is
+// reachable.
+func (server *Server) WithHealthDB(db *sqlx.DB) *Server {
+	server.healthDB = db
 	return server
 }
 
@@ -221,9 +233,13 @@ func loggableJSON(bytes []byte) []byte {
 }
 
 func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	err := server.db.Ping()
+	db := server.healthDB
+	if db == nil {
+		db = server.db
+	}
+	err := db.PingContext(r.Context())
 	if err != nil {
-		server.logger.Error("database ping failed; returning unhealthy")
+		server.logger.Error("database ping failed; returning unhealthy: %s", err.Error())
 		response := newErrorResponse("database unavailable", 500, nil)
 		_ = response.write(w, r)
 		return

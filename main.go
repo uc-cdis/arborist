@@ -45,6 +45,21 @@ const dbConnMaxLifetime = 30 * time.Minute
 // it's closed, so that idle pods release connections on a shared database.
 const dbConnMaxIdleTime = 5 * time.Minute
 
+// openDB opens a connection pool of at most `size` connections. It keeps as
+// many idle connections as open ones, so that connections are reused instead of
+// opened and closed again for each request.
+func openDB(dbUrl string, size int) (*sqlx.DB, error) {
+	db, err := sqlx.Open("postgres", dbUrl)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(size)
+	db.SetMaxIdleConns(size)
+	db.SetConnMaxLifetime(dbConnMaxLifetime)
+	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
+	return db, nil
+}
+
 func main() {
 	var jwkEndpointEnv string = os.Getenv("JWKS_ENDPOINT")
 
@@ -76,17 +91,18 @@ func main() {
 	}
 	// if database URL is not provided it can use environment variables
 
-	db, err := sqlx.Open("postgres", *dbUrl)
+	db, err := openDB(*dbUrl, poolSize)
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
-	// Keep as many idle connections as open ones, so that connections are
-	// reused instead of opened and closed again for each request.
-	db.SetMaxOpenConns(poolSize)
-	db.SetMaxIdleConns(poolSize)
-	db.SetConnMaxLifetime(dbConnMaxLifetime)
-	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
+	// The health check gets its own connection, so that it still answers when
+	// every connection in the main pool is busy.
+	healthDB, err := openDB(*dbUrl, 1)
+	if err != nil {
+		panic(err)
+	}
+	defer healthDB.Close()
 	logFlags := log.Ldate | log.Ltime
 	logger := log.New(os.Stdout, "", logFlags)
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
@@ -94,6 +110,7 @@ func main() {
 		WithLogger(logger).
 		WithJWTApp(jwtApp).
 		WithDB(db).
+		WithHealthDB(healthDB).
 		Init()
 	if err != nil {
 		panic(err)
