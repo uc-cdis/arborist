@@ -1,7 +1,9 @@
 package arborist
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -164,8 +166,9 @@ func formatDbPath(path string) string {
 
 // resourceWithPath looks up a resource matching the given path. The database
 // schema guarantees such a resource to be unique. Any error returned is because
-// of internal database failure.
-func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
+// of internal database failure. Pass a transaction as `db` to see that
+// transaction's uncommitted writes.
+func resourceWithPath(db sqlx.Queryer, path string) (*ResourceFromQuery, error) {
 	path = FormatPathForDb(path)
 	resources := []ResourceFromQuery{}
 	stmt := `
@@ -187,7 +190,7 @@ func resourceWithPath(db *sqlx.DB, path string) (*ResourceFromQuery, error) {
 		GROUP BY parent.id
 		LIMIT 1
 	`
-	err := db.Select(&resources, stmt, path)
+	err := sqlx.Select(db, &resources, stmt, path)
 	if len(resources) == 0 {
 		// not found
 		return nil, nil
@@ -270,17 +273,25 @@ func (resource *ResourceIn) createInDb(tx *sqlx.Tx) *ErrorResponse {
 func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 	// arborist uses `/` for path separator; ltree in postgres uses `.`
 	path := FormatPathForDb(resource.Path)
-	stmt := "INSERT INTO resource(path, description) VALUES ($1, $2)"
-	_, err := tx.Exec(stmt, path, resource.Description)
+	// If a concurrent transaction holds this path, even uncommitted, this waits
+	// for it and only inserts if it rolled back; either way, a taken path is
+	// known right here rather than at commit.
+	stmt := `
+		INSERT INTO resource(path, description) VALUES ($1, $2)
+		ON CONFLICT (path) DO NOTHING
+		RETURNING id
+	`
+	var id int
+	err := tx.Get(&id, stmt, path, resource.Description)
+	if errors.Is(err, sql.ErrNoRows) {
+		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
+		return newErrorResponse(msg, 409, nil)
+	}
 	if err != nil {
-		// should add more checking here to guarantee the correct error
 		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
 		// since this is probably called with `transactify`
 		_ = tx.Rollback()
-		// this should only fail because the resource was not unique. return error
-		// accordingly
-		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
-		return newErrorResponse(msg, 409, &err)
+		return insertErrorResponse(err, resource.Path)
 	}
 	// TODO (rudyardrichter, 2019-04-09): optimize (could be non-recursive)
 	for _, subresource := range resource.Subresources {
@@ -294,6 +305,44 @@ func (resource *ResourceIn) createRecursively(tx *sqlx.Tx) *ErrorResponse {
 		}
 	}
 	return nil
+}
+
+// insertErrorResponse converts an error from inserting a resource row into an
+// error response. A missing parent or a path postgres rejects as an ltree is
+// bad input (400); anything else is a database failure (500). A taken path
+// isn't an error at all, because of the ON CONFLICT clauses. The original
+// error is kept so `transactify` can retry if it was caused by contention.
+func insertErrorResponse(err error, path string) *ErrorResponse {
+	if isMissingParentError(err) {
+		msg := fmt.Sprintf("failed to insert resource `%s`: parent resource does not exist", path)
+		return newErrorResponse(msg, 400, &err)
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		switch pqErr.Code.Name() {
+		case "syntax_error", "name_too_long", "program_limit_exceeded":
+			msg := fmt.Sprintf("failed to insert resource `%s`: invalid resource path: %s", path, pqErr.Message)
+			return newErrorResponse(msg, 400, &err)
+		}
+	}
+	msg := fmt.Sprintf("failed to insert resource `%s`: %s", path, err.Error())
+	return newErrorResponse(msg, 500, &err)
+}
+
+// isMissingParentError reports whether `err` is the `resource_has_parent_check`
+// trigger rejecting a resource. Databases which haven't applied the
+// 2026-10-30T170000Z_resource_parent_lock migration still run that check at
+// commit instead of insert, and raise it as a generic exception.
+func isMissingParentError(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	switch pqErr.Code.Name() {
+	case "foreign_key_violation", "raise_exception":
+		return true
+	}
+	return false
 }
 
 func (resource *ResourceIn) deleteInDb(tx *sqlx.Tx) *ErrorResponse {
@@ -339,16 +388,17 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 		// TODO (rudyardrichter, 2019-06-04): rollback probably not necessary,
 		// since this is probably called with `transactify`
 		_ = tx.Rollback()
-		// this should only fail because the resource was not unique. return error
-		// accordingly
-		msg := fmt.Sprintf("failed to insert resource: resource with this path already exists: `%s`", resource.Path)
-		return newErrorResponse(msg, 409, &err)
+		return insertErrorResponse(err, resource.Path)
 	}
 
 	if resource.Description != nil {
 		// update description
 		stmt = "UPDATE resource SET description = $2 WHERE path = $1"
 		_, err = tx.Exec(stmt, path, resource.Description)
+		if err != nil {
+			msg := fmt.Sprintf("failed to update resource `%s`: %s", resource.Path, err.Error())
+			return newErrorResponse(msg, 500, &err)
+		}
 	}
 
 	if !merge {
@@ -367,13 +417,17 @@ func (resource *ResourceIn) updateInDb(tx *sqlx.Tx, merge bool) *ErrorResponse {
 					AND path != ALL($2::ltree[])
 				)
 			`
-			_, _ = tx.Exec(stmt, path, pq.Array(subPathsKeep))
+			_, err = tx.Exec(stmt, path, pq.Array(subPathsKeep))
 		} else {
 			stmt := `
 				DELETE FROM resource
 				WHERE path != $1 AND path ~ (CAST ((ltree2text($1) || '.*{1}') AS lquery))
 			`
-			_, _ = tx.Exec(stmt, path)
+			_, err = tx.Exec(stmt, path)
+		}
+		if err != nil {
+			msg := fmt.Sprintf("failed to remove old subresources of `%s`: %s", resource.Path, err.Error())
+			return newErrorResponse(msg, 500, &err)
 		}
 	}
 

@@ -102,6 +102,10 @@ func (errorResponse *ErrorResponse) write(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if errorResponse.HTTPError.Code == http.StatusServiceUnavailable {
+		// only used for transient failures (see `transactify`)
+		w.Header().Set("Retry-After", "1")
+	}
 	w.WriteHeader(errorResponse.HTTPError.Code)
 	_, err = w.Write(bytes)
 	if err != nil {
