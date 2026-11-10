@@ -173,9 +173,35 @@ var logTo = flag.String(
 	"where to write logs to (default is buffer flushed on errors)",
 )
 
+// syncBuffer is a bytes.Buffer that's safe for concurrent use. The test logs
+// go to one buffer from both the server's logger and the HTTP request logger,
+// and concurrent requests write to it from multiple goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) WriteTo(w io.Writer) (int64, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.WriteTo(w)
+}
+
+func (b *syncBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
 func TestServer(t *testing.T) {
 	flag.Parse()
-	logBuffer := bytes.NewBuffer([]byte{})
+	logBuffer := &syncBuffer{}
 	logFlags := log.Ldate | log.Ltime
 	var logDest io.Writer
 	if *logTo == "stdout" {
