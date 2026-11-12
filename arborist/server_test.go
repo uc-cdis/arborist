@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 
@@ -41,7 +41,7 @@ type mockJWTApp struct {
 // Decode lets us use this mock JWT decoder for testing. It does zero validation
 // of any tokens it receives, and just returns the decoded claims.
 func (jwtApp *mockJWTApp) Decode(token string) (*map[string]interface{}, error) {
-	decodedToken, err := jwt.ParseSigned(token)
+	decodedToken, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return nil, err
 	}
