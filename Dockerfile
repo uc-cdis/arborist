@@ -2,8 +2,7 @@
 #
 # Build and runtime are both on the hardened Amazon Linux base (FIPS crypto
 # policy). The Go toolchain is a sha256-pinned go.dev release and the binary is
-# compiled against the Go Cryptographic Module (GOFIPS140), so no Debian stage
-# and no stock Go crypto.
+# compiled against the Go Cryptographic Module (GOFIPS140).
 
 ARG AZLINUX_BASE_VERSION=hardened
 
